@@ -49,6 +49,7 @@ async fn test_create_user() {
     assert!(user.global_role.is_none());
 
     repo.delete(user.id.unwrap()).await.ok(); // comment out here and drop in setup to see user being added.
+    // and then run `cargo test test_create_user -- --test-threads=1 --nocapture`
 }
 
 // 2. Find by email returns the correct user.
