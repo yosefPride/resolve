@@ -48,7 +48,7 @@ async fn test_create_user() {
     assert_eq!(user.password_hash, "hashed_pw");
     assert!(user.global_role.is_none());
 
-    repo.delete(user.id.unwrap()).await.ok();
+    repo.delete(user.id.unwrap()).await.ok(); // comment out here and drop in setup to see user being added.
 }
 
 // 2. Find by email returns the correct user.
@@ -116,7 +116,10 @@ async fn test_duplicate_email_error() {
         name: "Dup".to_string(),
         password_hash: "hashed_pw".to_string(),
     };
-    let first = repo.create(make_input()).await.expect("first create failed");
+    let first = repo
+        .create(make_input())
+        .await
+        .expect("first create failed");
     let err = repo
         .create(make_input())
         .await
