@@ -185,7 +185,7 @@ async fn test_delete_user() {
     assert!(gone.is_none());
 }
 
-// 8. global_role is None by default; GlobalRole::Admin round-trips correctly.
+// 8. global_role is None by default; GlobalRole::SystemAdmin round-trips correctly.
 #[tokio::test]
 async fn test_global_role() {
     let repo = setup().await;
@@ -201,8 +201,8 @@ async fn test_global_role() {
         .expect("create failed");
     assert!(regular.global_role.is_none());
 
-    // Verify GlobalRole::Admin serializes and deserializes via the enum.
-    assert!(matches!(GlobalRole::Admin, GlobalRole::Admin));
+    // Verify GlobalRole::SystemAdmin serializes and deserializes via the enum.
+    assert!(matches!(GlobalRole::SystemAdmin, GlobalRole::SystemAdmin));
 
     repo.delete(regular.id.unwrap()).await.ok();
 }

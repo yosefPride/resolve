@@ -1,10 +1,10 @@
 use chrono::{DateTime, Utc};
-use mongodb::bson::{oid::ObjectId, DateTime as BsonDateTime};
+use mongodb::bson::{DateTime as BsonDateTime, oid::ObjectId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GlobalRole {
-    Admin,
+    SystemAdmin,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

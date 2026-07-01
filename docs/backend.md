@@ -109,7 +109,7 @@ No exceptions.
 
 # RBAC System
 
-- Static role system (Contributor / Manager / Admin)
+- Static role system: Contributor / Group Admin (group-scoped), System Admin (global-scoped)
 - Enforced via middleware + helper functions
 - No dynamic policy engine
 
@@ -138,14 +138,15 @@ Responsible for:
 - creating groups
 - managing members
 - enforcing ownership rules
+- enforcing the "at least one Group Admin per group" invariant
 
-Group owner = creator (Manager or Admin)
+Group creation is open to any authenticated user. The creator is automatically assigned the Group Admin role for that group (a group_members row is created in the same operation). A Group Admin may not leave or be removed while they are the group's sole Group Admin — a successor must be appointed first, unless the group is deleted entirely.
 
 ---
 
-# Admin Capabilities
+# System Admin Capabilities
 
-Admin can:
+System Admin can:
 
 - view all groups (metadata only)
 - view users
@@ -153,7 +154,8 @@ Admin can:
 - delete groups
 - view system analytics (aggregated only)
 
-Admin cannot:
+System Admin cannot:
 
 - Read tickets across groups
 - Access private group data without membership
+- Delete a user who is the sole Group Admin of a group (must be resolved by that group's own members first)
