@@ -33,7 +33,7 @@ Each user has an ACTIVE GROUP.
 - No cross-group data access is allowed
 - RBAC is enforced server-side only
 - AI operates only within active group
-- Admin endpoints are system-level only
+- System Admin endpoints are system-level only
 
 ---
 
@@ -82,7 +82,9 @@ Requires JWT.
 
 ## POST /groups
 
-Create group (Manager or Admin only)
+Create group (any authenticated user)
+
+The creator automatically becomes that group's Group Admin.
 
 Request:
 
@@ -112,18 +114,40 @@ Join group (if allowed or invite-based)
 
 ## POST /groups/:id/users
 
-Add user to group (Manager/Admin only)
+Add user to group (Group Admin only)
 
 Request:
 
 - user_id
-- role
+- role (Contributor | Group Admin)
+
+---
+
+## PATCH /groups/:id/users/:user_id
+
+Update a member's role (Group Admin only)
+
+Request:
+
+- role (Contributor | Group Admin)
+
+Used to promote a Contributor to Group Admin, e.g. to appoint a successor before leaving the group.
 
 ---
 
 ## DELETE /groups/:id/users/:user_id
 
-Remove user from group (Manager/Admin only)
+Remove user from group, including self-removal/leaving (Group Admin only)
+
+Rejected if the target is the sole Group Admin of the group — a successor must be appointed first via PATCH /groups/:id/users/:user_id, or the group must be deleted entirely via DELETE /groups/:id.
+
+---
+
+## DELETE /groups/:id
+
+Delete the group entirely (Group Admin only)
+
+Bypasses the "at least one Group Admin" requirement — the group and all its data cease to exist.
 
 ---
 
@@ -131,7 +155,7 @@ Remove user from group (Manager/Admin only)
 
 Get group metadata
 
-- Admin: can see all groups
+- System Admin: can see all groups (metadata only)
 - Others: only own groups
 
 ---
@@ -151,7 +175,7 @@ Supports:
 
 ## POST /tickets
 
-Create ticket (Contributor+)
+Create ticket (any group member)
 
 Request:
 
@@ -174,19 +198,19 @@ Update ticket
 Permissions:
 
 - Contributor: own tickets only
-- Manager/Admin: all tickets
+- Group Admin: all tickets in the group
 
 ---
 
 ## DELETE /tickets/:id
 
-Admin only
+Group Admin only
 
 ---
 
 ## POST /tickets/:id/assign
 
-Assign ticket (Manager/Admin only)
+Assign ticket (Group Admin only)
 
 Request:
 
@@ -198,13 +222,14 @@ Request:
 
 Change status
 
-Manager/Admin only
+Group Admin only
 
 ---
 
 ### Ticket Rules:
 
 - Contributor can only modify own tickets
+- Group Admin can modify any ticket in the group
 - Ownership defined by creator_id
 
 ---
@@ -245,7 +270,7 @@ Returns:
 
 ## POST /ai/groups/:id/report
 
-Manager/Admin only
+Group Admin only
 
 Returns:
 
@@ -263,7 +288,7 @@ Returns:
 
 ---
 
-# Admin System Endpoints
+# System Admin Endpoints
 
 ## GET /admin/groups
 
@@ -283,6 +308,8 @@ List users
 
 Delete user
 
+Rejected (409) if the user is the sole Group Admin of any group. That group's succession must be resolved first — an existing member appoints a new Group Admin via PATCH /groups/:id/users/:user_id, or deletes the group via DELETE /groups/:id — using normal group-scoped endpoints. System Admin cannot resolve this on the group's behalf.
+
 ---
 
 ## DELETE /admin/groups/:id
@@ -297,7 +324,7 @@ System-level metrics (aggregated only)
 
 ---
 
-### Admin restrictions:
+### System Admin restrictions:
 
 - No ticket-level access
 - No comment-level access

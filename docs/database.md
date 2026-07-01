@@ -37,7 +37,7 @@ Fields:
 - email
 - password_hash (bcrypt)
 - name
-- global_role (Admin only)
+- global_role (System Admin only)
 - created_at
 
 ---
@@ -50,8 +50,10 @@ Fields:
 
 - \_id
 - name
-- owner_id (user who created group)
+- owner_id (user who created the group; informational only — not used for authorization)
 - created_at
+
+Creating a group inserts a group_members row for the creator with role = Group Admin in the same operation. All authorization checks use group_members.role, never owner_id.
 
 ---
 
@@ -64,8 +66,10 @@ Fields:
 - \_id
 - group_id
 - user_id
-- role (Contributor | Manager | Admin)
+- role (Contributor | Group Admin)
 - joined_at
+
+A group must always have at least one member with role = Group Admin (except when the group itself is deleted).
 
 ---
 
@@ -123,7 +127,7 @@ Fields:
 
 ## ai_group_reports
 
-Stores aggregated AI reports (Manager/Admin only).
+Stores aggregated AI reports (Group Admin only).
 
 Fields:
 
@@ -174,30 +178,31 @@ group_members.role
 Roles:
 
 - Contributor
-- Manager
-- Admin
+- Group Admin
 
 Rules:
 
 - Role is per-group (not global)
-- A user can have different roles in different groups
+- A user can have different roles in different groups (e.g. Group Admin in one group, Contributor in another)
+- A group always has at least one Group Admin (see "Group Admin Succession" in docs/rbac.md)
 
 ---
 
-# Admin Model
+# System Admin Model
 
-Admin is GLOBAL role stored in users.global_role
+System Admin is a GLOBAL role stored in users.global_role
 
-Admin capabilities:
+System Admin capabilities:
 
 - manage users
 - manage groups
 - view system metadata
 
-Admin limitations:
+System Admin limitations:
 
 - cannot access group tickets unless member
 - cannot bypass group isolation
+- cannot appoint a Group Admin successor on a group's behalf (see docs/rbac.md, "Group Admin Succession")
 
 ---
 
