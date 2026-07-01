@@ -74,7 +74,7 @@ User → Frontend → API → Auth Middleware → Service → DB / AI → Respon
 
 Group isolation is absolute.
 
-Admin exceptions apply only to:
+System Admin exceptions apply only to:
 
 - system metadata
 - aggregated analytics

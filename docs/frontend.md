@@ -85,14 +85,14 @@ src/
 
 - Create group
 - Switch active group
-- Manage members (Manager/Admin only)
+- Manage members (Group Admin only)
 
 ## tickets/
 
 - Create ticket
 - View tickets (group-scoped)
 - Update status (role-dependent)
-- Assign tickets (Manager/Admin only)
+- Assign tickets (Group Admin only)
 
 Ticket Detail page includes:
 
@@ -114,7 +114,7 @@ AI is embedded inside existing pages:
   - explain ticket
 
 - Group Dashboard (secondary)
-  - AI reports (Manager/Admin only)
+  - AI reports (Group Admin only)
 
 ---
 
@@ -155,4 +155,4 @@ Public:
 - Ticket details (includes AI panel)
 - Group management
 - Account
-- Admin (Admin only)
+- Admin (System Admin only)

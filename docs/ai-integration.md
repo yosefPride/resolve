@@ -63,7 +63,7 @@ AI operates strictly within:
 
 AI NEVER:
 
-- accesses multiple groups (except admin metadata analytics)
+- accesses multiple groups (except system admin metadata analytics)
 - writes to database
 - bypasses authorization
 
@@ -87,9 +87,9 @@ Bug clustering = grouping similar tickets within the same group based on AI-gene
 
 ---
 
-# Admin Analytics Rule
+# System Admin Analytics Rule
 
-Admin can request AI-generated summaries of group-level statistics.
+System Admin can request AI-generated summaries of group-level statistics.
 
 This is aggregated data only and does NOT expose raw cross-group ticket content.
 

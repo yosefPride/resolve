@@ -38,10 +38,13 @@ AI:
 
 ### Group Rules
 
-- Managers create and manage groups
+- Any authenticated user may create a group; the creator becomes that group's Group Admin
+- Group Admins manage their group, including adding Contributors and other Group Admins
 - Contributors operate within assigned groups
-- Admin can view system metadata and group lists
-- Admin cannot access ticket data unless they are a member of that group
+- A group must always have at least one Group Admin: a Group Admin may not leave or be removed while they are the sole Group Admin — a successor must be appointed first, unless the entire group is deleted
+- System Admin can view system metadata and group lists
+- System Admin cannot access ticket data unless they are a member of that group
+- System Admin cannot resolve a group's succession on its behalf — deleting a user who is the sole Group Admin of any group is blocked until an actual member of that group appoints a successor or deletes the group
 
 ---
 
@@ -49,9 +52,9 @@ AI:
 
 Roles:
 
-- Contributor
-- Manager
-- Administrator
+- Contributor (group-scoped)
+- Group Admin (group-scoped)
+- System Admin (global-scoped)
 
 All permissions enforced on backend only.
 
@@ -61,8 +64,8 @@ All permissions enforced on backend only.
 
 The system has two independent RBAC layers:
 
-- Global role (Admin only)
-- Group role (Contributor / Manager per group)
+- Global role (System Admin only)
+- Group role (Contributor / Group Admin per group)
 
 These do NOT override each other.
 
@@ -70,20 +73,20 @@ These do NOT override each other.
 
 ## Scope Rules Clarification
 
-- Admin = system-level operations and metadata access only
+- System Admin = system-level operations and metadata access only
 - Group roles = all ticket, comment, and workflow operations
 - No role bypasses group isolation rules
 
 ---
 
-## Admin Data Access Rule
+## System Admin Data Access Rule
 
-Admin can access:
+System Admin can access:
 
 - user list
 - group list (metadata only)
 
-Admin cannot access:
+System Admin cannot access:
 
 - tickets
 - comments
