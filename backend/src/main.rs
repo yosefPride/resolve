@@ -32,6 +32,9 @@ async fn main() -> std::io::Result<()> {
         .await
         .map_err(|error| std::io::Error::other(format!("MongoDB connection failed: {error}")))?;
     let database = db::database(&client, &config);
+    db::ensure_indexes(&database)
+        .await
+        .map_err(|error| std::io::Error::other(format!("Failed to create indexes: {error}")))?;
     let bind_address = config.bind_address();
     let app_state = web::Data::new(AppState {
         db: database,

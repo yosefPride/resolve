@@ -1,5 +1,6 @@
 pub struct Config {
     pub mongo_uri: String,
+    pub jwt_secret: String,
 }
 
 impl Config {
@@ -7,6 +8,7 @@ impl Config {
         dotenvy::dotenv().ok();
         Ok(Config {
             mongo_uri: std::env::var("MONGO_URI")?,
+            jwt_secret: std::env::var("JWT_SECRET")?,
         })
     }
 

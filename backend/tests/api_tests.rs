@@ -1,5 +1,5 @@
 use mongodb::{IndexModel, bson::doc, options::IndexOptions};
-use ort_final_project::user::{
+use resolve::user::{
     models::{CreateUserInput, GlobalRole},
     repository::{UserRepoError, UserRepository},
 };
