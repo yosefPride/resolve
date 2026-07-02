@@ -16,6 +16,9 @@ All protected endpoints require:
 
 Authorization: Bearer <JWT>
 
+A token can become invalid before its own expiry: logging out invalidates every
+token previously issued to that user, not just the one used to log out.
+
 ---
 
 # Group Context
@@ -75,6 +78,19 @@ Response:
 Returns current user.
 
 Requires JWT.
+
+---
+
+## POST /auth/logout
+
+Invalidates every token previously issued to the current user (not just the
+one used to call this endpoint).
+
+Requires JWT.
+
+Request: none
+
+Response: none
 
 ---
 
