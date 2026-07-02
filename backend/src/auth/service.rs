@@ -31,7 +31,8 @@ impl AuthService {
             })
             .await?;
 
-        let jwt = jwt::issue_token(&user.id, &self.jwt_secret)?;
+        // A newly created user always starts at token_version 0.
+        let jwt = jwt::issue_token(&user.id, 0, &self.jwt_secret)?;
         Ok(AuthResponse { user, jwt })
     }
 
@@ -47,8 +48,14 @@ impl AuthService {
             return Err(ApiError::InvalidCredentials);
         }
 
+        let token_version = user.token_version;
         let user = crate::user::models::UserResponse::from(user);
-        let jwt = jwt::issue_token(&user.id, &self.jwt_secret)?;
+        let jwt = jwt::issue_token(&user.id, token_version, &self.jwt_secret)?;
         Ok(AuthResponse { user, jwt })
+    }
+
+    pub async fn logout(&self, user_id: mongodb::bson::oid::ObjectId) -> Result<(), ApiError> {
+        self.user_service.increment_token_version(user_id).await?;
+        Ok(())
     }
 }

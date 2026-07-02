@@ -29,6 +29,16 @@ impl UserService {
         self.repo.find_by_id(id).await.map(|opt| opt.map(Into::into))
     }
 
+    // Returns the full User (including token_version) — needed by the auth
+    // extractor to check a token's version against the user's current one.
+    pub async fn find_raw_by_id(&self, id: ObjectId) -> Result<Option<User>, UserRepoError> {
+        self.repo.find_by_id(id).await
+    }
+
+    pub async fn increment_token_version(&self, id: ObjectId) -> Result<(), UserRepoError> {
+        self.repo.increment_token_version(id).await
+    }
+
     pub async fn list_all(&self) -> Result<Vec<UserResponse>, UserRepoError> {
         self.repo
             .list_all()

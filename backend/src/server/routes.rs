@@ -7,7 +7,9 @@ pub fn configure(config: &mut web::ServiceConfig) {
         .service(
             web::scope("/auth")
                 .route("/register", web::post().to(auth_handlers::register))
-                .route("/login", web::post().to(auth_handlers::login)),
+                .route("/login", web::post().to(auth_handlers::login))
+                .route("/me", web::get().to(auth_handlers::me))
+                .route("/logout", web::post().to(auth_handlers::logout)),
         )
         .service(web::scope("/groups"))
         .service(web::scope("/tickets"))

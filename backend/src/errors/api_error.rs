@@ -6,6 +6,7 @@ use crate::user::repository::UserRepoError;
 #[derive(Debug)]
 pub enum ApiError {
     InvalidCredentials,
+    Unauthenticated,
     DuplicateEmail,
     Validation(String),
     Internal,
@@ -26,6 +27,7 @@ impl ApiError {
     fn code(&self) -> &'static str {
         match self {
             ApiError::InvalidCredentials => "invalid_credentials",
+            ApiError::Unauthenticated => "unauthenticated",
             ApiError::DuplicateEmail => "duplicate_email",
             ApiError::Validation(_) => "validation_error",
             ApiError::Internal => "internal_error",
@@ -35,6 +37,7 @@ impl ApiError {
     fn message(&self) -> String {
         match self {
             ApiError::InvalidCredentials => "invalid email or password".to_string(),
+            ApiError::Unauthenticated => "missing or invalid authentication token".to_string(),
             ApiError::DuplicateEmail => "email already in use".to_string(),
             ApiError::Validation(message) => message.clone(),
             ApiError::Internal => "internal server error".to_string(),
@@ -54,6 +57,7 @@ impl ResponseError for ApiError {
     fn status_code(&self) -> StatusCode {
         match self {
             ApiError::InvalidCredentials => StatusCode::UNAUTHORIZED,
+            ApiError::Unauthenticated => StatusCode::UNAUTHORIZED,
             ApiError::DuplicateEmail => StatusCode::CONFLICT,
             ApiError::Validation(_) => StatusCode::BAD_REQUEST,
             ApiError::Internal => StatusCode::INTERNAL_SERVER_ERROR,

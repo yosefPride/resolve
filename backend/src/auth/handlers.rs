@@ -3,7 +3,9 @@ use actix_web::{HttpResponse, web};
 use crate::auth::models::{LoginRequest, RegisterRequest};
 use crate::auth::service::AuthService;
 use crate::errors::ApiError;
+use crate::server::middleware::AuthenticatedUser;
 use crate::state::AppState;
+use crate::user::service::UserService;
 
 fn validate_register(input: &RegisterRequest) -> Result<(), ApiError> {
     if input.email.trim().is_empty() || !input.email.contains('@') {
@@ -53,4 +55,25 @@ pub async fn login(
     let auth_service = AuthService::new(&state.db, state.config.jwt_secret.clone());
     let response = auth_service.login(input).await?;
     Ok(HttpResponse::Ok().json(response))
+}
+
+pub async fn me(
+    user: AuthenticatedUser,
+    state: web::Data<AppState>,
+) -> Result<HttpResponse, ApiError> {
+    let user_service = UserService::new(&state.db);
+    let response = user_service
+        .find_by_id(user.user_id)
+        .await?
+        .ok_or(ApiError::Unauthenticated)?;
+    Ok(HttpResponse::Ok().json(response))
+}
+
+pub async fn logout(
+    user: AuthenticatedUser,
+    state: web::Data<AppState>,
+) -> Result<HttpResponse, ApiError> {
+    let auth_service = AuthService::new(&state.db, state.config.jwt_secret.clone());
+    auth_service.logout(user.user_id).await?;
+    Ok(HttpResponse::Ok().finish())
 }
