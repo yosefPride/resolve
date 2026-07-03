@@ -79,6 +79,8 @@ fn build_app_state(db: Database, uri: String) -> web::Data<AppState> {
         config: Config {
             mongo_uri: uri,
             jwt_secret: TEST_JWT_SECRET.to_string(),
+            cookie_secure: false,
+            frontend_origin: "http://localhost:5173".to_string(),
         },
     })
 }

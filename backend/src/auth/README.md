@@ -16,12 +16,28 @@ Two tokens are issued on register/login:
   reach it before then.
 - **Refresh token** — an opaque 256-bit random value, 30 day TTL
   (`refresh_token::REFRESH_TOKEN_TTL_DAYS`). Returned to the client only as an
-  **httpOnly, Secure, SameSite=Strict cookie** scoped to `/api/v1/auth`
+  **httpOnly, SameSite=Strict cookie** scoped to `/api/v1/auth`
   (`refresh_token::REFRESH_TOKEN_COOKIE`), never in a JSON body and never
   readable by JS. The database stores only its SHA-256 hash
   (`refresh_token::hash_token`) — a leaked database can't be replayed into a
   session, the same principle as bcrypt for passwords, just with a fast hash
   since the token already has enough entropy.
+
+  The `Secure` attribute is config-driven (`Config::cookie_secure`, env
+  `COOKIE_SECURE`, default `true`) rather than hardcoded, since a real browser
+  silently refuses to store a `Secure` cookie over plain HTTP — local dev
+  needs `COOKIE_SECURE=false` unless it's served over HTTPS. `SameSite=Strict`
+  itself is left fixed: "site" for SameSite purposes ignores port (and, for
+  same-registrable-domain hosts, ignores subdomain), so Strict already works
+  for a local frontend on a different port and for a production frontend/API
+  split across subdomains of the same domain. It would only need to relax to
+  `None` (+ `Secure`) if frontend and API ever ended up on genuinely unrelated
+  domains.
+
+  Consuming this cookie cross-origin also requires CORS to name the frontend
+  origin explicitly (`Config::frontend_origin`, env `FRONTEND_ORIGIN`) with
+  `supports_credentials()` — a wildcard origin cannot legally be combined with
+  a credentialed (cookie-bearing) request. See `main.rs`.
 
 There is no more `User.token_version` counter. Revocation now lives entirely
 at the refresh-token layer (see below), not on the user document.
@@ -90,11 +106,6 @@ See `db::ensure_indexes` for both.
 
 ## Known limitations / follow-ups
 
-- The refresh cookie is marked `Secure`, so it will not be sent by a real
-  browser over plain HTTP. Local development against a non-HTTPS backend
-  will need either local TLS or a config toggle to relax this — not solved
-  here, since it's a deployment/dev-environment concern rather than an auth
-  design one.
 - No "log out of all devices" action yet (would mean revoking every
   `refresh_tokens` row for a `user_id` instead of one row by hash).
 - No reuse-cascade detection on refresh token replay (see Rotation policy

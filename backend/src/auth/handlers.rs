@@ -10,23 +10,32 @@ use crate::state::AppState;
 use crate::user::service::UserService;
 
 // Scoped to /auth so the refresh token is never sent on unrelated API calls.
-// httpOnly + Secure keep it out of reach of JS and plain-HTTP interception;
-// Strict same-site means it's only ever sent from this app's own pages.
-fn refresh_cookie(raw_token: String) -> Cookie<'static> {
+// httpOnly keeps it out of reach of JS; `secure` is config-driven (see
+// Config::cookie_secure) since a real browser refuses to store a Secure
+// cookie at all over plain HTTP, which local dev runs over.
+//
+// SameSite=Strict is intentionally left fixed rather than made configurable:
+// "site" for SameSite purposes ignores port (and, for same-registrable-domain
+// hosts, ignores subdomain), so this already works for the intended
+// topologies — a local dev frontend on a different port, or a production
+// frontend/API split across subdomains of the same domain. It would only
+// need to relax to None (+ Secure) if frontend and API ever ended up on
+// genuinely unrelated domains.
+fn refresh_cookie(raw_token: String, secure: bool) -> Cookie<'static> {
     Cookie::build(REFRESH_TOKEN_COOKIE, raw_token)
         .path("/api/v1/auth")
         .http_only(true)
-        .secure(true)
+        .secure(secure)
         .same_site(SameSite::Strict)
         .max_age(CookieDuration::days(REFRESH_TOKEN_TTL_DAYS))
         .finish()
 }
 
-fn expired_refresh_cookie() -> Cookie<'static> {
+fn expired_refresh_cookie(secure: bool) -> Cookie<'static> {
     Cookie::build(REFRESH_TOKEN_COOKIE, "")
         .path("/api/v1/auth")
         .http_only(true)
-        .secure(true)
+        .secure(secure)
         .same_site(SameSite::Strict)
         .max_age(CookieDuration::ZERO)
         .finish()
@@ -68,7 +77,10 @@ pub async fn register(
     let auth_service = AuthService::new(&state.db, state.config.jwt_secret.clone());
     let (response, raw_refresh_token) = auth_service.register(input).await?;
     Ok(HttpResponse::Created()
-        .cookie(refresh_cookie(raw_refresh_token))
+        .cookie(refresh_cookie(
+            raw_refresh_token,
+            state.config.cookie_secure,
+        ))
         .json(response))
 }
 
@@ -82,7 +94,10 @@ pub async fn login(
     let auth_service = AuthService::new(&state.db, state.config.jwt_secret.clone());
     let (response, raw_refresh_token) = auth_service.login(input).await?;
     Ok(HttpResponse::Ok()
-        .cookie(refresh_cookie(raw_refresh_token))
+        .cookie(refresh_cookie(
+            raw_refresh_token,
+            state.config.cookie_secure,
+        ))
         .json(response))
 }
 
@@ -114,7 +129,10 @@ pub async fn refresh(
     let auth_service = AuthService::new(&state.db, state.config.jwt_secret.clone());
     let (jwt, new_raw_refresh_token) = auth_service.refresh(&raw_refresh_token).await?;
     Ok(HttpResponse::Ok()
-        .cookie(refresh_cookie(new_raw_refresh_token))
+        .cookie(refresh_cookie(
+            new_raw_refresh_token,
+            state.config.cookie_secure,
+        ))
         .json(RefreshResponse { jwt }))
 }
 
@@ -129,5 +147,7 @@ pub async fn logout(
         let auth_service = AuthService::new(&state.db, state.config.jwt_secret.clone());
         auth_service.logout(cookie.value()).await?;
     }
-    Ok(HttpResponse::Ok().cookie(expired_refresh_cookie()).finish())
+    Ok(HttpResponse::Ok()
+        .cookie(expired_refresh_cookie(state.config.cookie_secure))
+        .finish())
 }
