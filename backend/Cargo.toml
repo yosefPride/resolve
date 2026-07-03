@@ -15,3 +15,5 @@ bcrypt = "0.15"
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
 jsonwebtoken = "9"
+rand = "0.9"
+sha2 = "0.10"

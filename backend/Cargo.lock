@@ -1896,7 +1896,9 @@ dependencies = [
  "futures",
  "jsonwebtoken",
  "mongodb",
+ "rand 0.9.4",
  "serde",
+ "sha2",
  "tokio",
  "uuid",
 ]
