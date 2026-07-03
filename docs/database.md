@@ -42,6 +42,23 @@ Fields:
 
 ---
 
+## refresh_tokens
+
+One document per outstanding refresh-token session. Backs POST /auth/refresh and POST /auth/logout — see docs/api.md.
+
+Fields:
+
+- \_id
+- user_id
+- token_hash (SHA-256 of the raw token; the raw token itself is never stored, same principle as password_hash)
+- created_at
+- expires_at
+- revoked_at (nullable; set on rotation or logout)
+
+A document is single-use: once revoked (by refresh or logout), it is never matched again. Expired/revoked documents are not queried against user-facing business logic and are not group-scoped — this collection is session data tied to a user, not tenant data.
+
+---
+
 ## groups
 
 Represents tenant isolation boundary.
@@ -141,6 +158,7 @@ Fields:
 
 # Relationship Model (Important)
 
+- users → refresh_tokens (1-to-many)
 - users ↔ groups → many-to-many via group_members
 - groups → tickets (1-to-many)
 - tickets → comments (1-to-many)
@@ -228,6 +246,11 @@ Recommended indexes:
 ## users
 
 - email (unique)
+
+## refresh_tokens
+
+- token_hash (unique)
+- expires_at (TTL index, expireAfterSeconds: 0 — expired/spent documents are dropped automatically, no cleanup job needed)
 
 ## groups
 
