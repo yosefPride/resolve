@@ -16,8 +16,7 @@ All protected endpoints require:
 
 Authorization: Bearer <JWT>
 
-A token can become invalid before its own expiry: logging out invalidates every
-token previously issued to that user, not just the one used to log out.
+The access token (the JWT above) is short-lived (15 minutes) and verified statelessly — no database lookup, no revocation check. Session continuity and revocation instead live in a separate refresh token, delivered as an httpOnly, Secure, SameSite=Strict cookie (never in a JSON body, never readable by JS). See POST /auth/refresh.
 
 ---
 
@@ -57,6 +56,8 @@ Response:
 - user
 - jwt
 
+Also sets a refresh_token cookie (httpOnly, Secure, SameSite=Strict, scoped to /auth). Not part of the JSON body.
+
 ---
 
 ## POST /auth/login
@@ -71,6 +72,8 @@ Response:
 - jwt
 - user
 
+Also sets a refresh_token cookie, same as register.
+
 ---
 
 ## GET /auth/me
@@ -81,16 +84,31 @@ Requires JWT.
 
 ---
 
+## POST /auth/refresh
+
+Exchanges the refresh_token cookie for a new access token.
+
+Requires: refresh_token cookie (no Authorization header needed — the access token may already be expired by the time a client refreshes).
+
+Response:
+
+- jwt
+
+Also rotates the refresh_token cookie to a new value. Each refresh token is single-use: the presented token is revoked as part of the exchange, so replaying it afterward fails.
+
+Rejected (401) if the cookie is missing, unrecognized, expired, or already used.
+
+---
+
 ## POST /auth/logout
 
-Invalidates every token previously issued to the current user (not just the
-one used to call this endpoint).
+Revokes the current session's refresh token (the one in the refresh_token cookie) and clears the cookie.
 
-Requires JWT.
+Requires: refresh_token cookie. Does not require a valid access token.
 
-Request: none
+Per-device only — other sessions/devices for the same user are unaffected. Does not invalidate an access token already issued for this session; that token remains valid until its own (15 minute) expiry.
 
-Response: none
+A request with no refresh_token cookie is a no-op (200), not an error.
 
 ---
 
