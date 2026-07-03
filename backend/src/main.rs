@@ -1,5 +1,5 @@
-mod ai;
 mod admin;
+mod ai;
 mod auth;
 mod comment;
 mod config;
@@ -46,10 +46,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(app_state.clone())
             .wrap(Logger::default())
             .wrap(Cors::permissive())
-            .service(
-                web::scope("/api/v1")
-                    .configure(server::routes::configure),
-            )
+            .service(web::scope("/api/v1").configure(server::routes::configure))
     })
     .bind(bind_address)?
     .run()
