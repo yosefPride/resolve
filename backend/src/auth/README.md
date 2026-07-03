@@ -99,9 +99,3 @@ See `db::ensure_indexes` for both.
   `refresh_tokens` row for a `user_id` instead of one row by hash).
 - No reuse-cascade detection on refresh token replay (see Rotation policy
   above).
-- `docs/api.md` and `docs/database.md` still describe the old model
-  (register/login docs don't mention the refresh cookie, `/auth/refresh`
-  isn't listed, and `database.md`'s `users` collection still lists
-  `token_version` under an implicit "auth-related fields" umbrella that no
-  longer applies). Deliberately left as-is for this change — needs a
-  follow-up pass.
