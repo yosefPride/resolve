@@ -5,12 +5,17 @@ use mongodb::bson::oid::ObjectId;
 use crate::auth::jwt;
 use crate::errors::ApiError;
 use crate::state::AppState;
-use crate::user::service::UserService;
 
 pub struct AuthenticatedUser {
     pub user_id: ObjectId,
 }
 
+// Fully stateless: verified by signature + exp alone, no DB lookup. This is
+// safe specifically because access tokens are short-lived (see
+// auth::jwt::ACCESS_TOKEN_TTL_MINUTES) — revocation happens at the refresh
+// token layer, and a stolen access token simply expires on its own shortly
+// after. Session-level revocation is the refresh token's job (see
+// auth::repository::AuthRepository), not this extractor's.
 impl FromRequest for AuthenticatedUser {
     type Error = ApiError;
     type Future = LocalBoxFuture<'static, Result<Self, Self::Error>>;
@@ -36,17 +41,6 @@ impl FromRequest for AuthenticatedUser {
                 .map_err(|_| ApiError::Unauthenticated)?;
             let user_id =
                 ObjectId::parse_str(&claims.sub).map_err(|_| ApiError::Unauthenticated)?;
-
-            // The token must match the user's *current* token_version — a logout
-            // bumps it, which invalidates every token issued before that point.
-            let user = UserService::new(&state.db)
-                .find_raw_by_id(user_id)
-                .await
-                .map_err(|_| ApiError::Internal)?
-                .ok_or(ApiError::Unauthenticated)?;
-            if user.token_version != claims.token_version {
-                return Err(ApiError::Unauthenticated);
-            }
 
             Ok(AuthenticatedUser { user_id })
         })
