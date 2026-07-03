@@ -15,10 +15,6 @@ pub struct User {
     pub password_hash: String,
     pub name: String,
     pub global_role: Option<GlobalRole>,
-    // Bumped on logout to invalidate every token issued before that point.
-    // Defaulted so documents written before this field existed still deserialize.
-    #[serde(default)]
-    pub token_version: i32,
     pub created_at: BsonDateTime,
 }
 

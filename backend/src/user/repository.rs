@@ -61,7 +61,6 @@ impl UserRepository {
             password_hash: input.password_hash,
             name: input.name,
             global_role: None,
-            token_version: 0,
             created_at: BsonDateTime::now(),
         };
         let result = self.collection.insert_one(&user).await?;
@@ -69,7 +68,10 @@ impl UserRepository {
             .inserted_id
             .as_object_id()
             .expect("insert_one always returns an ObjectId");
-        Ok(User { id: Some(id), ..user })
+        Ok(User {
+            id: Some(id),
+            ..user
+        })
     }
 
     pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, UserRepoError> {
@@ -88,12 +90,5 @@ impl UserRepository {
     pub async fn delete(&self, id: ObjectId) -> Result<bool, UserRepoError> {
         let result = self.collection.delete_one(doc! { "_id": id }).await?;
         Ok(result.deleted_count > 0)
-    }
-
-    pub async fn increment_token_version(&self, id: ObjectId) -> Result<(), UserRepoError> {
-        self.collection
-            .update_one(doc! { "_id": id }, doc! { "$inc": { "token_version": 1 } })
-            .await?;
-        Ok(())
     }
 }
