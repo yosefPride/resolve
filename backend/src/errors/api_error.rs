@@ -97,3 +97,9 @@ impl From<jsonwebtoken::errors::Error> for ApiError {
         ApiError::Internal
     }
 }
+
+impl From<mongodb::error::Error> for ApiError {
+    fn from(_: mongodb::error::Error) -> Self {
+        ApiError::Internal
+    }
+}
