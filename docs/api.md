@@ -16,13 +16,9 @@ All protected endpoints require:
 
 Authorization: Bearer <JWT>
 
-<<<<<<< HEAD
-The access token (the JWT above) is short-lived (15 minutes) and verified statelessly — no database lookup, no revocation check. Session continuity and revocation instead live in a separate refresh token, delivered as an httpOnly, Secure, SameSite=Strict cookie (never in a JSON body, never readable by JS). See POST /auth/refresh.
-=======
 The access token (the JWT above) is short-lived (15 minutes) and verified statelessly — no database lookup, no revocation check. Session continuity and revocation instead live in a separate refresh token, delivered as an httpOnly, SameSite=Strict cookie (never in a JSON body, never readable by JS). See POST /auth/refresh.
 
 The cookie's Secure attribute is environment-dependent: on by default, and required in production, but disabled via config for local HTTP development where a real browser would otherwise refuse to store it. Consuming the cookie cross-origin also requires the API to be configured with the frontend's exact origin (no wildcard) and credentials support enabled.
->>>>>>> 7dd84987d819ada10b6361c50f0f6e87e3282edd
 
 ---
 
@@ -62,11 +58,7 @@ Response:
 - user
 - jwt
 
-<<<<<<< HEAD
-Also sets a refresh_token cookie (httpOnly, Secure, SameSite=Strict, scoped to /auth). Not part of the JSON body.
-=======
 Also sets a refresh_token cookie (httpOnly, SameSite=Strict, Secure per environment config, scoped to /auth). Not part of the JSON body.
->>>>>>> 7dd84987d819ada10b6361c50f0f6e87e3282edd
 
 ---
 
