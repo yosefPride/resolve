@@ -49,6 +49,7 @@ No separate AI navigation tab or page is allowed.
 ## 3. Active Session
 
 - Full application access
+- Logout returns to state 1 (Unauthenticated)
 
 ---
 
@@ -134,6 +135,7 @@ Frontend must:
 - Uses JWT only
 - Backend determines active group automatically
 - No group_id sent from frontend
+- Logout calls POST /auth/logout, then clears the client-stored JWT
 
 ---
 

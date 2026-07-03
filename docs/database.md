@@ -38,6 +38,10 @@ Fields:
 - password_hash (bcrypt)
 - name
 - global_role (System Admin only)
+<<<<<<< HEAD
+=======
+- token_version (bumped on logout; invalidates every token issued before the bump)
+>>>>>>> 7dd84987d819ada10b6361c50f0f6e87e3282edd
 - created_at
 
 ---
