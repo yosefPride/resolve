@@ -6,7 +6,7 @@ import logo from '../../assets/logo.png';
 const NAV_LINKS = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/tickets', label: 'Tickets' },
-  { to: '/groups', label: 'Group' },
+  { to: '/groups', label: 'Groups' },
 ];
 
 // Temporary mock — replace with useAuth() once real auth wiring lands.
@@ -95,7 +95,7 @@ export default function Header() {
               </button>
             )}
 
-            {/* {import.meta.env.DEV && (
+            {import.meta.env.DEV && (
               <button
                 type="button"
                 onClick={() => setIsAuthenticated((value) => !value)}
@@ -104,7 +104,7 @@ export default function Header() {
               >
                 dev: {isAuthenticated ? 'logout' : 'login'}
               </button>
-            )} */}
+            )}
           </div>
         </div>
       </div>
@@ -118,7 +118,7 @@ export default function Header() {
               onClick={() => setIsMobileNavOpen(false)}
               className={({ isActive }) =>
                 `rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  isActive ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/10 hover:text-white'
+                  isActive ? 'bg-white/10 text-white' : 'text-gray-400 hover:bg-white/10 hover:text-white'
                 }`
               }
             >
