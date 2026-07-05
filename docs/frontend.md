@@ -37,6 +37,7 @@ No separate AI navigation tab or page is allowed.
 
 ## 1. Unauthenticated
 
+- Landing page (public marketing home)
 - Login
 - Register
 
@@ -61,6 +62,7 @@ src/
     components/
         common/
         layout/
+        marketing/      (public landing page sections: hero, feature grid, workflow, audience)
         ui/             (design-system primitives: cards, tables, form wrappers)
     features/
         auth/
@@ -143,6 +145,7 @@ Frontend must:
 
 Public:
 
+- Landing / Home
 - Login
 - Register
 
