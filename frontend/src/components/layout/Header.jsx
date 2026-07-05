@@ -31,7 +31,7 @@ function NavItem({ to, label, onClick }) {
 
 function Logo({ isAuthenticated }) {
   return (
-    <Link to={isAuthenticated ? '/dashboard' : '/login'} className="group flex items-center">
+    <Link to={isAuthenticated ? '/dashboard' : '/'} className="group flex items-center">
       <img
         src={logo}
         alt="Resolve"
