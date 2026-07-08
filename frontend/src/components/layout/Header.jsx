@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import UserMenu from './UserMenu';
+import { useAuth } from '../../hooks/useAuth';
 import logo from '../../assets/logo.png';
 
 const NAV_LINKS = [
@@ -8,10 +9,6 @@ const NAV_LINKS = [
   { to: '/tickets', label: 'Tickets' },
   { to: '/groups', label: 'Groups' },
 ];
-
-// Temporary mock — replace with useAuth() once real auth wiring lands.
-// globalRole is 'SystemAdmin' so the Admin menu item is visible while developing.
-const MOCK_USER = { name: 'Ada Lovelace', email: 'ada@resolve.dev', globalRole: 'SystemAdmin' };
 
 function NavItem({ to, label, onClick }) {
   return (
@@ -31,7 +28,7 @@ function NavItem({ to, label, onClick }) {
 
 function Logo({ isAuthenticated }) {
   return (
-    <Link to={isAuthenticated ? '/dashboard' : '/login'} className="group flex items-center">
+    <Link to={isAuthenticated ? '/dashboard' : '/'} className="group flex items-center">
       <img
         src={logo}
         alt="Resolve"
@@ -42,11 +39,11 @@ function Logo({ isAuthenticated }) {
 }
 
 export default function Header() {
-  // Temporary local mock — see MOCK_USER above. Swapped for useAuth() later.
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const { user, status, logout } = useAuth();
+  const isAuthenticated = status === 'authenticated';
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
-  const handleLogout = () => setIsAuthenticated(false);
+  const handleLogout = () => logout();
 
   return (
     <header className="sticky top-0 z-50 bg-black/70 backdrop-blur-md">
@@ -64,7 +61,7 @@ export default function Header() {
 
           <div className="flex items-center gap-3">
             {isAuthenticated ? (
-              <UserMenu user={MOCK_USER} onLogout={handleLogout} />
+              <UserMenu user={user} onLogout={handleLogout} />
             ) : (
               <>
                 <Link
@@ -92,17 +89,6 @@ export default function Header() {
                 <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.75">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4 5.5h16M4 12h16M4 18.5h16" />
                 </svg>
-              </button>
-            )}
-
-            {import.meta.env.DEV && (
-              <button
-                type="button"
-                onClick={() => setIsAuthenticated((value) => !value)}
-                title="Dev only: toggle mock auth state"
-                className="ml-2 rounded border border-dashed border-white/20 px-2 py-1 text-[10px] uppercase tracking-wide text-slate-500 transition-colors hover:border-white/40 hover:text-slate-300"
-              >
-                dev: {isAuthenticated ? 'logout' : 'login'}
               </button>
             )}
           </div>

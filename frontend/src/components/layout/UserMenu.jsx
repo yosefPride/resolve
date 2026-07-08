@@ -38,10 +38,10 @@ export default function UserMenu({ user, onLogout }) {
         <div className="absolute right-0 mt-2 w-56 rounded-lg border border-white/10 bg-neutral-950 py-1 shadow-2xl shadow-black/50">
           <div className="flex items-center gap-2 px-4 py-3">
             <span className="relative flex h-2 w-2 shrink-0">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
             </span>
-            <span className="truncate text-sm font-medium text-slate-100">{user?.name}</span>
+            <span className="truncate text-sm font-medium text-green-500">{user?.name}</span>
           </div>
 
           <div className="h-px bg-white/10" />
