@@ -89,14 +89,17 @@ Each feature should follow:
 
 # Session Invalidation
 
-- Each user has a `token_version` on their `users` document
-- Every issued JWT carries the `token_version` it was issued with
-- Every authenticated request compares the JWT's `token_version` against the
-  user's current value — a mismatch is treated as an invalid token
-- Logout increments the user's `token_version`, which invalidates every token
-  issued before that point (not just the one used to log out)
-- There is no per-token revocation list — invalidation is coarse (all-or-nothing
-  per user), not per-session
+- Access tokens (JWT) are verified statelessly (signature + exp only, no DB
+  lookup) and are short-lived (15 minutes), so they are never individually
+  revoked — a stolen one simply expires on its own shortly after
+- Session-level revocation lives in the refresh token instead: each refresh
+  token is a random value, stored server-side only as a SHA-256 hash, in the
+  `refresh_tokens` collection
+- Refresh tokens are single-use — rotated (revoked, replaced) on every
+  `POST /auth/refresh` — and revoked on `POST /auth/logout`
+- Revocation is per-session (per refresh token), not per-user — logging out
+  on one device does not invalidate other devices' sessions
+- See docs/database.md ("refresh_tokens") and docs/api.md for details
 
 ---
 

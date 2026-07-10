@@ -37,6 +37,7 @@ No separate AI navigation tab or page is allowed.
 
 ## 1. Unauthenticated
 
+- Landing page (public marketing home)
 - Login
 - Register
 
@@ -59,8 +60,8 @@ src/
 
     assets/
     components/
-        common/
         layout/
+        marketing/      (public landing page sections: hero, feature grid, workflow, audience)
         ui/             (design-system primitives: cards, tables, form wrappers)
     features/
         auth/
@@ -137,12 +138,24 @@ Frontend must:
 - No group_id sent from frontend
 - Logout calls POST /auth/logout, then clears the client-stored JWT
 
+## Session Handling
+
+- The access JWT is held in memory only (React context), never in localStorage —
+  the refresh token is deliberately httpOnly to keep it out of JS reach, so the
+  access token stays equally unexposed to XSS
+- On app load, the session is silently restored via POST /auth/refresh followed
+  by GET /auth/me, with a loading state shown until this resolves
+- A response interceptor transparently refreshes and retries once on a 401 from
+  an expired access token mid-session; if the refresh itself fails, the user is
+  logged out and redirected to Login
+
 ---
 
 # Pages
 
 Public:
 
+- Landing / Home
 - Login
 - Register
 
