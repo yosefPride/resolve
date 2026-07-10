@@ -38,10 +38,6 @@ Fields:
 - password_hash (bcrypt)
 - name
 - global_role (System Admin only)
-<<<<<<< Updated upstream
-- token_version (bumped on logout; invalidates every token issued before the bump)
-=======
->>>>>>> Stashed changes
 - created_at
 
 ---
