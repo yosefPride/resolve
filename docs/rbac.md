@@ -47,7 +47,7 @@ No dynamic policy system exists.
 - A group must always have at least one Group Admin.
 - A Group Admin may add new members as either Contributor or Group Admin.
 - A Group Admin may not leave, or be removed, while they are the sole Group Admin of a group — a successor Group Admin must be appointed first, unless the entire group is being deleted.
-- System Admin cannot appoint a successor on a group's behalf. Deleting a user who is the sole Group Admin of any group is blocked (see docs/api.md, `DELETE /admin/users/:id`) until an actual member of that group resolves it via normal group-scoped endpoints.
+- System Admin cannot change group roles under normal circumstances. The one exception is scoped to user deletion: when deleting a user who is the sole Group Admin of a group, System Admin must explicitly name a successor from that group's existing members (see docs/api.md, `GET /admin/users/:id/deletion-check` and `POST /admin/users/:id/delete`); if the user is that group's only member, the group is deleted automatically instead. This action is audit-logged (see docs/database.md, `admin_audit_log`).
 
 ---
 

@@ -44,7 +44,8 @@ AI:
 - A group must always have at least one Group Admin: a Group Admin may not leave or be removed while they are the sole Group Admin — a successor must be appointed first, unless the entire group is deleted
 - System Admin can view system metadata and group lists
 - System Admin cannot access ticket data unless they are a member of that group
-- System Admin cannot resolve a group's succession on its behalf — deleting a user who is the sole Group Admin of any group is blocked until an actual member of that group appoints a successor or deletes the group
+- System Admin may resolve group succession, but only as a side effect of deleting that user: if the user is the sole Group Admin of a group, System Admin must explicitly name a successor from that group's existing members before the deletion proceeds; if the user is that group's only member, the group is deleted automatically instead
+- This is a narrow, audit-logged exception — System Admin cannot otherwise change group roles or membership
 
 ---
 
