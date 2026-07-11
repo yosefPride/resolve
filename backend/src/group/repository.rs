@@ -80,6 +80,11 @@ impl GroupRepository {
         Ok(self.groups.find_one(doc! { "_id": id }).await?)
     }
 
+    pub async fn list_all_groups(&self) -> Result<Vec<Group>, GroupRepoError> {
+        let cursor = self.groups.find(doc! {}).await?;
+        cursor.try_collect().await.map_err(Into::into)
+    }
+
     pub async fn delete_group(&self, id: ObjectId) -> Result<bool, GroupRepoError> {
         let result = self.groups.delete_one(doc! { "_id": id }).await?;
         Ok(result.deleted_count > 0)
