@@ -1,13 +1,17 @@
 use actix_web::{HttpResponse, ResponseError, http::StatusCode};
 use serde::Serialize;
 
+use crate::group::repository::GroupRepoError;
 use crate::user::repository::UserRepoError;
 
 #[derive(Debug)]
 pub enum ApiError {
     InvalidCredentials,
     Unauthenticated,
+    Forbidden,
+    NotFound,
     DuplicateEmail,
+    Conflict(String),
     Validation(String),
     Internal,
 }
@@ -28,7 +32,10 @@ impl ApiError {
         match self {
             ApiError::InvalidCredentials => "invalid_credentials",
             ApiError::Unauthenticated => "unauthenticated",
+            ApiError::Forbidden => "forbidden",
+            ApiError::NotFound => "not_found",
             ApiError::DuplicateEmail => "duplicate_email",
+            ApiError::Conflict(_) => "conflict",
             ApiError::Validation(_) => "validation_error",
             ApiError::Internal => "internal_error",
         }
@@ -38,7 +45,12 @@ impl ApiError {
         match self {
             ApiError::InvalidCredentials => "invalid email or password".to_string(),
             ApiError::Unauthenticated => "missing or invalid authentication token".to_string(),
+            // Deliberately generic: doesn't distinguish "not a member" from
+            // "group doesn't exist" so non-members can't enumerate group ids.
+            ApiError::Forbidden => "you do not have permission to perform this action".to_string(),
+            ApiError::NotFound => "resource not found".to_string(),
             ApiError::DuplicateEmail => "email already in use".to_string(),
+            ApiError::Conflict(message) => message.clone(),
             ApiError::Validation(message) => message.clone(),
             ApiError::Internal => "internal server error".to_string(),
         }
@@ -58,7 +70,10 @@ impl ResponseError for ApiError {
         match self {
             ApiError::InvalidCredentials => StatusCode::UNAUTHORIZED,
             ApiError::Unauthenticated => StatusCode::UNAUTHORIZED,
+            ApiError::Forbidden => StatusCode::FORBIDDEN,
+            ApiError::NotFound => StatusCode::NOT_FOUND,
             ApiError::DuplicateEmail => StatusCode::CONFLICT,
+            ApiError::Conflict(_) => StatusCode::CONFLICT,
             ApiError::Validation(_) => StatusCode::BAD_REQUEST,
             ApiError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -101,5 +116,16 @@ impl From<jsonwebtoken::errors::Error> for ApiError {
 impl From<mongodb::error::Error> for ApiError {
     fn from(_: mongodb::error::Error) -> Self {
         ApiError::Internal
+    }
+}
+
+impl From<GroupRepoError> for ApiError {
+    fn from(err: GroupRepoError) -> Self {
+        match err {
+            GroupRepoError::DuplicateMember => {
+                ApiError::Conflict("user is already a member of this group".to_string())
+            }
+            GroupRepoError::Database(_) => ApiError::Internal,
+        }
     }
 }

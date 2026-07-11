@@ -1,6 +1,7 @@
 use actix_web::web;
 
 use crate::auth::handlers as auth_handlers;
+use crate::group::handlers as group_handlers;
 
 pub fn configure(config: &mut web::ServiceConfig) {
     config
@@ -12,7 +13,24 @@ pub fn configure(config: &mut web::ServiceConfig) {
                 .route("/refresh", web::post().to(auth_handlers::refresh))
                 .route("/logout", web::post().to(auth_handlers::logout)),
         )
-        .service(web::scope("/groups"))
+        .service(
+            web::scope("/groups")
+                .route("", web::post().to(group_handlers::create_group))
+                .route("", web::get().to(group_handlers::list_my_groups))
+                .route("/{id}", web::get().to(group_handlers::get_group))
+                .route("/{id}", web::patch().to(group_handlers::rename_group))
+                .route("/{id}", web::delete().to(group_handlers::delete_group))
+                .route("/{id}/users", web::get().to(group_handlers::list_members))
+                .route("/{id}/users", web::post().to(group_handlers::add_member))
+                .route(
+                    "/{id}/users/{user_id}",
+                    web::patch().to(group_handlers::update_member_role),
+                )
+                .route(
+                    "/{id}/users/{user_id}",
+                    web::delete().to(group_handlers::remove_member),
+                ),
+        )
         .service(web::scope("/tickets"))
         .service(web::scope("/ai"))
         .service(web::scope("/admin"));
