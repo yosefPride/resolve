@@ -166,7 +166,7 @@ System Admin can:
 
 - view all groups (metadata only)
 - view users
-- delete users
+- delete users (naming a successor Group Admin where required — see docs/rbac.md, "Group Admin Succession")
 - delete groups
 - view system analytics (aggregated only)
 
@@ -174,4 +174,4 @@ System Admin cannot:
 
 - Read tickets across groups
 - Access private group data without membership
-- Delete a user who is the sole Group Admin of a group (must be resolved by that group's own members first)
+- Change group roles or membership outside the scoped user-deletion succession exception above

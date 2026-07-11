@@ -340,11 +340,41 @@ List users
 
 ---
 
-## DELETE /admin/users/:id
+## GET /admin/users/:id/deletion-check
 
-Delete user
+Preview what deleting this user would require, before committing to it.
 
-Rejected (409) if the user is the sole Group Admin of any group. That group's succession must be resolved first — an existing member appoints a new Group Admin via PATCH /groups/:id/users/:user_id, or deletes the group via DELETE /groups/:id — using normal group-scoped endpoints. System Admin cannot resolve this on the group's behalf.
+For every group where the user is the sole Group Admin:
+
+- if the group has other members, returns that group's id plus the list of eligible successors (existing members) to choose from
+- if the user is that group's only member, returns that group flagged for automatic deletion (no successor possible)
+
+Groups where the user is a Contributor, or a non-sole Group Admin, are not blocking and are omitted — deletion just removes that membership.
+
+Response:
+
+- blocked_groups[] (group_id, eligible_successors[])
+- auto_delete_groups[] (group_id)
+
+---
+
+## POST /admin/users/:id/delete
+
+Delete the user, resolving group-admin succession as needed.
+
+Request:
+
+- successors: { group_id: successor_user_id, ... } — required for every group returned in `blocked_groups` by the deletion-check above
+
+Server re-validates at commit time (a successor must still be a member of that group; a group's blocking status may have changed since the check call) rather than trusting the check response blindly. Rejected (409) if a required successor is missing or no longer valid — no partial deletion.
+
+Per group, as part of the same operation:
+
+- sole Group Admin, other members exist → named successor is promoted to Group Admin, then the deleted user's membership is removed
+- sole Group Admin, no other members → the group is deleted entirely (cascades its group_members rows)
+- non-sole Group Admin or Contributor → membership is simply removed
+
+Every succession or auto-deletion performed this way is recorded in `admin_audit_log` (see docs/database.md).
 
 ---
 
