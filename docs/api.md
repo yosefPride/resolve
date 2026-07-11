@@ -380,7 +380,9 @@ Every succession or auto-deletion performed this way is recorded in `admin_audit
 
 ## DELETE /admin/groups/:id
 
-Delete group
+Delete the group entirely — System Admin only.
+
+No membership or succession check: unlike deleting a user, deleting the whole group removes the "at least one Group Admin" requirement along with it, since the group and all its data cease to exist. Group Admins deleting their own group use `DELETE /groups/:id` instead (see Group Endpoints above) — that endpoint remains Group-Admin-scoped and unaffected by this one.
 
 ---
 
