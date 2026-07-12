@@ -1,17 +1,22 @@
 use mongodb::{Database, bson::oid::ObjectId};
 
 use crate::errors::ApiError;
-use crate::group::models::{CreateGroupInput, GroupMember, GroupResponse, MemberResponse, Role};
+use crate::group::models::{
+    CreateGroupInput, GroupMember, GroupResponse, MemberResponse, Role, UserLookupResponse,
+};
 use crate::group::repository::GroupRepository;
+use crate::user::service::UserService;
 
 pub struct GroupService {
     repo: GroupRepository,
+    user_service: UserService,
 }
 
 impl GroupService {
     pub fn new(db: &Database) -> Self {
         Self {
             repo: GroupRepository::new(db),
+            user_service: UserService::new(db),
         }
     }
 
@@ -82,6 +87,27 @@ impl GroupService {
             .into_iter()
             .map(Into::into)
             .collect())
+    }
+
+    // Group Admin only. There is no user directory or join flow — an exact
+    // email match is the only way to resolve the user_id add_member needs.
+    pub async fn lookup_user_by_email(
+        &self,
+        user_id: ObjectId,
+        group_id: ObjectId,
+        email: &str,
+    ) -> Result<UserLookupResponse, ApiError> {
+        self.require_group_admin(group_id, user_id).await?;
+        let target = self
+            .user_service
+            .find_by_email(email)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+        Ok(UserLookupResponse {
+            id: target.id.map(|id| id.to_hex()).unwrap_or_default(),
+            name: target.name,
+            email: target.email,
+        })
     }
 
     pub async fn add_member(

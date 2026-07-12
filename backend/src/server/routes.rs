@@ -24,6 +24,10 @@ pub fn configure(config: &mut web::ServiceConfig) {
                 .route("/{id}/users", web::get().to(group_handlers::list_members))
                 .route("/{id}/users", web::post().to(group_handlers::add_member))
                 .route(
+                    "/{id}/users/lookup",
+                    web::get().to(group_handlers::lookup_user),
+                )
+                .route(
                     "/{id}/users/{user_id}",
                     web::patch().to(group_handlers::update_member_role),
                 )

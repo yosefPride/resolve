@@ -1,6 +1,7 @@
 use mongodb::{IndexModel, bson::doc, bson::oid::ObjectId, options::IndexOptions};
 use resolve::errors::ApiError;
 use resolve::group::{models::Role, service::GroupService};
+use resolve::user::{models::CreateUserInput, repository::UserRepository};
 
 async fn setup() -> GroupService {
     dotenvy::dotenv().ok();
@@ -43,6 +44,35 @@ fn assert_forbidden<T: std::fmt::Debug>(result: Result<T, ApiError>) {
 
 fn assert_conflict<T: std::fmt::Debug>(result: Result<T, ApiError>) {
     assert!(matches!(result, Err(ApiError::Conflict(_))), "{result:?}");
+}
+
+fn assert_not_found<T: std::fmt::Debug>(result: Result<T, ApiError>) {
+    assert!(matches!(result, Err(ApiError::NotFound)), "{result:?}");
+}
+
+fn unique_email(prefix: &str) -> String {
+    format!("{prefix}-{}@test.com", ObjectId::new())
+}
+
+// Seeds a real `users` document via a fresh connection to the same
+// "resolve_test" database `setup()` uses, independent of any given
+// GroupService's own db handle (collections are shared by db name).
+async fn seed_user(email: &str, name: &str) -> ObjectId {
+    let uri = std::env::var("MONGO_URI").expect("MONGO_URI must be set");
+    let client = mongodb::Client::with_uri_str(&uri)
+        .await
+        .expect("failed to connect to MongoDB");
+    let db = client.database("resolve_test");
+    let user_repo = UserRepository::new(&db);
+    let user = user_repo
+        .create(CreateUserInput {
+            email: email.to_string(),
+            name: name.to_string(),
+            password_hash: "irrelevant".to_string(),
+        })
+        .await
+        .expect("failed to seed user");
+    user.id.expect("insert_one always returns an id")
 }
 
 // 1. Creating a group auto-adds the creator as Group Admin.
@@ -401,4 +431,68 @@ async fn test_list_members_non_member_forbidden() {
 
     let result = service.list_members(oid(), group_id).await;
     assert_forbidden(result);
+}
+
+// 19. A Contributor cannot look up users for the group (checked before any
+// user data is touched, so no seeded user is needed for this one).
+#[tokio::test]
+async fn test_lookup_user_by_email_contributor_forbidden() {
+    let service = setup().await;
+    let owner_id = oid();
+    let contributor_id = oid();
+    let group = service
+        .create_group(owner_id, "Team".to_string())
+        .await
+        .expect("create failed");
+    let group_id = ObjectId::parse_str(&group.id).unwrap();
+
+    service
+        .add_member(owner_id, group_id, contributor_id, Role::Contributor)
+        .await
+        .expect("add failed");
+
+    let result = service
+        .lookup_user_by_email(contributor_id, group_id, "someone@example.com")
+        .await;
+    assert_forbidden(result);
+}
+
+// 20. A Group Admin looking up an exact, existing email gets that user back.
+#[tokio::test]
+async fn test_lookup_user_by_email_admin_finds_exact_match() {
+    let service = setup().await;
+    let owner_id = oid();
+    let group = service
+        .create_group(owner_id, "Team".to_string())
+        .await
+        .expect("create failed");
+    let group_id = ObjectId::parse_str(&group.id).unwrap();
+
+    let email = unique_email("lookup-found");
+    let target_id = seed_user(&email, "Found User").await;
+
+    let found = service
+        .lookup_user_by_email(owner_id, group_id, &email)
+        .await
+        .expect("lookup failed");
+    assert_eq!(found.id, target_id.to_hex());
+    assert_eq!(found.name, "Found User");
+    assert_eq!(found.email, email);
+}
+
+// 21. A Group Admin looking up an email with no match gets NotFound.
+#[tokio::test]
+async fn test_lookup_user_by_email_no_match_not_found() {
+    let service = setup().await;
+    let owner_id = oid();
+    let group = service
+        .create_group(owner_id, "Team".to_string())
+        .await
+        .expect("create failed");
+    let group_id = ObjectId::parse_str(&group.id).unwrap();
+
+    let result = service
+        .lookup_user_by_email(owner_id, group_id, &unique_email("lookup-missing"))
+        .await;
+    assert_not_found(result);
 }
