@@ -57,20 +57,10 @@ impl From<Group> for GroupResponse {
 pub struct MemberResponse {
     pub id: String,
     pub user_id: String,
+    pub name: String,
+    pub email: String,
     pub role: Role,
     pub joined_at: DateTime<Utc>,
-}
-
-impl From<GroupMember> for MemberResponse {
-    fn from(member: GroupMember) -> Self {
-        MemberResponse {
-            id: member.id.map(|id| id.to_hex()).unwrap_or_default(),
-            user_id: member.user_id.to_hex(),
-            role: member.role,
-            joined_at: DateTime::from_timestamp_millis(member.joined_at.timestamp_millis())
-                .unwrap_or_default(),
-        }
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
