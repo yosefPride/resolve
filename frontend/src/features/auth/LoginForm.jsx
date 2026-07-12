@@ -20,7 +20,7 @@ export default function LoginForm() {
     setIsSubmitting(true);
     try {
       await login(form);
-      navigate('/dashboard');
+      navigate('/groups');
     } catch (err) {
       setError(err.response?.data?.message || 'Invalid email or password.');
     } finally {
