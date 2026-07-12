@@ -343,3 +343,30 @@ async fn test_delete_group() {
     let found = repo.find_group_by_id(group.id.unwrap()).await.expect("find failed");
     assert!(found.is_none());
 }
+
+// 16. List all groups returns every group, regardless of owner.
+#[tokio::test]
+async fn test_list_all_groups() {
+    let repo = setup().await;
+    repo.create_group(CreateGroupInput {
+        name: "A".to_string(),
+        owner_id: oid(),
+    })
+    .await
+    .expect("create failed");
+    repo.create_group(CreateGroupInput {
+        name: "B".to_string(),
+        owner_id: oid(),
+    })
+    .await
+    .expect("create failed");
+    repo.create_group(CreateGroupInput {
+        name: "C".to_string(),
+        owner_id: oid(),
+    })
+    .await
+    .expect("create failed");
+
+    let groups = repo.list_all_groups().await.expect("list failed");
+    assert_eq!(groups.len(), 3);
+}

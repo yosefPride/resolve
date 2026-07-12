@@ -167,7 +167,7 @@ System Admin can:
 - view all groups (metadata only)
 - view users
 - delete users (naming a successor Group Admin where required — see docs/rbac.md, "Group Admin Succession")
-- delete groups
+- delete groups (no membership or successor check needed — see docs/rbac.md, "Group Admin Succession")
 - view system analytics (aggregated only)
 
 System Admin cannot:
