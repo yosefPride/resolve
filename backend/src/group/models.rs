@@ -53,6 +53,20 @@ impl From<Group> for GroupResponse {
     }
 }
 
+// Distinct from GroupResponse: this is specifically for "my groups" (GET
+// /groups), where role and member_count are meaningful (caller-relative /
+// list-view data). GroupResponse stays the plain group-metadata shape used
+// everywhere else (create/get/rename, and admin's system-wide group list),
+// where neither field applies.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupSummaryResponse {
+    pub id: String,
+    pub name: String,
+    pub role: Role,
+    pub member_count: u64,
+    pub created_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemberResponse {
     pub id: String,

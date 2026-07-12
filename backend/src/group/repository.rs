@@ -152,6 +152,18 @@ impl GroupRepository {
         cursor.try_collect().await.map_err(Into::into)
     }
 
+    // Same "user_id" query as list_groups_for_user, but keeps the
+    // GroupMember (and its role) instead of resolving straight to Group —
+    // used by list_my_groups, which needs the caller's role per group.
+    pub async fn list_memberships_for_user(&self, user_id: ObjectId) -> Result<Vec<GroupMember>, GroupRepoError> {
+        let cursor = self.members.find(doc! { "user_id": user_id }).await?;
+        cursor.try_collect().await.map_err(Into::into)
+    }
+
+    pub async fn count_members(&self, group_id: ObjectId) -> Result<u64, GroupRepoError> {
+        Ok(self.members.count_documents(doc! { "group_id": group_id }).await?)
+    }
+
     pub async fn count_group_admins(&self, group_id: ObjectId) -> Result<u64, GroupRepoError> {
         let role = bson::to_bson(&Role::GroupAdmin).expect("Role always serializes");
         Ok(self
