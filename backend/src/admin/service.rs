@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use chrono::DateTime;
 use mongodb::{
     Database,
     bson::{DateTime as BsonDateTime, oid::ObjectId},
@@ -10,7 +11,7 @@ use crate::admin::models::{
 };
 use crate::admin::repository::AdminRepository;
 use crate::errors::ApiError;
-use crate::group::models::{GroupMember, GroupResponse, Role};
+use crate::group::models::{GroupMember, GroupResponse, MemberResponse, Role};
 use crate::group::repository::GroupRepository;
 use crate::user::models::{GlobalRole, UserResponse};
 use crate::user::service::UserService;
@@ -53,16 +54,17 @@ impl AdminService {
 
         let plan = self.build_plan(target_user_id).await?;
 
+        let mut blocked_groups = Vec::with_capacity(plan.blocked.len());
+        for (group_id, group_name, others) in plan.blocked {
+            blocked_groups.push(BlockedGroupInfo {
+                group_id: group_id.to_hex(),
+                group_name,
+                eligible_successors: self.enrich_members(others).await?,
+            });
+        }
+
         Ok(DeletionCheckResponse {
-            blocked_groups: plan
-                .blocked
-                .into_iter()
-                .map(|(group_id, group_name, others)| BlockedGroupInfo {
-                    group_id: group_id.to_hex(),
-                    group_name,
-                    eligible_successors: others.into_iter().map(Into::into).collect(),
-                })
-                .collect(),
+            blocked_groups,
             auto_delete_groups: plan
                 .auto_delete
                 .into_iter()
@@ -186,6 +188,28 @@ impl AdminService {
             return Err(ApiError::NotFound);
         }
         Ok(())
+    }
+
+    // Same enrichment GroupService::enrich_member does (MemberResponse needs
+    // name/email, which GroupMember doesn't carry) — duplicated rather than
+    // shared, since AdminService already holds its own UserService and this
+    // is the only place it needs it.
+    async fn enrich_members(&self, members: Vec<GroupMember>) -> Result<Vec<MemberResponse>, ApiError> {
+        let mut result = Vec::with_capacity(members.len());
+        for member in members {
+            let user = self.user_service.find_by_id(member.user_id).await?;
+            let (name, email) = user.map(|u| (u.name, u.email)).unwrap_or_default();
+            result.push(MemberResponse {
+                id: member.id.map(|id| id.to_hex()).unwrap_or_default(),
+                user_id: member.user_id.to_hex(),
+                name,
+                email,
+                role: member.role,
+                joined_at: DateTime::from_timestamp_millis(member.joined_at.timestamp_millis())
+                    .unwrap_or_default(),
+            });
+        }
+        Ok(result)
     }
 
     async fn require_system_admin(&self, caller_id: ObjectId) -> Result<(), ApiError> {
