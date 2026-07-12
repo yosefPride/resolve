@@ -85,6 +85,18 @@ pub struct AddMemberRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct LookupUserQuery {
+    pub email: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UserLookupResponse {
+    pub id: String,
+    pub name: String,
+    pub email: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateMemberRoleRequest {
     pub role: Role,
 }

@@ -2,7 +2,10 @@ use actix_web::{App, test, web};
 use mongodb::{Database, IndexModel, bson::doc, bson::oid::ObjectId, options::IndexOptions};
 use resolve::auth::models::{AuthResponse, RegisterRequest};
 use resolve::config::Config;
-use resolve::group::models::{AddMemberRequest, CreateGroupRequest, GroupResponse, MemberResponse, Role, UpdateMemberRoleRequest};
+use resolve::group::models::{
+    AddMemberRequest, CreateGroupRequest, GroupResponse, MemberResponse, Role, UpdateMemberRoleRequest,
+    UserLookupResponse,
+};
 use resolve::group::repository::GroupRepository;
 use resolve::server::routes;
 use resolve::state::AppState;
@@ -364,4 +367,89 @@ async fn test_rename_and_delete_group() {
     assert_eq!(test::call_service(&app, get_after_delete_req).await.status(), 403);
 
     user_repo.delete(ObjectId::parse_str(&owner.user.id).unwrap()).await.ok();
+}
+
+// 7. Group Admin looks up a user by exact email to get their user_id; a
+// Contributor is forbidden from the same lookup; a non-matching email 404s.
+#[actix_web::test]
+async fn test_lookup_user_by_email() {
+    let (db, uri) = setup_db().await;
+    let group_repo = GroupRepository::new(&db);
+    let user_repo = UserRepository::new(&db);
+    let app = test::init_service(
+        App::new()
+            .app_data(build_app_state(db, uri))
+            .service(web::scope("/api/v1").configure(routes::configure)),
+    )
+    .await;
+
+    let owner: AuthResponse =
+        test::read_body_json(test::call_service(&app, register_request("lookup-owner").to_request()).await).await;
+    let contributor: AuthResponse = test::read_body_json(
+        test::call_service(&app, register_request("lookup-contributor").to_request()).await,
+    )
+    .await;
+    let target: AuthResponse =
+        test::read_body_json(test::call_service(&app, register_request("lookup-target").to_request()).await).await;
+
+    let create_req = test::TestRequest::post()
+        .uri("/api/v1/groups")
+        .insert_header(auth_header(&owner.jwt))
+        .set_json(&CreateGroupRequest {
+            name: "Team".to_string(),
+        })
+        .to_request();
+    let group: GroupResponse = test::read_body_json(test::call_service(&app, create_req).await).await;
+
+    let add_contributor_req = test::TestRequest::post()
+        .uri(&format!("/api/v1/groups/{}/users", group.id))
+        .insert_header(auth_header(&owner.jwt))
+        .set_json(&AddMemberRequest {
+            user_id: contributor.user.id.clone(),
+            role: Role::Contributor,
+        })
+        .to_request();
+    assert_eq!(test::call_service(&app, add_contributor_req).await.status(), 201);
+
+    // Owner (Group Admin) finds the exact match.
+    let found_req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/groups/{}/users/lookup?email={}",
+            group.id, target.user.email
+        ))
+        .insert_header(auth_header(&owner.jwt))
+        .to_request();
+    let found_resp = test::call_service(&app, found_req).await;
+    assert_eq!(found_resp.status(), 200);
+    let found: UserLookupResponse = test::read_body_json(found_resp).await;
+    assert_eq!(found.id, target.user.id);
+    assert_eq!(found.email, target.user.email);
+
+    // Contributor is forbidden from the same lookup.
+    let forbidden_req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/groups/{}/users/lookup?email={}",
+            group.id, target.user.email
+        ))
+        .insert_header(auth_header(&contributor.jwt))
+        .to_request();
+    assert_eq!(test::call_service(&app, forbidden_req).await.status(), 403);
+
+    // No match for a nonexistent email.
+    let missing_req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/groups/{}/users/lookup?email={}",
+            group.id,
+            unique_email("lookup-missing")
+        ))
+        .insert_header(auth_header(&owner.jwt))
+        .to_request();
+    assert_eq!(test::call_service(&app, missing_req).await.status(), 404);
+
+    let group_id = ObjectId::parse_str(&group.id).unwrap();
+    group_repo.delete_members_by_group(group_id).await.ok();
+    group_repo.delete_group(group_id).await.ok();
+    for user in [owner, contributor, target] {
+        user_repo.delete(ObjectId::parse_str(&user.user.id).unwrap()).await.ok();
+    }
 }
