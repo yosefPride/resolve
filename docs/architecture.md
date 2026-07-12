@@ -78,5 +78,7 @@ System Admin exceptions apply only to:
 
 - system metadata
 - aggregated analytics
+- resolving group-admin succession strictly as part of deleting that user (audit-logged; see docs/rbac.md, "Group Admin Succession")
+- deleting a group outright (no membership or successor check, not audit-logged — see docs/rbac.md, "Group Admin Succession")
 
 Never raw cross-group ticket access.

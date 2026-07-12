@@ -38,7 +38,6 @@ Fields:
 - password_hash (bcrypt)
 - name
 - global_role (System Admin only)
-- token_version (bumped on logout; invalidates every token issued before the bump)
 - created_at
 
 ---
@@ -157,6 +156,24 @@ Fields:
 
 ---
 
+## admin_audit_log
+
+Records System Admin's scoped exception to group self-governance: naming a Group Admin successor (or auto-deleting a group with no possible successor) as part of deleting a user — see docs/rbac.md ("Group Admin Succession") and docs/api.md (`POST /admin/users/:id/delete`).
+
+Fields:
+
+- \_id
+- action (succession | group_auto_deleted)
+- group_id
+- deleted_user_id (the user being deleted, was sole Group Admin of group_id)
+- successor_user_id (nullable; set only when action = succession)
+- performed_by (System Admin's user_id)
+- created_at
+
+Like refresh_tokens, this is system-level data tied to an admin action, not group-scoped tenant data — it is written by System Admin, not queried by group-scoped business logic.
+
+---
+
 # Relationship Model (Important)
 
 - users → refresh_tokens (1-to-many)
@@ -165,6 +182,8 @@ Fields:
 - tickets → comments (1-to-many)
 - tickets → ai_ticket_insights (1-to-1 or 1-to-many over time)
 - groups → ai_group_reports (1-to-many)
+- users → admin_audit_log (deleted_user_id, performed_by) (1-to-many)
+- groups → admin_audit_log (1-to-many)
 
 ---
 
@@ -276,6 +295,11 @@ Recommended indexes:
 
 - ticket_id
 - group_id
+
+## admin_audit_log
+
+- group_id
+- deleted_user_id
 
 ---
 
