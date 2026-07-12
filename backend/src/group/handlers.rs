@@ -2,7 +2,9 @@ use actix_web::{HttpResponse, web};
 use mongodb::bson::oid::ObjectId;
 
 use crate::errors::ApiError;
-use crate::group::models::{AddMemberRequest, CreateGroupRequest, UpdateMemberRoleRequest};
+use crate::group::models::{
+    AddMemberRequest, CreateGroupRequest, LookupUserQuery, UpdateMemberRoleRequest,
+};
 use crate::group::service::GroupService;
 use crate::server::middleware::AuthenticatedUser;
 use crate::state::AppState;
@@ -88,6 +90,25 @@ pub async fn list_members(
     let service = GroupService::new(&state.db);
     let members = service.list_members(user.user_id, group_id).await?;
     Ok(HttpResponse::Ok().json(members))
+}
+
+pub async fn lookup_user(
+    user: AuthenticatedUser,
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+    query: web::Query<LookupUserQuery>,
+) -> Result<HttpResponse, ApiError> {
+    let group_id = parse_id(&path.into_inner())?;
+    let email = query.into_inner().email;
+    if email.trim().is_empty() {
+        return Err(ApiError::Validation("email is required".to_string()));
+    }
+
+    let service = GroupService::new(&state.db);
+    let result = service
+        .lookup_user_by_email(user.user_id, group_id, &email)
+        .await?;
+    Ok(HttpResponse::Ok().json(result))
 }
 
 pub async fn add_member(
