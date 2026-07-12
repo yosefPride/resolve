@@ -40,7 +40,7 @@ export default function CreateGroupForm({ onCreated }) {
       <button
         type="submit"
         disabled={isSubmitting}
-        className="mt-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition-all duration-200 hover:shadow-[0_0_15px_2px_rgba(255,255,255,0.5)] disabled:opacity-50"
+        className="mt-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition-all duration-200 hover:bg-slate-200 disabled:opacity-50"
       >
         {isSubmitting ? 'Creating…' : 'Create group'}
       </button>
