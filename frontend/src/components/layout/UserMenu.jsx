@@ -15,7 +15,7 @@ export default function UserMenu({ user, onLogout }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const isSystemAdmin = user?.globalRole === 'SystemAdmin';
+  const isSystemAdmin = user?.global_role === 'SystemAdmin';
 
   return (
     <div className="relative" ref={menuRef}>
