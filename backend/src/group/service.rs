@@ -1,3 +1,4 @@
+use chrono::DateTime;
 use mongodb::{Database, bson::oid::ObjectId};
 
 use crate::errors::ApiError;
@@ -80,13 +81,31 @@ impl GroupService {
         group_id: ObjectId,
     ) -> Result<Vec<MemberResponse>, ApiError> {
         self.require_member(group_id, user_id).await?;
-        Ok(self
-            .repo
-            .list_members(group_id)
-            .await?
-            .into_iter()
-            .map(Into::into)
-            .collect())
+        let members = self.repo.list_members(group_id).await?;
+        let mut result = Vec::with_capacity(members.len());
+        for member in members {
+            result.push(self.enrich_member(member).await?);
+        }
+        Ok(result)
+    }
+
+    // MemberResponse needs name/email, which GroupMember doesn't carry — this
+    // is the one place that joins against the users collection to fill them
+    // in. One find_by_id per member rather than a $lookup aggregation: matches
+    // the rest of the repo layer (no aggregations anywhere yet), fine at
+    // expected group sizes.
+    async fn enrich_member(&self, member: GroupMember) -> Result<MemberResponse, ApiError> {
+        let user = self.user_service.find_by_id(member.user_id).await?;
+        let (name, email) = user.map(|u| (u.name, u.email)).unwrap_or_default();
+        Ok(MemberResponse {
+            id: member.id.map(|id| id.to_hex()).unwrap_or_default(),
+            user_id: member.user_id.to_hex(),
+            name,
+            email,
+            role: member.role,
+            joined_at: DateTime::from_timestamp_millis(member.joined_at.timestamp_millis())
+                .unwrap_or_default(),
+        })
     }
 
     // Group Admin only. There is no user directory or join flow — an exact
@@ -119,7 +138,7 @@ impl GroupService {
     ) -> Result<MemberResponse, ApiError> {
         self.require_group_admin(group_id, user_id).await?;
         let member = self.repo.insert_member(group_id, target_user_id, role).await?;
-        Ok(member.into())
+        self.enrich_member(member).await
     }
 
     pub async fn update_member_role(
@@ -154,7 +173,7 @@ impl GroupService {
             .find_member(group_id, target_user_id)
             .await?
             .ok_or(ApiError::Internal)?;
-        Ok(member.into())
+        self.enrich_member(member).await
     }
 
     pub async fn remove_member(
