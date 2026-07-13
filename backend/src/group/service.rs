@@ -3,7 +3,8 @@ use mongodb::{Database, bson::oid::ObjectId};
 
 use crate::errors::ApiError;
 use crate::group::models::{
-    CreateGroupInput, GroupMember, GroupResponse, MemberResponse, Role, UserLookupResponse,
+    CreateGroupInput, GroupMember, GroupResponse, GroupSummaryResponse, MemberResponse, Role,
+    UserLookupResponse,
 };
 use crate::group::repository::GroupRepository;
 use crate::user::service::UserService;
@@ -40,14 +41,26 @@ impl GroupService {
         Ok(group.into())
     }
 
-    pub async fn list_my_groups(&self, user_id: ObjectId) -> Result<Vec<GroupResponse>, ApiError> {
-        Ok(self
-            .repo
-            .list_groups_for_user(user_id)
-            .await?
-            .into_iter()
-            .map(Into::into)
-            .collect())
+    pub async fn list_my_groups(&self, user_id: ObjectId) -> Result<Vec<GroupSummaryResponse>, ApiError> {
+        let memberships = self.repo.list_memberships_for_user(user_id).await?;
+        let mut result = Vec::with_capacity(memberships.len());
+        for membership in memberships {
+            let group = self
+                .repo
+                .find_group_by_id(membership.group_id)
+                .await?
+                .ok_or(ApiError::Internal)?;
+            let member_count = self.repo.count_members(membership.group_id).await?;
+            result.push(GroupSummaryResponse {
+                id: group.id.map(|id| id.to_hex()).unwrap_or_default(),
+                name: group.name,
+                role: membership.role,
+                member_count,
+                created_at: DateTime::from_timestamp_millis(group.created_at.timestamp_millis())
+                    .unwrap_or_default(),
+            });
+        }
+        Ok(result)
     }
 
     pub async fn get_group(&self, user_id: ObjectId, group_id: ObjectId) -> Result<GroupResponse, ApiError> {

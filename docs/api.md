@@ -136,9 +136,11 @@ Response:
 
 List groups user belongs to
 
-Response:
+Response, per group (list-view shape, distinct from the plain group metadata returned by create/get/rename below):
 
-- groups[]
+- id, name, created_at
+- role — caller's role in that group
+- member_count
 
 ---
 

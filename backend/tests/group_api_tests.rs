@@ -3,8 +3,8 @@ use mongodb::{Database, IndexModel, bson::doc, bson::oid::ObjectId, options::Ind
 use resolve::auth::models::{AuthResponse, RegisterRequest};
 use resolve::config::Config;
 use resolve::group::models::{
-    AddMemberRequest, CreateGroupRequest, GroupResponse, MemberResponse, Role, UpdateMemberRoleRequest,
-    UserLookupResponse,
+    AddMemberRequest, CreateGroupRequest, GroupResponse, GroupSummaryResponse, MemberResponse, Role,
+    UpdateMemberRoleRequest, UserLookupResponse,
 };
 use resolve::group::repository::GroupRepository;
 use resolve::server::routes;
@@ -114,9 +114,11 @@ async fn test_create_and_list_groups() {
         .to_request();
     let list_resp = test::call_service(&app, list_req).await;
     assert_eq!(list_resp.status(), 200);
-    let groups: Vec<GroupResponse> = test::read_body_json(list_resp).await;
+    let groups: Vec<GroupSummaryResponse> = test::read_body_json(list_resp).await;
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0].id, group.id);
+    assert_eq!(groups[0].role, Role::GroupAdmin);
+    assert_eq!(groups[0].member_count, 1);
 
     let group_id = ObjectId::parse_str(&group.id).unwrap();
     group_repo.delete_members_by_group(group_id).await.ok();

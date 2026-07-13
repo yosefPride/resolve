@@ -5,6 +5,8 @@ import LandingPage from './pages/LandingPage';
 import RegisterPage from './pages/RegisterPage';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
+import GroupSelectionPage from './pages/GroupSelectionPage';
+import GroupManagementPage from './pages/GroupManagementPage';
 import ProtectedRoute from './lib/ProtectedRoute';
 
 export default function App() {
@@ -21,6 +23,22 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <DashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path='/groups'
+            element={
+              <ProtectedRoute>
+                <GroupSelectionPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path='/groups/:id'
+            element={
+              <ProtectedRoute>
+                <GroupManagementPage />
               </ProtectedRoute>
             }
           />

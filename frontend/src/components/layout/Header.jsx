@@ -72,7 +72,7 @@ export default function Header() {
                 </Link>
                 <Link
                   to="/register"
-                  className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition-all duration-200 hover:shadow-[0_0_15px_2px_rgba(255,255,255,0.5)]"
+                  className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition-all duration-200 hover:bg-black hover:ring-1 hover:ring-white hover:text-white disabled:cursor-not-allowed disabled:bg-white/50 disabled:text-black/50"
                 >
                   Sign up
                 </Link>
