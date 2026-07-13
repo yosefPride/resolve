@@ -142,9 +142,23 @@ Response:
 
 ---
 
-## POST /groups/:id/join
+## GET /groups/:id/users/lookup
 
-Join group (if allowed or invite-based)
+Look up a user by exact email, to get the `user_id` needed for `POST /groups/:id/users` below (Group Admin only).
+
+There is no join flow and no user directory: the only way into a group is being added by that group's Group Admin, and the only way for them to find the right account is knowing the person's exact email.
+
+Request (query params):
+
+- email (required, exact match, case-sensitive)
+
+Response `200`:
+
+- id
+- name
+- email
+
+`404` if no user matches. `400` if `email` is missing or empty.
 
 ---
 
@@ -154,7 +168,7 @@ Add user to group (Group Admin only)
 
 Request:
 
-- user_id
+- user_id (obtained via GET /groups/:id/users/lookup)
 - role (Contributor | Group Admin)
 
 ---

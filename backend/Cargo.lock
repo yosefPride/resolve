@@ -443,6 +443,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -1895,7 +1896,9 @@ dependencies = [
  "futures",
  "jsonwebtoken",
  "mongodb",
+ "rand 0.9.4",
  "serde",
+ "sha2",
  "tokio",
  "uuid",
 ]

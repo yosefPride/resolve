@@ -45,7 +45,8 @@ No separate AI navigation tab or page is allowed.
 
 - Group selection page
 - Create group
-- Join group
+
+There is no self-service join: a user only enters a group by being added there by that group's Group Admin (see groups/ below).
 
 ## 3. Active Session
 
@@ -87,7 +88,7 @@ src/
 
 - Create group
 - Switch active group
-- Manage members (Group Admin only)
+- Manage members (Group Admin only) — added by exact-email lookup (GET /groups/:id/users/lookup), not a browsable directory
 
 ## tickets/
 
