@@ -26,7 +26,11 @@ impl GroupService {
     // user-deletion — see docs/rbac.md). If the second write fails, the group
     // is left with no members; low-probability and cheap to detect/retry
     // manually for now rather than adding session plumbing for it.
-    pub async fn create_group(&self, user_id: ObjectId, name: String) -> Result<GroupResponse, ApiError> {
+    pub async fn create_group(
+        &self,
+        user_id: ObjectId,
+        name: String,
+    ) -> Result<GroupResponse, ApiError> {
         let group = self
             .repo
             .create_group(CreateGroupInput {
@@ -63,9 +67,17 @@ impl GroupService {
         Ok(result)
     }
 
-    pub async fn get_group(&self, user_id: ObjectId, group_id: ObjectId) -> Result<GroupResponse, ApiError> {
+    pub async fn get_group(
+        &self,
+        user_id: ObjectId,
+        group_id: ObjectId,
+    ) -> Result<GroupResponse, ApiError> {
         self.require_member(group_id, user_id).await?;
-        let group = self.repo.find_group_by_id(group_id).await?.ok_or(ApiError::NotFound)?;
+        let group = self
+            .repo
+            .find_group_by_id(group_id)
+            .await?
+            .ok_or(ApiError::NotFound)?;
         Ok(group.into())
     }
 
@@ -77,11 +89,19 @@ impl GroupService {
     ) -> Result<GroupResponse, ApiError> {
         self.require_group_admin(group_id, user_id).await?;
         self.repo.rename_group(group_id, name).await?;
-        let group = self.repo.find_group_by_id(group_id).await?.ok_or(ApiError::NotFound)?;
+        let group = self
+            .repo
+            .find_group_by_id(group_id)
+            .await?
+            .ok_or(ApiError::NotFound)?;
         Ok(group.into())
     }
 
-    pub async fn delete_group(&self, user_id: ObjectId, group_id: ObjectId) -> Result<(), ApiError> {
+    pub async fn delete_group(
+        &self,
+        user_id: ObjectId,
+        group_id: ObjectId,
+    ) -> Result<(), ApiError> {
         self.require_group_admin(group_id, user_id).await?;
         self.repo.delete_members_by_group(group_id).await?;
         self.repo.delete_group(group_id).await?;
@@ -150,7 +170,10 @@ impl GroupService {
         role: Role,
     ) -> Result<MemberResponse, ApiError> {
         self.require_group_admin(group_id, user_id).await?;
-        let member = self.repo.insert_member(group_id, target_user_id, role).await?;
+        let member = self
+            .repo
+            .insert_member(group_id, target_user_id, role)
+            .await?;
         self.enrich_member(member).await
     }
 
@@ -165,7 +188,8 @@ impl GroupService {
 
         if role == Role::Contributor {
             // Demoting the group's last Group Admin is blocked, same as removing them.
-            self.guard_sole_admin_removal(group_id, target_user_id).await?;
+            self.guard_sole_admin_removal(group_id, target_user_id)
+                .await?;
         } else {
             self.repo
                 .find_member(group_id, target_user_id)
@@ -196,7 +220,8 @@ impl GroupService {
         target_user_id: ObjectId,
     ) -> Result<(), ApiError> {
         self.require_group_admin(group_id, user_id).await?;
-        self.guard_sole_admin_removal(group_id, target_user_id).await?;
+        self.guard_sole_admin_removal(group_id, target_user_id)
+            .await?;
         let deleted = self.repo.delete_member(group_id, target_user_id).await?;
         if !deleted {
             return Err(ApiError::NotFound);
@@ -215,7 +240,11 @@ impl GroupService {
 
     // Not a member -> Forbidden rather than NotFound, deliberately: this
     // avoids telling a non-member whether the group id even exists.
-    async fn require_member(&self, group_id: ObjectId, user_id: ObjectId) -> Result<GroupMember, ApiError> {
+    async fn require_member(
+        &self,
+        group_id: ObjectId,
+        user_id: ObjectId,
+    ) -> Result<GroupMember, ApiError> {
         self.repo
             .find_member(group_id, user_id)
             .await?
