@@ -7,11 +7,13 @@ use crate::group::models::{
     UserLookupResponse,
 };
 use crate::group::repository::GroupRepository;
+use crate::rbac::service::RbacService;
 use crate::user::service::UserService;
 
 pub struct GroupService {
     repo: GroupRepository,
     user_service: UserService,
+    rbac: RbacService,
 }
 
 impl GroupService {
@@ -19,6 +21,7 @@ impl GroupService {
         Self {
             repo: GroupRepository::new(db),
             user_service: UserService::new(db),
+            rbac: RbacService::new(db),
         }
     }
 
@@ -72,7 +75,7 @@ impl GroupService {
         user_id: ObjectId,
         group_id: ObjectId,
     ) -> Result<GroupResponse, ApiError> {
-        self.require_member(group_id, user_id).await?;
+        self.rbac.require_member(group_id, user_id).await?;
         let group = self
             .repo
             .find_group_by_id(group_id)
@@ -87,7 +90,7 @@ impl GroupService {
         group_id: ObjectId,
         name: String,
     ) -> Result<GroupResponse, ApiError> {
-        self.require_group_admin(group_id, user_id).await?;
+        self.rbac.require_group_admin(group_id, user_id).await?;
         self.repo.rename_group(group_id, name).await?;
         let group = self
             .repo
@@ -102,7 +105,7 @@ impl GroupService {
         user_id: ObjectId,
         group_id: ObjectId,
     ) -> Result<(), ApiError> {
-        self.require_group_admin(group_id, user_id).await?;
+        self.rbac.require_group_admin(group_id, user_id).await?;
         self.repo.delete_members_by_group(group_id).await?;
         self.repo.delete_group(group_id).await?;
         Ok(())
@@ -113,7 +116,7 @@ impl GroupService {
         user_id: ObjectId,
         group_id: ObjectId,
     ) -> Result<Vec<MemberResponse>, ApiError> {
-        self.require_member(group_id, user_id).await?;
+        self.rbac.require_member(group_id, user_id).await?;
         let members = self.repo.list_members(group_id).await?;
         let mut result = Vec::with_capacity(members.len());
         for member in members {
@@ -149,7 +152,7 @@ impl GroupService {
         group_id: ObjectId,
         email: &str,
     ) -> Result<UserLookupResponse, ApiError> {
-        self.require_group_admin(group_id, user_id).await?;
+        self.rbac.require_group_admin(group_id, user_id).await?;
         let target = self
             .user_service
             .find_by_email(email)
@@ -169,7 +172,7 @@ impl GroupService {
         target_user_id: ObjectId,
         role: Role,
     ) -> Result<MemberResponse, ApiError> {
-        self.require_group_admin(group_id, user_id).await?;
+        self.rbac.require_group_admin(group_id, user_id).await?;
         let member = self
             .repo
             .insert_member(group_id, target_user_id, role)
@@ -184,7 +187,7 @@ impl GroupService {
         target_user_id: ObjectId,
         role: Role,
     ) -> Result<MemberResponse, ApiError> {
-        self.require_group_admin(group_id, user_id).await?;
+        self.rbac.require_group_admin(group_id, user_id).await?;
 
         if role == Role::Contributor {
             // Demoting the group's last Group Admin is blocked, same as removing them.
@@ -219,7 +222,7 @@ impl GroupService {
         group_id: ObjectId,
         target_user_id: ObjectId,
     ) -> Result<(), ApiError> {
-        self.require_group_admin(group_id, user_id).await?;
+        self.rbac.require_group_admin(group_id, user_id).await?;
         self.guard_sole_admin_removal(group_id, target_user_id)
             .await?;
         let deleted = self.repo.delete_member(group_id, target_user_id).await?;
@@ -236,31 +239,6 @@ impl GroupService {
             return Err(ApiError::NotFound);
         }
         Ok(())
-    }
-
-    // Not a member -> Forbidden rather than NotFound, deliberately: this
-    // avoids telling a non-member whether the group id even exists.
-    async fn require_member(
-        &self,
-        group_id: ObjectId,
-        user_id: ObjectId,
-    ) -> Result<GroupMember, ApiError> {
-        self.repo
-            .find_member(group_id, user_id)
-            .await?
-            .ok_or(ApiError::Forbidden)
-    }
-
-    async fn require_group_admin(
-        &self,
-        group_id: ObjectId,
-        user_id: ObjectId,
-    ) -> Result<GroupMember, ApiError> {
-        let member = self.require_member(group_id, user_id).await?;
-        if member.role != Role::GroupAdmin {
-            return Err(ApiError::Forbidden);
-        }
-        Ok(member)
     }
 
     // Blocks removing/demoting a group's last Group Admin — a successor must

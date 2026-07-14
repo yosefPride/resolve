@@ -13,7 +13,8 @@ use crate::admin::repository::AdminRepository;
 use crate::errors::ApiError;
 use crate::group::models::{GroupMember, GroupResponse, MemberResponse, Role};
 use crate::group::repository::GroupRepository;
-use crate::user::models::{GlobalRole, UserResponse};
+use crate::rbac::service::RbacService;
+use crate::user::models::UserResponse;
 use crate::user::service::UserService;
 
 #[derive(Default)]
@@ -30,6 +31,7 @@ pub struct AdminService {
     group_repo: GroupRepository,
     user_service: UserService,
     admin_repo: AdminRepository,
+    rbac: RbacService,
 }
 
 impl AdminService {
@@ -38,6 +40,7 @@ impl AdminService {
             group_repo: GroupRepository::new(db),
             user_service: UserService::new(db),
             admin_repo: AdminRepository::new(db),
+            rbac: RbacService::new(db),
         }
     }
 
@@ -46,7 +49,7 @@ impl AdminService {
         caller_id: ObjectId,
         target_user_id: ObjectId,
     ) -> Result<DeletionCheckResponse, ApiError> {
-        self.require_system_admin(caller_id).await?;
+        self.rbac.require_system_admin(caller_id).await?;
         self.user_service
             .find_by_id(target_user_id)
             .await?
@@ -88,7 +91,7 @@ impl AdminService {
         target_user_id: ObjectId,
         successors: HashMap<ObjectId, ObjectId>,
     ) -> Result<(), ApiError> {
-        self.require_system_admin(caller_id).await?;
+        self.rbac.require_system_admin(caller_id).await?;
         self.user_service
             .find_by_id(target_user_id)
             .await?
@@ -160,12 +163,12 @@ impl AdminService {
     }
 
     pub async fn list_users(&self, caller_id: ObjectId) -> Result<Vec<UserResponse>, ApiError> {
-        self.require_system_admin(caller_id).await?;
+        self.rbac.require_system_admin(caller_id).await?;
         Ok(self.user_service.list_all().await?)
     }
 
     pub async fn list_groups(&self, caller_id: ObjectId) -> Result<Vec<GroupResponse>, ApiError> {
-        self.require_system_admin(caller_id).await?;
+        self.rbac.require_system_admin(caller_id).await?;
         Ok(self
             .group_repo
             .list_all_groups()
@@ -181,7 +184,7 @@ impl AdminService {
     // deleting their own group already go through GroupService::delete_group
     // instead; this is the System-Admin-as-non-member path.
     pub async fn delete_group(&self, caller_id: ObjectId, group_id: ObjectId) -> Result<(), ApiError> {
-        self.require_system_admin(caller_id).await?;
+        self.rbac.require_system_admin(caller_id).await?;
         self.group_repo.delete_members_by_group(group_id).await?;
         let deleted = self.group_repo.delete_group(group_id).await?;
         if !deleted {
@@ -210,18 +213,6 @@ impl AdminService {
             });
         }
         Ok(result)
-    }
-
-    async fn require_system_admin(&self, caller_id: ObjectId) -> Result<(), ApiError> {
-        let caller = self
-            .user_service
-            .find_by_id(caller_id)
-            .await?
-            .ok_or(ApiError::Forbidden)?;
-        match caller.global_role {
-            Some(GlobalRole::SystemAdmin) => Ok(()),
-            _ => Err(ApiError::Forbidden),
-        }
     }
 
     // Walks every group the target belongs to and classifies each one. Shared
