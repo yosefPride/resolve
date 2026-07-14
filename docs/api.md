@@ -195,7 +195,8 @@ Used to promote a Contributor to Group Admin, e.g. to appoint a successor before
 
 ## DELETE /groups/:id/users/:user_id
 
-Remove user from group, including self-removal/leaving (Group Admin only)
+Remove user from group. Removing another member requires Group Admin;
+removing yourself (leaving the group) is open to any member.
 
 Rejected if the target is the sole Group Admin of the group — a successor must be appointed first via PATCH /groups/:id/users/:user_id, or the group must be deleted entirely via DELETE /groups/:id.
 
@@ -211,10 +212,10 @@ Bypasses the "at least one Group Admin" requirement — the group and all its da
 
 ## GET /groups/:id
 
-Get group metadata
+Get group metadata (members of the group only)
 
-- System Admin: can see all groups (metadata only)
-- Others: only own groups
+System Admin sees group metadata through `GET /admin/groups` instead — this
+endpoint is member-scoped like every other `/groups/{id}` route.
 
 ---
 
@@ -453,6 +454,7 @@ All errors return:
 - 401 Unauthorized
 - 403 Forbidden
 - 404 Not Found
+- 409 Conflict (duplicate email, duplicate group member, sole-Group-Admin succession conflicts)
 - 500 Internal Server Error
 
 ---
