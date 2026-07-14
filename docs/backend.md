@@ -78,12 +78,19 @@ Each feature should follow:
 
 ---
 
-# Active Group Concept
+# Group Scoping
 
-- Every user has an ACTIVE GROUP
-- Stored in JWT
-- All operations are scoped automatically to this group
-- No manual group passing required in business logic
+There is NO "active group" stored anywhere — not in the JWT, not in server
+state.
+
+- Every group-scoped route carries the group id in its path (`/groups/{id}/...`)
+- The `GroupScoped` request extractor (src/server/middleware.rs) reads that id,
+  verifies the caller's membership, and resolves their current role — one
+  lookup, per request
+- Handlers receive the resolved `{ user_id, group_id, role }` and never parse a
+  group id themselves; repositories are always given `group_id` from it
+- Because scope is explicit per request and role is never baked into the token,
+  there is nothing to "switch" and nothing that can go stale
 
 ---
 
@@ -105,12 +112,13 @@ Each feature should follow:
 
 # Request Lifecycle
 
-1. JWT validation
+1. JWT validation (authentication)
 2. User extraction
-3. Group context resolution
-4. RBAC check
+3. Group resolution from the path + membership/role lookup (GroupScoped
+   extractor), or global-role check (SystemAdminUser extractor) on /admin routes
+4. RBAC check (request-level, via the extractor above)
 5. Handler execution
-6. Service logic
+6. Service logic (re-runs the RBAC check — see "RBAC System" below)
 7. Repository access (scoped by group)
 
 ---
@@ -126,8 +134,16 @@ No exceptions.
 # RBAC System
 
 - Static role system: Contributor / Group Admin (group-scoped), System Admin (global-scoped)
-- Enforced via middleware + helper functions
 - No dynamic policy engine
+- Enforced in two layers (both always run — defense in depth, per docs/rbac.md):
+  - Request level: the `GroupScoped` / `SystemAdminUser` extractors
+    (src/server/middleware.rs) reject unauthorized requests before the handler
+  - Service level: services call the shared `RbacService`
+    (src/rbac/service.rs) helpers — `require_member`, `require_group_admin`,
+    `require_system_admin`, `require_owner_or_group_admin`
+- Group isolation itself is separate from these role checks: it is the
+  repository rule that every group-scoped query filters by `group_id`, so a
+  resource id from another group simply isn't found
 
 ---
 
@@ -143,7 +159,7 @@ Rules:
 
 - AI never writes to DB
 - AI never bypasses RBAC
-- AI always scoped to active group
+- AI always scoped to the group named in the request path
 
 ---
 

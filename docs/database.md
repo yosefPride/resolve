@@ -274,11 +274,15 @@ Recommended indexes:
 
 ## groups
 
-- owner_id
+No secondary indexes: nothing queries groups by anything but _id (owner_id is
+informational only and never filtered on).
 
 ## group_members
 
-- group_id + user_id (compound index)
+- group_id + user_id (compound, unique — one membership row per user per group;
+  also serves every per-group membership/role check)
+- user_id (serves the "list my groups" lookups, which the compound index above
+  cannot — user_id isn't its prefix)
 
 ## tickets
 
@@ -298,8 +302,9 @@ Recommended indexes:
 
 ## admin_audit_log
 
-- group_id
-- deleted_user_id
+- group_id (deferred — add when an audit-log read endpoint ships; nothing
+  queries this collection yet and it only grows on rare succession events)
+- deleted_user_id (deferred, same reason)
 
 ---
 

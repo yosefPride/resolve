@@ -27,9 +27,9 @@ A user may have different roles in different groups (e.g. Group Admin in one gro
 
 - All permissions enforced on backend only
 - Frontend is only for UX hiding
-- Every request must validate:
+- Every group-scoped request must validate:
   - authentication (JWT)
-  - active group
+  - membership in the group named in the request path
   - role within that group
 
 ---
@@ -54,10 +54,36 @@ No dynamic policy system exists.
 
 # Enforcement Mechanism
 
-RBAC is enforced via:
+RBAC is enforced in two layers, both of which always run (defense in depth):
 
-- Actix middleware (request-level checks)
-- Service-layer validation (business logic safety checks)
+## Request level — Actix extractors (src/server/middleware.rs)
+
+- `GroupScoped` — for group-scoped routes (`/groups/{id}/...`). Reads the group
+  id from the path, verifies membership, and resolves the caller's current role
+  in one lookup. Non-member → 403. There is no "active group": scope is always
+  the path's group id, and role is resolved per request (never carried in the
+  JWT), so a removed/demoted member is rejected on their next request.
+- `SystemAdminUser` — for `/admin` routes. Confirms the caller holds the System
+  Admin global role. Non-admin → 403.
+
+## Service level — RbacService (src/rbac/service.rs)
+
+Services re-run the check via shared helpers, so a handler is never the only
+thing standing between a request and the data:
+
+- `require_member(group_id, user_id)` — returns the `GroupMember` (with role)
+- `require_group_admin(group_id, user_id)` — member AND Group Admin
+- `require_system_admin(user_id)` — global System Admin role
+- `require_owner_or_group_admin(member, resource_owner_id)` — the ticket/comment
+  rule: a Contributor may act only on resources they created, a Group Admin on
+  any resource in the group
+
+## Not part of RBAC: group isolation
+
+Keeping one group's data unreachable through another group's id is enforced
+separately, by the repository rule that every group-scoped query filters by
+`group_id` (docs/backend.md) — a mismatched resource id simply isn't found. It
+is not one of the role helpers above.
 
 ---
 

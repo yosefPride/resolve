@@ -100,7 +100,7 @@ System Admin cannot access:
 - Backend is the source of truth
 - Frontend is UI-only
 - AI is an advisory system (not required for correctness)
-- All operations are scoped to active group
+- All group operations are scoped to a group named explicitly in the request path (`/groups/{id}/...`); there is no "active group"
 - RBAC enforced on every request
 
 ---
