@@ -36,6 +36,18 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), Error> {
         )
         .await?;
 
+    // Enforces at most one group_members row per (group, user) so add_member's
+    // duplicate-membership rejection (GroupRepoError::DuplicateMember) is
+    // atomic, without a separate check-then-insert race.
+    db.collection::<Document>("group_members")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "user_id": 1 })
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+        )
+        .await?;
+
     // TTL index: MongoDB's background reaper drops a document once its
     // `expires_at` is in the past, so spent/expired refresh tokens are
     // cleaned up automatically without any application-level cron job.
