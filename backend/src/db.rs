@@ -8,7 +8,15 @@ use mongodb::{
 use crate::config::Config;
 
 pub async fn connect(config: &Config) -> Result<Client, Error> {
-    Client::with_uri_str(&config.mongo_uri).await
+    let client = Client::with_uri_str(&config.mongo_uri).await?;
+    // with_uri_str doesn't open a connection (the driver connects lazily on
+    // first operation) â ping so "connected" below is actually proven.
+    client
+        .database("resolve")
+        .run_command(doc! { "ping": 1 })
+        .await?;
+    println!("\nSuccessfully connected to MongoDB database 'resolve'");
+    Ok(client)
 }
 
 pub fn database(client: &Client, _config: &Config) -> Database {
@@ -52,11 +60,7 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), Error> {
     // list_groups_for_user), which filter on user_id alone — the compound
     // (group_id, user_id) index above can't, since user_id isn't its prefix.
     db.collection::<Document>("group_members")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "user_id": 1 })
-                .build(),
-        )
+        .create_index(IndexModel::builder().keys(doc! { "user_id": 1 }).build())
         .await?;
 
     // TTL index: MongoDB's background reaper drops a document once its
