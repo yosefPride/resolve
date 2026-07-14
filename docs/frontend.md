@@ -13,10 +13,14 @@
 
 # Core Concept: Group-Centric UI
 
-All UI is scoped to an ACTIVE GROUP.
+The UI is group-centric, but there is NO "active group" held in state. Instead,
+the group is chosen explicitly at the point of use: the Tickets page lists all
+the groups the user belongs to, and selecting one loads that group's tickets via
+`GET /groups/{id}/tickets` (see design/tickets-design.md). Each request names its
+group in the URL, so scope never depends on hidden client state.
 
 - No global system view for regular users
-- All data shown belongs to selected group
+- All data shown belongs to the group whose id is in the request
 
 ---
 
@@ -41,12 +45,12 @@ No separate AI navigation tab or page is allowed.
 - Login
 - Register
 
-## 2. Authenticated (no active group)
+## 2. Authenticated, not in any group yet
 
-- Group selection page
+- Prompt to create a group (shown when the user belongs to none)
 - Create group
 
-There is no self-service join: a user only enters a group by being added there by that group's Group Admin (see groups/ below).
+There is no self-service join: a user only enters a group by being added there by that group's Group Admin (see groups/ below). Once the user belongs to at least one group, the Tickets page lists those groups directly — there is no separate "active group" selection step.
 
 ## 3. Active Session
 
@@ -87,7 +91,7 @@ src/
 ## groups/
 
 - Create group
-- Switch active group
+- List the groups you belong to (the Tickets page uses this to scope views)
 - Manage members (Group Admin only) — added by exact-email lookup (GET /groups/:id/users/lookup), not a browsable directory
 
 ## tickets/
@@ -134,9 +138,9 @@ Frontend must:
 
 # API Layer
 
-- Uses JWT only
-- Backend determines active group automatically
-- No group_id sent from frontend
+- Uses JWT only for identity (the token carries no group)
+- Group scope is sent explicitly as the `{id}` path segment on group-scoped
+  requests (`/groups/{id}/...`); the backend resolves membership/role from it
 - Logout calls POST /auth/logout, then clears the client-stored JWT
 
 ## Session Handling

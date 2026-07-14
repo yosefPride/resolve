@@ -22,13 +22,19 @@ The cookie's Secure attribute is environment-dependent: on by default, and requi
 
 ---
 
-# Group Context
+# Group Scope
 
-Each user has an ACTIVE GROUP.
+There is NO "active group". Scope is carried explicitly by the request path:
+every group-scoped resource lives under `/groups/{id}/...`, and the group id in
+that path is the only group the request operates on.
 
-- Active group is stored in JWT or user session
-- All API requests operate only within active group
-- Users may switch active group via dedicated endpoint
+- The JWT identifies the user only — it carries no group and no group role
+- Membership and role are resolved per request, from the path's group id, by
+  the `GroupScoped` extractor (see docs/rbac.md, "Enforcement Mechanism")
+- A caller who is not a member of the named group gets 403; there is no way to
+  reach one group's data through another group's id
+- Because role is looked up per request (never baked into the token), a
+  removed or demoted member loses access on their very next request
 
 ---
 
@@ -36,7 +42,7 @@ Each user has an ACTIVE GROUP.
 
 - No cross-group data access is allowed
 - RBAC is enforced server-side only
-- AI operates only within active group
+- AI operates only within the group named in the request path
 - System Admin endpoints are system-level only
 
 ---
@@ -214,9 +220,14 @@ Get group metadata
 
 # Ticket Endpoints
 
-## GET /tickets
+All ticket paths are nested under the group they belong to (`/groups/{id}/...`),
+so the group scope is always explicit in the URL. `{id}` is the group id;
+`{ticket_id}` is the ticket. Membership in `{id}` is required for every one of
+these (enforced by the `GroupScoped` extractor).
 
-Returns tickets in current group
+## GET /groups/{id}/tickets
+
+Returns tickets in the group (any group member)
 
 Supports:
 
@@ -225,7 +236,7 @@ Supports:
 
 ---
 
-## POST /tickets
+## POST /groups/{id}/tickets
 
 Create ticket (any group member)
 
@@ -237,30 +248,33 @@ Request:
 
 ---
 
-## GET /tickets/:id
+## GET /groups/{id}/tickets/{ticket_id}
 
-Get ticket (must belong to same group)
+Get ticket (any group member). A `{ticket_id}` that is not in `{id}` returns
+404 — the repository query is filtered by group id, so a mismatched pair simply
+finds nothing (this is what keeps one group's ticket ids unreadable through
+another group).
 
 ---
 
-## PATCH /tickets/:id
+## PATCH /groups/{id}/tickets/{ticket_id}
 
 Update ticket
 
 Permissions:
 
-- Contributor: own tickets only
+- Contributor: own tickets only (ownership = creator_id)
 - Group Admin: all tickets in the group
 
 ---
 
-## DELETE /tickets/:id
+## DELETE /groups/{id}/tickets/{ticket_id}
 
 Group Admin only
 
 ---
 
-## POST /tickets/:id/assign
+## POST /groups/{id}/tickets/{ticket_id}/assign
 
 Assign ticket (Group Admin only)
 
@@ -270,7 +284,7 @@ Request:
 
 ---
 
-## POST /tickets/:id/status
+## POST /groups/{id}/tickets/{ticket_id}/status
 
 Change status
 
@@ -288,13 +302,13 @@ Group Admin only
 
 # Comment Endpoints
 
-## POST /tickets/:id/comments
+## POST /groups/{id}/tickets/{ticket_id}/comments
 
 Add comment (all roles)
 
 ---
 
-## GET /tickets/:id/comments
+## GET /groups/{id}/tickets/{ticket_id}/comments
 
 Get comments (group-scoped)
 
@@ -302,15 +316,15 @@ Get comments (group-scoped)
 
 # AI Endpoints (CORE FEATURE)
 
-## POST /ai/tickets/:id/summarize
+## POST /ai/groups/{id}/tickets/{ticket_id}/summarize
 
 Returns AI summary of ticket
 
-Group-scoped
+Group-scoped (member of `{id}` required)
 
 ---
 
-## POST /ai/tickets/:id/analyze
+## POST /ai/groups/{id}/tickets/{ticket_id}/analyze
 
 Returns:
 
@@ -320,7 +334,7 @@ Returns:
 
 ---
 
-## POST /ai/groups/:id/report
+## POST /ai/groups/{id}/report
 
 Group Admin only
 
@@ -336,7 +350,7 @@ Returns:
 
 - All AI results are cached when possible
 - AI never modifies database
-- AI is scoped to active group only
+- AI is scoped to the group named in the request path only
 
 ---
 

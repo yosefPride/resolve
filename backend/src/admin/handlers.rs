@@ -6,7 +6,7 @@ use mongodb::bson::oid::ObjectId;
 use crate::admin::models::DeleteUserRequest;
 use crate::admin::service::AdminService;
 use crate::errors::ApiError;
-use crate::server::middleware::AuthenticatedUser;
+use crate::server::middleware::SystemAdminUser;
 use crate::state::AppState;
 
 fn parse_id(raw: &str) -> Result<ObjectId, ApiError> {
@@ -14,7 +14,7 @@ fn parse_id(raw: &str) -> Result<ObjectId, ApiError> {
 }
 
 pub async fn deletion_check(
-    user: AuthenticatedUser,
+    user: SystemAdminUser,
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
@@ -25,7 +25,7 @@ pub async fn deletion_check(
 }
 
 pub async fn delete_user(
-    user: AuthenticatedUser,
+    user: SystemAdminUser,
     state: web::Data<AppState>,
     path: web::Path<String>,
     body: web::Json<DeleteUserRequest>,
@@ -42,20 +42,20 @@ pub async fn delete_user(
     Ok(HttpResponse::NoContent().finish())
 }
 
-pub async fn list_users(user: AuthenticatedUser, state: web::Data<AppState>) -> Result<HttpResponse, ApiError> {
+pub async fn list_users(user: SystemAdminUser, state: web::Data<AppState>) -> Result<HttpResponse, ApiError> {
     let service = AdminService::new(&state.db);
     let users = service.list_users(user.user_id).await?;
     Ok(HttpResponse::Ok().json(users))
 }
 
-pub async fn list_groups(user: AuthenticatedUser, state: web::Data<AppState>) -> Result<HttpResponse, ApiError> {
+pub async fn list_groups(user: SystemAdminUser, state: web::Data<AppState>) -> Result<HttpResponse, ApiError> {
     let service = AdminService::new(&state.db);
     let groups = service.list_groups(user.user_id).await?;
     Ok(HttpResponse::Ok().json(groups))
 }
 
 pub async fn delete_group(
-    user: AuthenticatedUser,
+    user: SystemAdminUser,
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
