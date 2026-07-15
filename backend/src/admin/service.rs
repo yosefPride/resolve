@@ -7,7 +7,8 @@ use mongodb::{
 };
 
 use crate::admin::models::{
-    AuditAction, AuditLogEntry, AutoDeleteGroupInfo, BlockedGroupInfo, DeletionCheckResponse,
+    AuditAction, AuditLogEntry, AuditLogEntryResponse, AutoDeleteGroupInfo, BlockedGroupInfo,
+    DeletionCheckResponse,
 };
 use crate::admin::repository::AdminRepository;
 use crate::errors::ApiError;
@@ -165,6 +166,24 @@ impl AdminService {
     pub async fn list_users(&self, caller_id: ObjectId) -> Result<Vec<UserResponse>, ApiError> {
         self.rbac.require_system_admin(caller_id).await?;
         Ok(self.user_service.list_all().await?)
+    }
+
+    // Read-only view of the succession/auto-deletion audit trail, System Admin
+    // only. Filters are optional and independent; results are newest-first.
+    pub async fn list_audit_log(
+        &self,
+        caller_id: ObjectId,
+        group_id: Option<ObjectId>,
+        deleted_user_id: Option<ObjectId>,
+    ) -> Result<Vec<AuditLogEntryResponse>, ApiError> {
+        self.rbac.require_system_admin(caller_id).await?;
+        Ok(self
+            .admin_repo
+            .list_audit_log(group_id, deleted_user_id)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
     }
 
     pub async fn list_groups(&self, caller_id: ObjectId) -> Result<Vec<GroupResponse>, ApiError> {

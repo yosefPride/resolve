@@ -43,6 +43,7 @@ pub fn configure(config: &mut web::ServiceConfig) {
                 .route("/users", web::get().to(admin_handlers::list_users))
                 .route("/groups", web::get().to(admin_handlers::list_groups))
                 .route("/groups/{id}", web::delete().to(admin_handlers::delete_group))
+                .route("/audit-log", web::get().to(admin_handlers::list_audit_log))
                 .service(
                     web::scope("/users/{id}")
                         .route("/deletion-check", web::get().to(admin_handlers::deletion_check))

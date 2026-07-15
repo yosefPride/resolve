@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use chrono::{DateTime, Utc};
 use mongodb::bson::{DateTime as BsonDateTime, oid::ObjectId};
 use serde::{Deserialize, Serialize};
 
@@ -26,6 +27,42 @@ pub struct AuditLogEntry {
     pub successor_user_id: Option<ObjectId>,
     pub performed_by: ObjectId,
     pub created_at: BsonDateTime,
+}
+
+// Client-facing shape of an AuditLogEntry: ObjectIds rendered as hex strings
+// and the timestamp as an RFC3339 DateTime, matching GroupResponse/MemberResponse.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AuditLogEntryResponse {
+    pub id: String,
+    pub action: AuditAction,
+    pub group_id: String,
+    pub deleted_user_id: String,
+    pub successor_user_id: Option<String>,
+    pub performed_by: String,
+    pub created_at: DateTime<Utc>,
+}
+
+impl From<AuditLogEntry> for AuditLogEntryResponse {
+    fn from(entry: AuditLogEntry) -> Self {
+        AuditLogEntryResponse {
+            id: entry.id.map(|id| id.to_hex()).unwrap_or_default(),
+            action: entry.action,
+            group_id: entry.group_id.to_hex(),
+            deleted_user_id: entry.deleted_user_id.to_hex(),
+            successor_user_id: entry.successor_user_id.map(|id| id.to_hex()),
+            performed_by: entry.performed_by.to_hex(),
+            created_at: DateTime::from_timestamp_millis(entry.created_at.timestamp_millis())
+                .unwrap_or_default(),
+        }
+    }
+}
+
+// Optional filters for GET /admin/audit-log. Both absent = the full log,
+// newest-first. `user_id` filters on the *deleted* user.
+#[derive(Debug, Deserialize)]
+pub struct AuditLogQuery {
+    pub group_id: Option<String>,
+    pub user_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

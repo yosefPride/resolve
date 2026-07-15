@@ -91,7 +91,7 @@ fn test_insert_audit_entry_group_auto_deleted() {
     });
 }
 
-// 3. list_audit_log_for_group returns only entries for that group.
+// 3. list_audit_log filtered by group returns only that group's entries.
 #[test]
 fn test_list_audit_log_for_group() {
     support::runtime().block_on(async {
@@ -125,14 +125,15 @@ fn test_list_audit_log_for_group() {
         .expect("insert failed");
 
         let entries = repo
-            .list_audit_log_for_group(group_id)
+            .list_audit_log(Some(group_id), None)
             .await
             .expect("list failed");
         assert_eq!(entries.len(), 2);
+        assert!(entries.iter().all(|e| e.group_id == group_id));
     });
 }
 
-// 4. list_audit_log_for_user returns only entries for that deleted_user_id.
+// 4. list_audit_log filtered by user returns only that deleted user's entries.
 #[test]
 fn test_list_audit_log_for_user() {
     support::runtime().block_on(async {
@@ -165,9 +166,37 @@ fn test_list_audit_log_for_user() {
         .expect("insert failed");
 
         let entries = repo
-            .list_audit_log_for_user(deleted_user_id)
+            .list_audit_log(None, Some(deleted_user_id))
             .await
             .expect("list failed");
         assert_eq!(entries.len(), 2);
+        assert!(entries.iter().all(|e| e.deleted_user_id == deleted_user_id));
+    });
+}
+
+// 5. No filters returns the whole log, newest-first. Uses explicit, distinct
+// created_at values so the ordering is deterministic (back-to-back now()
+// inserts could otherwise tie on the millisecond).
+#[test]
+fn test_list_audit_log_unfiltered_newest_first() {
+    support::runtime().block_on(async {
+        let repo = setup().await;
+
+        let mut oldest = sample_entry(AuditAction::Succession, oid(), oid(), Some(oid()));
+        oldest.created_at = BsonDateTime::from_millis(1_000);
+        let mut newest = sample_entry(AuditAction::GroupAutoDeleted, oid(), oid(), None);
+        newest.created_at = BsonDateTime::from_millis(2_000);
+
+        // Insert oldest first so insertion order is the reverse of sort order.
+        repo.insert_audit_entry(oldest).await.expect("insert failed");
+        repo.insert_audit_entry(newest).await.expect("insert failed");
+
+        let entries = repo
+            .list_audit_log(None, None)
+            .await
+            .expect("list failed");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].created_at, BsonDateTime::from_millis(2_000));
+        assert_eq!(entries[1].created_at, BsonDateTime::from_millis(1_000));
     });
 }

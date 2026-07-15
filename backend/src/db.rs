@@ -63,6 +63,22 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), Error> {
         .create_index(IndexModel::builder().keys(doc! { "user_id": 1 }).build())
         .await?;
 
+    // Serve the audit-log viewer's two filters (GET /admin/audit-log?group_id
+    // / ?user_id) — each query hits admin_audit_log on one of these fields.
+    // Separate single-field indexes, since the two filters are independent and
+    // either may be used alone.
+    db.collection::<Document>("admin_audit_log")
+        .create_index(IndexModel::builder().keys(doc! { "group_id": 1 }).build())
+        .await?;
+
+    db.collection::<Document>("admin_audit_log")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "deleted_user_id": 1 })
+                .build(),
+        )
+        .await?;
+
     // TTL index: MongoDB's background reaper drops a document once its
     // `expires_at` is in the past, so spent/expired refresh tokens are
     // cleaned up automatically without any application-level cron job.
