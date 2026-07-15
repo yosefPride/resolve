@@ -405,7 +405,28 @@ Per group, as part of the same operation:
 - sole Group Admin, no other members → the group is deleted entirely (cascades its group_members rows)
 - non-sole Group Admin or Contributor → membership is simply removed
 
-Every succession or auto-deletion performed this way is recorded in `admin_audit_log` (see docs/database.md).
+Every succession or auto-deletion performed this way is recorded in `admin_audit_log` (see docs/database.md), readable via `GET /admin/audit-log` below.
+
+---
+
+## GET /admin/audit-log
+
+Read the succession / auto-deletion audit trail — System Admin only.
+
+Optional query filters, independent (either may be used alone, both may be combined, both may be omitted):
+
+- `group_id` — only entries for that group
+- `user_id` — only entries where that user was the one deleted
+
+Entries are returned newest-first. Each entry:
+
+- id
+- action (succession | group_auto_deleted)
+- group_id
+- deleted_user_id
+- successor_user_id (null when action = group_auto_deleted)
+- performed_by (the System Admin who ran the deletion)
+- created_at
 
 ---
 

@@ -302,9 +302,11 @@ informational only and never filtered on).
 
 ## admin_audit_log
 
-- group_id (deferred — add when an audit-log read endpoint ships; nothing
-  queries this collection yet and it only grows on rare succession events)
-- deleted_user_id (deferred, same reason)
+- group_id (serves `GET /admin/audit-log?group_id=`)
+- deleted_user_id (serves `GET /admin/audit-log?user_id=`)
+
+Separate single-field indexes: the two filters are independent and either may
+be used alone.
 
 ---
 
