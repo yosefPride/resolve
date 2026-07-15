@@ -98,14 +98,36 @@ Fields:
 
 - \_id
 - group_id
+- ticket_number (running number scoped to group_id — the first ticket in a
+  group is 1, independent of other groups' numbering; sourced from `counters`)
 - title
 - description
-- status (open | in_progress | closed)
-- priority (low | medium | high)
+- status (open | closed)
+- priority (low | high | critical)
 - created_by
-- assigned_to
 - created_at
 - updated_at
+
+No assignee field: tickets are not assigned to a user.
+
+Only a Group Admin may edit a ticket after creation (including status changes)
+— not even the creator, once a Contributor, may edit their own ticket. See
+docs/rbac.md and docs/api.md (`PATCH /groups/{id}/tickets/{ticket_id}`).
+
+---
+
+## counters
+
+Backs the per-group `ticket_number` sequence. One document per group.
+
+Fields:
+
+- \_id (== group_id)
+- ticket_seq (last-assigned ticket_number for this group)
+
+Incremented atomically via `find_one_and_update` + `$inc` on ticket creation —
+avoids a race between two tickets created in the same group at once. Deleted
+along with the group's tickets when the group is deleted.
 
 ---
 
@@ -288,7 +310,8 @@ informational only and never filtered on).
 
 - group_id (critical)
 - group_id + status
-- group_id + assigned_to
+- group_id + created_by
+- group_id + ticket_number (compound, unique)
 
 ## comments
 

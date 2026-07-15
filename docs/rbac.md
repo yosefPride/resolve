@@ -74,9 +74,12 @@ thing standing between a request and the data:
 - `require_member(group_id, user_id)` — returns the `GroupMember` (with role)
 - `require_group_admin(group_id, user_id)` — member AND Group Admin
 - `require_system_admin(user_id)` — global System Admin role
-- `require_owner_or_group_admin(member, resource_owner_id)` — the ticket/comment
-  rule: a Contributor may act only on resources they created, a Group Admin on
-  any resource in the group
+- `require_owner_or_group_admin(member, resource_owner_id)` — the comment rule:
+  a Contributor may act only on resources they created, a Group Admin on any
+  resource in the group. Tickets do NOT use this rule — editing or deleting a
+  ticket (including status changes) is Group Admin only via
+  `require_group_admin`, regardless of who created it (see docs/api.md,
+  `PATCH /groups/{id}/tickets/{ticket_id}`).
 
 ## Not part of RBAC: group isolation
 
