@@ -35,12 +35,15 @@ impl From<mongodb::error::Error> for UserRepoError {
     }
 }
 
+// Duplicate-key surfaces as a WriteError on insert_one but as a CommandError
+// on find_one_and_update (findAndModify is a command, not a plain write).
 fn is_duplicate_key(err: &mongodb::error::Error) -> bool {
     use mongodb::error::{ErrorKind, WriteFailure};
-    matches!(
-        err.kind.as_ref(),
-        ErrorKind::Write(WriteFailure::WriteError(e)) if e.code == 11000
-    )
+    match err.kind.as_ref() {
+        ErrorKind::Write(WriteFailure::WriteError(e)) => e.code == 11000,
+        ErrorKind::Command(e) => e.code == 11000,
+        _ => false,
+    }
 }
 
 pub struct UserRepository {
@@ -72,6 +75,37 @@ impl UserRepository {
             id: Some(id),
             ..user
         })
+    }
+
+    pub async fn update_profile(
+        &self,
+        id: ObjectId,
+        name: &str,
+        email: &str,
+    ) -> Result<Option<User>, UserRepoError> {
+        Ok(self
+            .collection
+            .find_one_and_update(
+                doc! { "_id": id },
+                doc! { "$set": { "name": name, "email": email } },
+            )
+            .return_document(mongodb::options::ReturnDocument::After)
+            .await?)
+    }
+
+    pub async fn update_password_hash(
+        &self,
+        id: ObjectId,
+        password_hash: &str,
+    ) -> Result<bool, UserRepoError> {
+        let result = self
+            .collection
+            .update_one(
+                doc! { "_id": id },
+                doc! { "$set": { "password_hash": password_hash } },
+            )
+            .await?;
+        Ok(result.matched_count > 0)
     }
 
     pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, UserRepoError> {

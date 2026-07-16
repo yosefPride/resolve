@@ -11,6 +11,11 @@ pub fn configure(config: &mut web::ServiceConfig) {
                 .route("/register", web::post().to(auth_handlers::register))
                 .route("/login", web::post().to(auth_handlers::login))
                 .route("/me", web::get().to(auth_handlers::me))
+                .route("/me", web::patch().to(auth_handlers::update_me))
+                .route(
+                    "/me/password",
+                    web::post().to(auth_handlers::change_password),
+                )
                 .route("/refresh", web::post().to(auth_handlers::refresh))
                 .route("/logout", web::post().to(auth_handlers::logout)),
         )
