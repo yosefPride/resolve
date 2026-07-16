@@ -25,3 +25,9 @@ export function me() {
 export function updateProfile({ name, email, current_password }) {
   return api.patch('/auth/me', { name, email, current_password }).then((res) => res.data);
 }
+
+// Returns 200 with no body. On success the backend revokes every other
+// session's refresh token; this one (its refresh cookie) stays valid.
+export function changePassword({ current_password, new_password }) {
+  return api.post('/auth/me/password', { current_password, new_password }).then((res) => res.data);
+}
