@@ -3,6 +3,11 @@ import axios from 'axios';
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL,
   withCredentials: true,
+  // Without this, a silently dropped network (Wi-Fi off, blackholed packets)
+  // leaves a request pending indefinitely rather than rejecting — callers hang
+  // on "Loading…" forever. A timeout rejects with no `error.response`, the same
+  // response-less shape every call site already handles (see utils/errors.js).
+  timeout: 15000,
 });
 
 let accessToken = null;
