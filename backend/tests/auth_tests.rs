@@ -6,7 +6,8 @@ use mongodb::{
     options::IndexOptions,
 };
 use resolve::auth::models::{
-    AuthResponse, LoginRequest, RefreshResponse, RegisterRequest, UpdateMeRequest,
+    AuthResponse, ChangePasswordRequest, LoginRequest, RefreshResponse, RegisterRequest,
+    UpdateMeRequest,
 };
 use resolve::auth::refresh_token::REFRESH_TOKEN_COOKIE;
 use resolve::auth::service::AuthService;
@@ -811,6 +812,201 @@ fn test_update_me_rejects_invalid_input() {
             .to_request();
         let no_token_resp = actix_test::call_service(&app, no_token_req).await;
         assert_eq!(no_token_resp.status(), 401);
+
+        repo.delete(ObjectId::parse_str(&user_id).unwrap()).await.ok();
+    });
+}
+
+// 16. POST /auth/me/password changes the password and revokes every other
+// session's refresh token, while the session that made the change survives.
+#[test]
+fn test_change_password_revokes_other_sessions() {
+    support::runtime().block_on(async {
+        const EMAIL: &str = "http_change_pw@test.com";
+        let (db, uri) = setup_db().await;
+        let repo = UserRepository::new(&db);
+        let app_state = build_app_state(db, uri);
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(app_state)
+                .service(web::scope("/api/v1").configure(routes::configure)),
+        )
+        .await;
+
+        delete_user_by_email(&repo, EMAIL).await;
+
+        // Session A: register.
+        let register_req = actix_test::TestRequest::post()
+            .uri("/api/v1/auth/register")
+            .set_json(register_json(EMAIL, "Password Changer"))
+            .to_request();
+        let register_resp = actix_test::call_service(&app, register_req).await;
+        assert_eq!(register_resp.status(), 201);
+        let refresh_a =
+            refresh_cookie_value(&register_resp).expect("register should set a refresh cookie");
+        let register_body: AuthResponse = actix_test::read_body_json(register_resp).await;
+        let jwt_a = register_body.jwt;
+        let user_id = register_body.user.id;
+
+        // Session B: a second login, as if from another device.
+        let login_req = actix_test::TestRequest::post()
+            .uri("/api/v1/auth/login")
+            .set_json(&LoginRequest {
+                email: EMAIL.to_string(),
+                password: "password123".to_string(),
+            })
+            .to_request();
+        let login_resp = actix_test::call_service(&app, login_req).await;
+        assert_eq!(login_resp.status(), 200);
+        let refresh_b =
+            refresh_cookie_value(&login_resp).expect("login should set a refresh cookie");
+
+        // Session A changes the password, sending its refresh cookie along.
+        let change_req = actix_test::TestRequest::post()
+            .uri("/api/v1/auth/me/password")
+            .insert_header(("Authorization", format!("Bearer {jwt_a}")))
+            .cookie(ParsedCookie::new(REFRESH_TOKEN_COOKIE, refresh_a.clone()))
+            .set_json(&ChangePasswordRequest {
+                current_password: "password123".to_string(),
+                new_password: "newpassword456".to_string(),
+            })
+            .to_request();
+        let change_resp = actix_test::call_service(&app, change_req).await;
+        assert_eq!(change_resp.status(), 200);
+
+        // The old password no longer logs in; the new one does.
+        let old_login_req = actix_test::TestRequest::post()
+            .uri("/api/v1/auth/login")
+            .set_json(&LoginRequest {
+                email: EMAIL.to_string(),
+                password: "password123".to_string(),
+            })
+            .to_request();
+        assert_eq!(
+            actix_test::call_service(&app, old_login_req).await.status(),
+            401
+        );
+        let new_login_req = actix_test::TestRequest::post()
+            .uri("/api/v1/auth/login")
+            .set_json(&LoginRequest {
+                email: EMAIL.to_string(),
+                password: "newpassword456".to_string(),
+            })
+            .to_request();
+        assert_eq!(
+            actix_test::call_service(&app, new_login_req).await.status(),
+            200
+        );
+
+        // Session B's refresh token was revoked...
+        let refresh_b_req = actix_test::TestRequest::post()
+            .uri("/api/v1/auth/refresh")
+            .cookie(ParsedCookie::new(REFRESH_TOKEN_COOKIE, refresh_b))
+            .to_request();
+        assert_eq!(
+            actix_test::call_service(&app, refresh_b_req).await.status(),
+            401
+        );
+
+        // ...but session A's still works.
+        let refresh_a_req = actix_test::TestRequest::post()
+            .uri("/api/v1/auth/refresh")
+            .cookie(ParsedCookie::new(REFRESH_TOKEN_COOKIE, refresh_a))
+            .to_request();
+        assert_eq!(
+            actix_test::call_service(&app, refresh_a_req).await.status(),
+            200
+        );
+
+        repo.delete(ObjectId::parse_str(&user_id).unwrap()).await.ok();
+    });
+}
+
+// 17. POST /auth/me/password rejections: wrong current password → 401, short
+// new password → 400, blank current password → 400, no access token → 401 —
+// and the stored password is untouched throughout.
+#[test]
+fn test_change_password_rejects_invalid_input() {
+    support::runtime().block_on(async {
+        const EMAIL: &str = "http_change_pw_invalid@test.com";
+        let (db, uri) = setup_db().await;
+        let repo = UserRepository::new(&db);
+        let app_state = build_app_state(db, uri);
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(app_state)
+                .service(web::scope("/api/v1").configure(routes::configure)),
+        )
+        .await;
+
+        delete_user_by_email(&repo, EMAIL).await;
+        let register_req = actix_test::TestRequest::post()
+            .uri("/api/v1/auth/register")
+            .set_json(register_json(EMAIL, "Bad Change"))
+            .to_request();
+        let register_resp = actix_test::call_service(&app, register_req).await;
+        assert_eq!(register_resp.status(), 201);
+        let register_body: AuthResponse = actix_test::read_body_json(register_resp).await;
+        let jwt = register_body.jwt;
+        let user_id = register_body.user.id;
+
+        let cases = [
+            (
+                ChangePasswordRequest {
+                    current_password: "not-the-password".to_string(),
+                    new_password: "newpassword456".to_string(),
+                },
+                401,
+            ),
+            (
+                ChangePasswordRequest {
+                    current_password: "password123".to_string(),
+                    new_password: "short".to_string(),
+                },
+                400,
+            ),
+            (
+                ChangePasswordRequest {
+                    current_password: "".to_string(),
+                    new_password: "newpassword456".to_string(),
+                },
+                400,
+            ),
+        ];
+        for (body, expected_status) in cases {
+            let req = actix_test::TestRequest::post()
+                .uri("/api/v1/auth/me/password")
+                .insert_header(("Authorization", format!("Bearer {jwt}")))
+                .set_json(&body)
+                .to_request();
+            let resp = actix_test::call_service(&app, req).await;
+            assert_eq!(resp.status(), expected_status);
+        }
+
+        let no_token_req = actix_test::TestRequest::post()
+            .uri("/api/v1/auth/me/password")
+            .set_json(&ChangePasswordRequest {
+                current_password: "password123".to_string(),
+                new_password: "newpassword456".to_string(),
+            })
+            .to_request();
+        assert_eq!(
+            actix_test::call_service(&app, no_token_req).await.status(),
+            401
+        );
+
+        // None of the failed attempts changed the stored password.
+        let login_req = actix_test::TestRequest::post()
+            .uri("/api/v1/auth/login")
+            .set_json(&LoginRequest {
+                email: EMAIL.to_string(),
+                password: "password123".to_string(),
+            })
+            .to_request();
+        assert_eq!(
+            actix_test::call_service(&app, login_req).await.status(),
+            200
+        );
 
         repo.delete(ObjectId::parse_str(&user_id).unwrap()).await.ok();
     });

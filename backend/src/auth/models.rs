@@ -26,6 +26,13 @@ pub struct UpdateMeRequest {
     pub current_password: Option<String>,
 }
 
+// Body for POST /auth/me/password.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AuthResponse {
     pub user: UserResponse,

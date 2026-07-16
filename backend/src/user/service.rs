@@ -43,6 +43,14 @@ impl UserService {
             .map(|opt| opt.map(Into::into))
     }
 
+    pub async fn update_password_hash(
+        &self,
+        id: ObjectId,
+        password_hash: &str,
+    ) -> Result<bool, UserRepoError> {
+        self.repo.update_password_hash(id, password_hash).await
+    }
+
     pub async fn find_by_id(&self, id: ObjectId) -> Result<Option<UserResponse>, UserRepoError> {
         self.repo
             .find_by_id(id)

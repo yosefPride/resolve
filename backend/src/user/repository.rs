@@ -93,6 +93,21 @@ impl UserRepository {
             .await?)
     }
 
+    pub async fn update_password_hash(
+        &self,
+        id: ObjectId,
+        password_hash: &str,
+    ) -> Result<bool, UserRepoError> {
+        let result = self
+            .collection
+            .update_one(
+                doc! { "_id": id },
+                doc! { "$set": { "password_hash": password_hash } },
+            )
+            .await?;
+        Ok(result.matched_count > 0)
+    }
+
     pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, UserRepoError> {
         Ok(self.collection.find_one(doc! { "email": email }).await?)
     }

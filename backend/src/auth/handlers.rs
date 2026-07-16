@@ -1,8 +1,10 @@
 use actix_web::cookie::{Cookie, SameSite, time::Duration as CookieDuration};
 use actix_web::{HttpRequest, HttpResponse, web};
 
-use crate::auth::models::{LoginRequest, RefreshResponse, RegisterRequest, UpdateMeRequest};
-use crate::auth::refresh_token::{REFRESH_TOKEN_COOKIE, REFRESH_TOKEN_TTL_DAYS};
+use crate::auth::models::{
+    ChangePasswordRequest, LoginRequest, RefreshResponse, RegisterRequest, UpdateMeRequest,
+};
+use crate::auth::refresh_token::{self, REFRESH_TOKEN_COOKIE, REFRESH_TOKEN_TTL_DAYS};
 use crate::auth::service::AuthService;
 use crate::errors::ApiError;
 use crate::server::middleware::AuthenticatedUser;
@@ -77,6 +79,20 @@ fn validate_update_me(input: &UpdateMeRequest) -> Result<(), ApiError> {
     Ok(())
 }
 
+fn validate_change_password(input: &ChangePasswordRequest) -> Result<(), ApiError> {
+    if input.current_password.is_empty() {
+        return Err(ApiError::Validation(
+            "current password is required".to_string(),
+        ));
+    }
+    if input.new_password.len() < 8 {
+        return Err(ApiError::Validation(
+            "password must be at least 8 characters".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 fn validate_login(input: &LoginRequest) -> Result<(), ApiError> {
     if input.email.trim().is_empty() || input.password.is_empty() {
         return Err(ApiError::Validation(
@@ -143,6 +159,29 @@ pub async fn update_me(
     let auth_service = AuthService::new(&state.db, state.config.jwt_secret.clone());
     let response = auth_service.update_me(user.user_id, input).await?;
     Ok(HttpResponse::Ok().json(response))
+}
+
+// The request's own refresh cookie (if present) identifies the session to
+// spare from revocation, so changing the password logs out every other device
+// without ending the session that made the change.
+pub async fn change_password(
+    user: AuthenticatedUser,
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    body: web::Json<ChangePasswordRequest>,
+) -> Result<HttpResponse, ApiError> {
+    let input = body.into_inner();
+    validate_change_password(&input)?;
+
+    let current_token_hash = req
+        .cookie(REFRESH_TOKEN_COOKIE)
+        .map(|cookie| refresh_token::hash_token(cookie.value()));
+
+    let auth_service = AuthService::new(&state.db, state.config.jwt_secret.clone());
+    auth_service
+        .change_password(user.user_id, input, current_token_hash.as_deref())
+        .await?;
+    Ok(HttpResponse::Ok().finish())
 }
 
 // Note: does not require AuthenticatedUser. The refresh token *is* the session
