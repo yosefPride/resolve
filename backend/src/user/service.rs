@@ -25,6 +25,24 @@ impl UserService {
         self.repo.find_by_email(email).await
     }
 
+    // Returns the full User (including password_hash) — intentional, needed by
+    // auth to verify the current password before an email change.
+    pub async fn find_full_by_id(&self, id: ObjectId) -> Result<Option<User>, UserRepoError> {
+        self.repo.find_by_id(id).await
+    }
+
+    pub async fn update_profile(
+        &self,
+        id: ObjectId,
+        name: &str,
+        email: &str,
+    ) -> Result<Option<UserResponse>, UserRepoError> {
+        self.repo
+            .update_profile(id, name, email)
+            .await
+            .map(|opt| opt.map(Into::into))
+    }
+
     pub async fn find_by_id(&self, id: ObjectId) -> Result<Option<UserResponse>, UserRepoError> {
         self.repo
             .find_by_id(id)

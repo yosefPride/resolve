@@ -16,6 +16,16 @@ pub struct LoginRequest {
     pub password: String,
 }
 
+// Body for PATCH /auth/me. Both fields optional so a client can update either
+// alone; `current_password` is only demanded when the email actually changes,
+// since email is the login identity and the key Group Admins add members by.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateMeRequest {
+    pub name: Option<String>,
+    pub email: Option<String>,
+    pub current_password: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AuthResponse {
     pub user: UserResponse,

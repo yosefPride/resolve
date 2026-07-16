@@ -5,7 +5,9 @@ use mongodb::{
     bson::{doc, oid::ObjectId},
     options::IndexOptions,
 };
-use resolve::auth::models::{AuthResponse, LoginRequest, RefreshResponse, RegisterRequest};
+use resolve::auth::models::{
+    AuthResponse, LoginRequest, RefreshResponse, RegisterRequest, UpdateMeRequest,
+};
 use resolve::auth::refresh_token::REFRESH_TOKEN_COOKIE;
 use resolve::auth::service::AuthService;
 use resolve::config::Config;
@@ -527,5 +529,289 @@ fn test_logout_without_cookie_is_noop() {
             .to_request();
         let logout_resp = actix_test::call_service(&app, logout_req).await;
         assert_eq!(logout_resp.status(), 200);
+    });
+}
+
+// Removes any leftover row for `email` from a previous run of these tests
+// (the HTTP tests share "resolve_test" and only clean their own emails).
+async fn delete_user_by_email(repo: &UserRepository, email: &str) {
+    if let Some(existing) = repo.find_by_email(email).await.expect("find failed") {
+        repo.delete(existing.id.unwrap())
+            .await
+            .expect("cleanup delete failed");
+    }
+}
+
+fn register_json(email: &str, name: &str) -> RegisterRequest {
+    RegisterRequest {
+        email: email.to_string(),
+        password: "password123".to_string(),
+        name: name.to_string(),
+    }
+}
+
+// 12. PATCH /auth/me updates the name alone; email is untouched and no
+// password is demanded.
+#[test]
+fn test_update_me_name_only() {
+    support::runtime().block_on(async {
+        const EMAIL: &str = "http_update_name@test.com";
+        let (db, uri) = setup_db().await;
+        let repo = UserRepository::new(&db);
+        let app_state = build_app_state(db, uri);
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(app_state)
+                .service(web::scope("/api/v1").configure(routes::configure)),
+        )
+        .await;
+
+        delete_user_by_email(&repo, EMAIL).await;
+        let register_req = actix_test::TestRequest::post()
+            .uri("/api/v1/auth/register")
+            .set_json(register_json(EMAIL, "Before Rename"))
+            .to_request();
+        let register_resp = actix_test::call_service(&app, register_req).await;
+        assert_eq!(register_resp.status(), 201);
+        let register_body: AuthResponse = actix_test::read_body_json(register_resp).await;
+        let jwt = register_body.jwt;
+        let user_id = register_body.user.id;
+
+        let update_req = actix_test::TestRequest::patch()
+            .uri("/api/v1/auth/me")
+            .insert_header(("Authorization", format!("Bearer {jwt}")))
+            .set_json(UpdateMeRequest {
+                name: Some("After Rename".to_string()),
+                email: None,
+                current_password: None,
+            })
+            .to_request();
+        let update_resp = actix_test::call_service(&app, update_req).await;
+        assert_eq!(update_resp.status(), 200);
+        let updated: UserResponse = actix_test::read_body_json(update_resp).await;
+        assert_eq!(updated.name, "After Rename");
+        assert_eq!(updated.email, EMAIL);
+
+        // The change is persisted, not just echoed back.
+        let me_req = actix_test::TestRequest::get()
+            .uri("/api/v1/auth/me")
+            .insert_header(("Authorization", format!("Bearer {jwt}")))
+            .to_request();
+        let me_body: UserResponse =
+            actix_test::read_body_json(actix_test::call_service(&app, me_req).await).await;
+        assert_eq!(me_body.name, "After Rename");
+
+        repo.delete(ObjectId::parse_str(&user_id).unwrap()).await.ok();
+    });
+}
+
+// 13. Changing the email requires the current password: missing → 400,
+// wrong → 401, correct → 200 and login works with the new email.
+#[test]
+fn test_update_me_email_requires_current_password() {
+    support::runtime().block_on(async {
+        const EMAIL: &str = "http_update_email@test.com";
+        const NEW_EMAIL: &str = "http_update_email_new@test.com";
+        let (db, uri) = setup_db().await;
+        let repo = UserRepository::new(&db);
+        delete_user_by_email(&repo, EMAIL).await;
+        // The target email may also linger from a previous run of this test.
+        delete_user_by_email(&repo, NEW_EMAIL).await;
+
+        let app_state = build_app_state(db, uri);
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(app_state)
+                .service(web::scope("/api/v1").configure(routes::configure)),
+        )
+        .await;
+
+        let register_req = actix_test::TestRequest::post()
+            .uri("/api/v1/auth/register")
+            .set_json(register_json(EMAIL, "Email Changer"))
+            .to_request();
+        let register_resp = actix_test::call_service(&app, register_req).await;
+        assert_eq!(register_resp.status(), 201);
+        let register_body: AuthResponse = actix_test::read_body_json(register_resp).await;
+        let jwt = register_body.jwt;
+        let user_id = register_body.user.id;
+
+        let no_password_req = actix_test::TestRequest::patch()
+            .uri("/api/v1/auth/me")
+            .insert_header(("Authorization", format!("Bearer {jwt}")))
+            .set_json(UpdateMeRequest {
+                name: None,
+                email: Some(NEW_EMAIL.to_string()),
+                current_password: None,
+            })
+            .to_request();
+        let no_password_resp = actix_test::call_service(&app, no_password_req).await;
+        assert_eq!(no_password_resp.status(), 400);
+
+        let wrong_password_req = actix_test::TestRequest::patch()
+            .uri("/api/v1/auth/me")
+            .insert_header(("Authorization", format!("Bearer {jwt}")))
+            .set_json(UpdateMeRequest {
+                name: None,
+                email: Some(NEW_EMAIL.to_string()),
+                current_password: Some("not-the-password".to_string()),
+            })
+            .to_request();
+        let wrong_password_resp = actix_test::call_service(&app, wrong_password_req).await;
+        assert_eq!(wrong_password_resp.status(), 401);
+
+        let update_req = actix_test::TestRequest::patch()
+            .uri("/api/v1/auth/me")
+            .insert_header(("Authorization", format!("Bearer {jwt}")))
+            .set_json(UpdateMeRequest {
+                name: None,
+                email: Some(NEW_EMAIL.to_string()),
+                current_password: Some("password123".to_string()),
+            })
+            .to_request();
+        let update_resp = actix_test::call_service(&app, update_req).await;
+        assert_eq!(update_resp.status(), 200);
+        let updated: UserResponse = actix_test::read_body_json(update_resp).await;
+        assert_eq!(updated.email, NEW_EMAIL);
+
+        // The new email is now the login identity.
+        let login_req = actix_test::TestRequest::post()
+            .uri("/api/v1/auth/login")
+            .set_json(&LoginRequest {
+                email: NEW_EMAIL.to_string(),
+                password: "password123".to_string(),
+            })
+            .to_request();
+        let login_resp = actix_test::call_service(&app, login_req).await;
+        assert_eq!(login_resp.status(), 200);
+
+        repo.delete(ObjectId::parse_str(&user_id).unwrap()).await.ok();
+    });
+}
+
+// 14. Taking an email that belongs to another user is a 409, same as register.
+#[test]
+fn test_update_me_duplicate_email() {
+    support::runtime().block_on(async {
+        const EMAIL_A: &str = "http_update_dup_a@test.com";
+        const EMAIL_B: &str = "http_update_dup_b@test.com";
+        let (db, uri) = setup_db().await;
+        let repo = UserRepository::new(&db);
+        let app_state = build_app_state(db, uri);
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(app_state)
+                .service(web::scope("/api/v1").configure(routes::configure)),
+        )
+        .await;
+
+        delete_user_by_email(&repo, EMAIL_A).await;
+        delete_user_by_email(&repo, EMAIL_B).await;
+
+        let register_a_req = actix_test::TestRequest::post()
+            .uri("/api/v1/auth/register")
+            .set_json(register_json(EMAIL_A, "Dup A"))
+            .to_request();
+        let register_a_resp = actix_test::call_service(&app, register_a_req).await;
+        assert_eq!(register_a_resp.status(), 201);
+        let register_a_body: AuthResponse = actix_test::read_body_json(register_a_resp).await;
+        let user_a_id = register_a_body.user.id;
+
+        let register_b_req = actix_test::TestRequest::post()
+            .uri("/api/v1/auth/register")
+            .set_json(register_json(EMAIL_B, "Dup B"))
+            .to_request();
+        let register_b_resp = actix_test::call_service(&app, register_b_req).await;
+        assert_eq!(register_b_resp.status(), 201);
+        let register_b_body: AuthResponse = actix_test::read_body_json(register_b_resp).await;
+        let jwt_b = register_b_body.jwt;
+        let user_b_id = register_b_body.user.id;
+
+        let update_req = actix_test::TestRequest::patch()
+            .uri("/api/v1/auth/me")
+            .insert_header(("Authorization", format!("Bearer {jwt_b}")))
+            .set_json(UpdateMeRequest {
+                name: None,
+                email: Some(EMAIL_A.to_string()),
+                current_password: Some("password123".to_string()),
+            })
+            .to_request();
+        let update_resp = actix_test::call_service(&app, update_req).await;
+        assert_eq!(update_resp.status(), 409);
+
+        repo.delete(ObjectId::parse_str(&user_a_id).unwrap()).await.ok();
+        repo.delete(ObjectId::parse_str(&user_b_id).unwrap()).await.ok();
+    });
+}
+
+// 15. PATCH /auth/me input validation: empty body, blank name, and malformed
+// email are 400s; no token at all is a 401.
+#[test]
+fn test_update_me_rejects_invalid_input() {
+    support::runtime().block_on(async {
+        const EMAIL: &str = "http_update_invalid@test.com";
+        let (db, uri) = setup_db().await;
+        let repo = UserRepository::new(&db);
+        let app_state = build_app_state(db, uri);
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(app_state)
+                .service(web::scope("/api/v1").configure(routes::configure)),
+        )
+        .await;
+
+        delete_user_by_email(&repo, EMAIL).await;
+        let register_req = actix_test::TestRequest::post()
+            .uri("/api/v1/auth/register")
+            .set_json(register_json(EMAIL, "Invalid Input"))
+            .to_request();
+        let register_resp = actix_test::call_service(&app, register_req).await;
+        assert_eq!(register_resp.status(), 201);
+        let register_body: AuthResponse = actix_test::read_body_json(register_resp).await;
+        let jwt = register_body.jwt;
+        let user_id = register_body.user.id;
+
+        let invalid_bodies = [
+            // Nothing to update.
+            UpdateMeRequest {
+                name: None,
+                email: None,
+                current_password: None,
+            },
+            // Blank name.
+            UpdateMeRequest {
+                name: Some("   ".to_string()),
+                email: None,
+                current_password: None,
+            },
+            // Malformed email.
+            UpdateMeRequest {
+                name: None,
+                email: Some("not-an-email".to_string()),
+                current_password: Some("password123".to_string()),
+            },
+        ];
+        for (i, body) in invalid_bodies.into_iter().enumerate() {
+            let req = actix_test::TestRequest::patch()
+                .uri("/api/v1/auth/me")
+                .insert_header(("Authorization", format!("Bearer {jwt}")))
+                .set_json(body)
+                .to_request();
+            let resp = actix_test::call_service(&app, req).await;
+            assert_eq!(resp.status(), 400, "expected 400 for invalid body #{i}");
+        }
+
+        let no_token_req = actix_test::TestRequest::patch()
+            .uri("/api/v1/auth/me")
+            .set_json(UpdateMeRequest {
+                name: Some("New Name".to_string()),
+                email: None,
+                current_password: None,
+            })
+            .to_request();
+        let no_token_resp = actix_test::call_service(&app, no_token_req).await;
+        assert_eq!(no_token_resp.status(), 401);
+
+        repo.delete(ObjectId::parse_str(&user_id).unwrap()).await.ok();
     });
 }

@@ -1,7 +1,7 @@
 use actix_web::cookie::{Cookie, SameSite, time::Duration as CookieDuration};
 use actix_web::{HttpRequest, HttpResponse, web};
 
-use crate::auth::models::{LoginRequest, RefreshResponse, RegisterRequest};
+use crate::auth::models::{LoginRequest, RefreshResponse, RegisterRequest, UpdateMeRequest};
 use crate::auth::refresh_token::{REFRESH_TOKEN_COOKIE, REFRESH_TOKEN_TTL_DAYS};
 use crate::auth::service::AuthService;
 use crate::errors::ApiError;
@@ -58,6 +58,25 @@ fn validate_register(input: &RegisterRequest) -> Result<(), ApiError> {
     Ok(())
 }
 
+fn validate_update_me(input: &UpdateMeRequest) -> Result<(), ApiError> {
+    if input.name.is_none() && input.email.is_none() {
+        return Err(ApiError::Validation("nothing to update".to_string()));
+    }
+    if let Some(email) = &input.email {
+        if email.trim().is_empty() || !email.contains('@') {
+            return Err(ApiError::Validation(
+                "a valid email is required".to_string(),
+            ));
+        }
+    }
+    if let Some(name) = &input.name {
+        if name.trim().is_empty() {
+            return Err(ApiError::Validation("name is required".to_string()));
+        }
+    }
+    Ok(())
+}
+
 fn validate_login(input: &LoginRequest) -> Result<(), ApiError> {
     if input.email.trim().is_empty() || input.password.is_empty() {
         return Err(ApiError::Validation(
@@ -110,6 +129,19 @@ pub async fn me(
         .find_by_id(user.user_id)
         .await?
         .ok_or(ApiError::Unauthenticated)?;
+    Ok(HttpResponse::Ok().json(response))
+}
+
+pub async fn update_me(
+    user: AuthenticatedUser,
+    state: web::Data<AppState>,
+    body: web::Json<UpdateMeRequest>,
+) -> Result<HttpResponse, ApiError> {
+    let input = body.into_inner();
+    validate_update_me(&input)?;
+
+    let auth_service = AuthService::new(&state.db, state.config.jwt_secret.clone());
+    let response = auth_service.update_me(user.user_id, input).await?;
     Ok(HttpResponse::Ok().json(response))
 }
 

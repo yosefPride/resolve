@@ -3,7 +3,7 @@ use mongodb::Database;
 use mongodb::bson::{DateTime as BsonDateTime, oid::ObjectId};
 
 use crate::auth::jwt;
-use crate::auth::models::{AuthResponse, LoginRequest, RegisterRequest};
+use crate::auth::models::{AuthResponse, LoginRequest, RegisterRequest, UpdateMeRequest};
 use crate::auth::password;
 use crate::auth::refresh_token::{self, REFRESH_TOKEN_TTL_DAYS};
 use crate::auth::repository::AuthRepository;
@@ -80,6 +80,42 @@ impl AuthService {
         let user = crate::user::models::UserResponse::from(user);
         let (jwt, raw_refresh_token) = self.issue_session(&user.id).await?;
         Ok((AuthResponse { user, jwt }, raw_refresh_token))
+    }
+
+    /// Updates the caller's own name/email. Changing the email requires the
+    /// current password (verified against the stored hash); a name-only change
+    /// does not. Lives in AuthService rather than UserService because of that
+    /// password check.
+    pub async fn update_me(
+        &self,
+        user_id: ObjectId,
+        input: UpdateMeRequest,
+    ) -> Result<crate::user::models::UserResponse, ApiError> {
+        let user = self
+            .user_service
+            .find_full_by_id(user_id)
+            .await?
+            .ok_or(ApiError::Unauthenticated)?;
+
+        let name = input.name.unwrap_or_else(|| user.name.clone());
+        let email = input.email.unwrap_or_else(|| user.email.clone());
+
+        if email != user.email {
+            let current_password = input.current_password.as_deref().ok_or_else(|| {
+                ApiError::Validation(
+                    "current password is required to change email".to_string(),
+                )
+            })?;
+            let valid = password::verify_password(current_password, &user.password_hash)?;
+            if !valid {
+                return Err(ApiError::InvalidCredentials);
+            }
+        }
+
+        self.user_service
+            .update_profile(user_id, name.trim(), email.trim())
+            .await?
+            .ok_or(ApiError::Unauthenticated)
     }
 
     /// Exchanges a valid, unexpired, not-yet-used refresh token for a new
