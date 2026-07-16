@@ -5,7 +5,7 @@ import LandingPage from './pages/LandingPage';
 import RegisterPage from './pages/RegisterPage';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
-import GroupSelectionPage from './pages/GroupSelectionPage';
+import MyGroupsPage from './pages/MyGroupsPage';
 import GroupManagementPage from './pages/GroupManagementPage';
 import AdminPage from './pages/AdminPage';
 import ProtectedRoute from './lib/ProtectedRoute';
@@ -32,7 +32,7 @@ export default function App() {
             path='/groups'
             element={
               <ProtectedRoute>
-                <GroupSelectionPage />
+                <MyGroupsPage />
               </ProtectedRoute>
             }
           />

@@ -5,7 +5,7 @@ import Modal from '../components/ui/Modal';
 import { listGroups } from '../services/groups.service';
 import { GROUP_ROLES } from '../utils/roles';
 
-export default function GroupSelectionPage() {
+export default function MyGroupsPage() {
   const [groups, setGroups] = useState([]);
   const [status, setStatus] = useState('loading');
   const [isCreating, setIsCreating] = useState(false);

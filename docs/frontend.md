@@ -198,7 +198,7 @@ Public:
 
 ## Setup
 
-- Group selection / creation
+- My groups — list the groups you belong to, and create one
 
 ## Main App
 
