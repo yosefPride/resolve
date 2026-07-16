@@ -6,6 +6,7 @@ import { isGroupAdmin } from '../utils/roles';
 import { deleteGroup } from '../services/groups.service';
 import { errorMessage } from '../utils/errors';
 import MemberManager from '../features/groups/MemberManager';
+import RenameGroupForm from '../features/groups/RenameGroupForm';
 import Modal from '../components/ui/Modal';
 
 export default function GroupManagementPage() {
@@ -16,6 +17,7 @@ export default function GroupManagementPage() {
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
 
   if (status === 'loading') {
     return (
@@ -50,6 +52,11 @@ export default function GroupManagementPage() {
     }
   }
 
+  function handleRenamed() {
+    setIsRenaming(false);
+    refresh(); // re-fetch so the heading (and members) reflect the new name
+  }
+
   return (
     <section className="mx-auto flex max-w-2xl flex-col gap-8 px-4 py-20 sm:px-6 lg:px-8">
       <div className="flex items-start justify-between">
@@ -62,15 +69,36 @@ export default function GroupManagementPage() {
           )}
         </div>
         {iAmAdmin && (
-          <button
-            type="button"
-            onClick={() => setIsConfirmingDelete(true)}
-            className="rounded-full border border-red-500/50 px-4 py-2 text-sm font-semibold text-red-400 transition-colors hover:bg-red-500/10"
-          >
-            Delete group
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsRenaming(true)}
+              aria-label="Rename group"
+              title="Rename group"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-slate-300 transition-colors hover:bg-white/20 hover:text-white"
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.75">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsConfirmingDelete(true)}
+              className="rounded-full border border-red-500/50 px-4 py-2 text-sm font-semibold text-red-400 transition-colors hover:bg-red-500/10"
+            >
+              Delete group
+            </button>
+          </div>
         )}
       </div>
+
+      <Modal
+        isOpen={isRenaming}
+        onClose={() => setIsRenaming(false)}
+        title="Rename group"
+      >
+        <RenameGroupForm groupId={id} currentName={group.name} onRenamed={handleRenamed} />
+      </Modal>
 
       <Modal
         isOpen={isConfirmingDelete}
