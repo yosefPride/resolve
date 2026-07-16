@@ -146,9 +146,10 @@ Three tabs, each a panel under `features/admin/`:
   created; no membership, per group isolation). Per-row delete removes the whole
   group (DELETE /admin/groups/:id).
 - Audit Log — the succession / auto-deletion trail (GET /admin/audit-log),
-  newest-first, filterable by group and by deleted user. Entries carry ids only;
-  names are resolved best-effort from the loaded user/group lists (a deleted
-  user or auto-deleted group no longer exists, so those show a shortened id).
+  newest-first, filterable by group and by deleted user. Entries carry
+  snapshotted names (group, deleted user, successor, performing admin), so even
+  a deleted user or auto-deleted group displays its real name; the group/user
+  filter options are derived from the log itself.
 
 Consistent with group isolation: the admin sees group *metadata* only, never a
 group's tickets, comments, or membership roster — the sole exception being the

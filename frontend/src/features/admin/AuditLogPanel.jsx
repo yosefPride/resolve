@@ -1,52 +1,36 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { formatDateTime } from '../../utils/format';
-import { listAuditLog, listUsers, listGroups } from '../../services/admin.service';
+import { listAuditLog } from '../../services/admin.service';
 
 const ACTION_LABELS = {
   succession: 'Succession',
   group_auto_deleted: 'Group auto-deleted',
 };
 
-function shortId(id) {
-  return id ? `${id.slice(0, 8)}…` : '—';
-}
-
-function toMap(items) {
-  return Object.fromEntries(items.map((item) => [item.id, item]));
-}
-
-// Best-effort name for an id. Names resolve for entities that still exist
-// (successor, performing admin, and the group in a succession entry). The
-// *deleted* user is always gone, and an auto-deleted group is gone too, so
-// those fall back to a shortened id (full id available on hover via title).
-function displayName(id, map) {
-  return map[id]?.name || shortId(id);
+// Distinct { id, name } pairs from the log, first-seen order. The log carries
+// snapshotted names, so this covers entities that no longer exist (deleted
+// users, auto-deleted groups) — which a lookup against /admin/users or
+// /admin/groups could not.
+function distinctBy(entries, idKey, nameKey) {
+  const seen = new Map();
+  for (const entry of entries) {
+    if (!seen.has(entry[idKey])) seen.set(entry[idKey], entry[nameKey]);
+  }
+  return [...seen.entries()].map(([id, name]) => ({ id, name }));
 }
 
 export default function AuditLogPanel() {
   const [entries, setEntries] = useState([]);
   const [status, setStatus] = useState('loading'); // loading | ready | error
-  const [usersById, setUsersById] = useState({});
-  const [groups, setGroups] = useState([]);
-  const [groupsById, setGroupsById] = useState({});
-  const [userOptions, setUserOptions] = useState([]); // distinct deleted_user_ids
   const [groupFilter, setGroupFilter] = useState('');
   const [userFilter, setUserFilter] = useState('');
 
   useEffect(() => {
     let cancelled = false;
-    // Load the full log plus the user/group lists once: the lists resolve ids to
-    // names and populate the filter dropdowns. Deleted-user options come from the
-    // log itself (deleted users aren't in the user list), computed here so they
-    // stay stable as filters narrow the displayed rows.
-    Promise.all([listAuditLog(), listUsers(), listGroups()])
-      .then(([logEntries, users, groupList]) => {
+    listAuditLog()
+      .then((data) => {
         if (cancelled) return;
-        setEntries(logEntries);
-        setUsersById(toMap(users));
-        setGroups(groupList);
-        setGroupsById(toMap(groupList));
-        setUserOptions([...new Set(logEntries.map((entry) => entry.deleted_user_id))]);
+        setEntries(data);
         setStatus('ready');
       })
       .catch(() => {
@@ -58,15 +42,20 @@ export default function AuditLogPanel() {
     };
   }, []);
 
-  // Event-driven refetch (not an effect) so the two independent filters can
-  // combine and the backend's ?group_id=/?user_id= params do the narrowing.
-  function applyFilters(nextGroup, nextUser) {
-    setGroupFilter(nextGroup);
-    setUserFilter(nextUser);
-    listAuditLog({ groupId: nextGroup || undefined, userId: nextUser || undefined })
-      .then(setEntries)
-      .catch(() => setStatus('error'));
-  }
+  // Options come from the full loaded log so they stay stable while filtering.
+  const groupOptions = useMemo(() => distinctBy(entries, 'group_id', 'group_name'), [entries]);
+  const userOptions = useMemo(
+    () => distinctBy(entries, 'deleted_user_id', 'deleted_user_name'),
+    [entries],
+  );
+
+  // The log is low-volume system metadata, so filter in memory rather than
+  // round-tripping the backend's ?group_id=/?user_id= params per change.
+  const visible = entries.filter(
+    (entry) =>
+      (!groupFilter || entry.group_id === groupFilter) &&
+      (!userFilter || entry.deleted_user_id === userFilter),
+  );
 
   if (status === 'loading') return <p className="text-sm text-slate-400">Loading…</p>;
   if (status === 'error') return <p className="text-sm text-red-500">Failed to load the audit log.</p>;
@@ -78,13 +67,13 @@ export default function AuditLogPanel() {
           Group
           <select
             value={groupFilter}
-            onChange={(event) => applyFilters(event.target.value, userFilter)}
+            onChange={(event) => setGroupFilter(event.target.value)}
             className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50"
           >
             <option value="">All groups</option>
-            {groups.map((group) => (
-              <option key={group.id} value={group.id}>
-                {group.name}
+            {groupOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.name}
               </option>
             ))}
           </select>
@@ -94,20 +83,20 @@ export default function AuditLogPanel() {
           Deleted user
           <select
             value={userFilter}
-            onChange={(event) => applyFilters(groupFilter, event.target.value)}
+            onChange={(event) => setUserFilter(event.target.value)}
             className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50"
           >
             <option value="">All users</option>
-            {userOptions.map((id) => (
-              <option key={id} value={id}>
-                {displayName(id, usersById)}
+            {userOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.name}
               </option>
             ))}
           </select>
         </label>
       </div>
 
-      {entries.length === 0 ? (
+      {visible.length === 0 ? (
         <p className="text-sm text-slate-400">No audit entries.</p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-white/10">
@@ -123,25 +112,17 @@ export default function AuditLogPanel() {
               </tr>
             </thead>
             <tbody>
-              {entries.map((entry) => (
+              {visible.map((entry) => (
                 <tr key={entry.id} className="border-b border-white/5 last:border-0 hover:bg-white/5">
                   <td className="px-4 py-3">
                     <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-slate-200">
                       {ACTION_LABELS[entry.action] || entry.action}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-slate-300" title={entry.group_id}>
-                    {displayName(entry.group_id, groupsById)}
-                  </td>
-                  <td className="px-4 py-3 text-slate-300" title={entry.deleted_user_id}>
-                    {displayName(entry.deleted_user_id, usersById)}
-                  </td>
-                  <td className="px-4 py-3 text-slate-300" title={entry.successor_user_id || ''}>
-                    {entry.successor_user_id ? displayName(entry.successor_user_id, usersById) : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-slate-300" title={entry.performed_by}>
-                    {displayName(entry.performed_by, usersById)}
-                  </td>
+                  <td className="px-4 py-3 text-slate-300">{entry.group_name}</td>
+                  <td className="px-4 py-3 text-slate-300">{entry.deleted_user_name}</td>
+                  <td className="px-4 py-3 text-slate-300">{entry.successor_user_name || '—'}</td>
+                  <td className="px-4 py-3 text-slate-300">{entry.performed_by_name}</td>
                   <td className="px-4 py-3 text-slate-400">{formatDateTime(entry.created_at)}</td>
                 </tr>
               ))}

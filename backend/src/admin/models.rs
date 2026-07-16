@@ -23,9 +23,22 @@ pub struct AuditLogEntry {
     pub id: Option<ObjectId>,
     pub action: AuditAction,
     pub group_id: ObjectId,
+    // Names are snapshotted at write time: by the time the log is read, the
+    // deleted user (always) and an auto-deleted group (when action =
+    // group_auto_deleted) no longer exist, so their ids can't be resolved later.
+    // `default` so entries written before this field existed still deserialize
+    // (they read back with an empty name rather than failing the whole query).
+    #[serde(default)]
+    pub group_name: String,
     pub deleted_user_id: ObjectId,
+    #[serde(default)]
+    pub deleted_user_name: String,
     pub successor_user_id: Option<ObjectId>,
+    #[serde(default)]
+    pub successor_user_name: Option<String>,
     pub performed_by: ObjectId,
+    #[serde(default)]
+    pub performed_by_name: String,
     pub created_at: BsonDateTime,
 }
 
@@ -36,9 +49,13 @@ pub struct AuditLogEntryResponse {
     pub id: String,
     pub action: AuditAction,
     pub group_id: String,
+    pub group_name: String,
     pub deleted_user_id: String,
+    pub deleted_user_name: String,
     pub successor_user_id: Option<String>,
+    pub successor_user_name: Option<String>,
     pub performed_by: String,
+    pub performed_by_name: String,
     pub created_at: DateTime<Utc>,
 }
 
@@ -48,9 +65,13 @@ impl From<AuditLogEntry> for AuditLogEntryResponse {
             id: entry.id.map(|id| id.to_hex()).unwrap_or_default(),
             action: entry.action,
             group_id: entry.group_id.to_hex(),
+            group_name: entry.group_name,
             deleted_user_id: entry.deleted_user_id.to_hex(),
+            deleted_user_name: entry.deleted_user_name,
             successor_user_id: entry.successor_user_id.map(|id| id.to_hex()),
+            successor_user_name: entry.successor_user_name,
             performed_by: entry.performed_by.to_hex(),
+            performed_by_name: entry.performed_by_name,
             created_at: DateTime::from_timestamp_millis(entry.created_at.timestamp_millis())
                 .unwrap_or_default(),
         }

@@ -165,10 +165,20 @@ Fields:
 - \_id
 - action (succession | group_auto_deleted)
 - group_id
+- group_name (snapshot — see note below)
 - deleted_user_id (the user being deleted, was sole Group Admin of group_id)
+- deleted_user_name (snapshot)
 - successor_user_id (nullable; set only when action = succession)
+- successor_user_name (nullable; snapshot, set only when action = succession)
 - performed_by (System Admin's user_id)
+- performed_by_name (snapshot)
 - created_at
+
+The `*_name` fields are denormalized snapshots captured at write time, not
+lookups. By the time the log is read the deleted user (always) and an
+auto-deleted group (when action = group_auto_deleted) no longer exist, so their
+ids can't be resolved to names after the fact — the name is stored alongside the
+id when the entry is written.
 
 Like refresh_tokens, this is system-level data tied to an admin action, not group-scoped tenant data — it is written by System Admin, not queried by group-scoped business logic.
 

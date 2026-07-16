@@ -32,9 +32,13 @@ fn sample_entry(
         id: None,
         action,
         group_id,
+        group_name: "Test Group".to_string(),
         deleted_user_id,
+        deleted_user_name: "Deleted User".to_string(),
         successor_user_id,
+        successor_user_name: successor_user_id.map(|_| "Successor".to_string()),
         performed_by: oid(),
+        performed_by_name: "Admin".to_string(),
         created_at: BsonDateTime::now(),
     }
 }
