@@ -212,7 +212,7 @@ export default function MemberManager({ groupId, members, myUserId, myRole, onCh
                 <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-slate-300">
                   {isGroupAdmin(member.role) ? 'Group Admin' : 'Contributor'}
                 </span>
-                {(iAmAdmin || isSelf) && (
+                {iAmAdmin && (
                   <MemberActionsMenu
                     member={member}
                     isSelf={isSelf}

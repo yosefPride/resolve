@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useGroup } from '../hooks/useGroup';
 import { useAuth } from '../hooks/useAuth';
 import { isGroupAdmin } from '../utils/roles';
-import { deleteGroup } from '../services/groups.service';
+import { deleteGroup, removeMember } from '../services/groups.service';
 import { errorMessage } from '../utils/errors';
 import MemberManager from '../features/groups/MemberManager';
 import RenameGroupForm from '../features/groups/RenameGroupForm';
@@ -18,6 +18,9 @@ export default function GroupManagementPage() {
   const [deleteError, setDeleteError] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
+  const [isConfirmingLeave, setIsConfirmingLeave] = useState(false);
+  const [leaveError, setLeaveError] = useState('');
+  const [isLeaving, setIsLeaving] = useState(false);
 
   if (status === 'loading') {
     return (
@@ -57,6 +60,18 @@ export default function GroupManagementPage() {
     refresh(); // re-fetch so the heading (and members) reflect the new name
   }
 
+  async function handleLeave() {
+    setLeaveError('');
+    setIsLeaving(true);
+    try {
+      await removeMember(id, user.id);
+      navigate('/groups');
+    } catch (err) {
+      setLeaveError(errorMessage(err, 'Failed to leave group.'));
+      setIsLeaving(false);
+    }
+  }
+
   return (
     <section className="mx-auto flex max-w-2xl flex-col gap-8 px-4 py-20 sm:px-6 lg:px-8">
       <div className="flex items-start justify-between">
@@ -68,7 +83,7 @@ export default function GroupManagementPage() {
             </p>
           )}
         </div>
-        {iAmAdmin && (
+        {iAmAdmin ? (
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -89,6 +104,14 @@ export default function GroupManagementPage() {
               Delete group
             </button>
           </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setIsConfirmingLeave(true)}
+            className="rounded-full border border-red-500/50 px-4 py-2 text-sm font-semibold text-red-400 transition-colors hover:bg-red-500/10"
+          >
+            Leave group
+          </button>
         )}
       </div>
 
@@ -98,6 +121,43 @@ export default function GroupManagementPage() {
         title="Rename group"
       >
         <RenameGroupForm groupId={id} currentName={group.name} onRenamed={handleRenamed} />
+      </Modal>
+
+      <Modal
+        isOpen={isConfirmingLeave}
+        onClose={() => {
+          setIsConfirmingLeave(false);
+          setLeaveError('');
+        }}
+        title="Leave group"
+      >
+        <p className="text-sm text-slate-300">
+          Are you sure you want to leave <span className="font-semibold text-white">{group.name}</span>? You'll
+          lose access to its tickets, and a Group Admin would need to add you back to rejoin.
+        </p>
+
+        {leaveError && <p className="mt-3 text-sm text-red-500">{leaveError}</p>}
+
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              setIsConfirmingLeave(false);
+              setLeaveError('');
+            }}
+            className="rounded-full px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={isLeaving}
+            onClick={handleLeave}
+            className="rounded-full bg-red-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isLeaving ? 'Leaving…' : 'Leave group'}
+          </button>
+        </div>
       </Modal>
 
       <Modal
