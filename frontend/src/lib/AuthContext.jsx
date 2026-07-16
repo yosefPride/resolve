@@ -69,6 +69,12 @@ export function AuthProvider({ children }) {
     setStatus('authenticated');
   }, []);
 
+  // Replaces the cached user after the account owner edits their own profile,
+  // so the header/menu reflect the change without a re-fetch.
+  const updateUser = useCallback((updated) => {
+    setUser(updated);
+  }, []);
+
   const logout = useCallback(async () => {
     await authService.logout();
     setAccessToken(null);
@@ -82,7 +88,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, status, login, register, logout }}>
+    <AuthContext.Provider value={{ user, status, login, register, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );
