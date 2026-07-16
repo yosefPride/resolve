@@ -7,7 +7,9 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import GroupSelectionPage from './pages/GroupSelectionPage';
 import GroupManagementPage from './pages/GroupManagementPage';
+import AdminPage from './pages/AdminPage';
 import ProtectedRoute from './lib/ProtectedRoute';
+import AdminRoute from './lib/AdminRoute';
 
 export default function App() {
   return (
@@ -40,6 +42,14 @@ export default function App() {
               <ProtectedRoute>
                 <GroupManagementPage />
               </ProtectedRoute>
+            }
+          />
+          <Route
+            path='/admin'
+            element={
+              <AdminRoute>
+                <AdminPage />
+              </AdminRoute>
             }
           />
         </Routes>
