@@ -3,6 +3,7 @@ use actix_web::web;
 use crate::admin::handlers as admin_handlers;
 use crate::auth::handlers as auth_handlers;
 use crate::group::handlers as group_handlers;
+use crate::ticket::handlers as ticket_handlers;
 
 pub fn configure(config: &mut web::ServiceConfig) {
     config
@@ -39,9 +40,17 @@ pub fn configure(config: &mut web::ServiceConfig) {
                 .route(
                     "/{id}/users/{user_id}",
                     web::delete().to(group_handlers::remove_member),
+                )
+                .route(
+                    "/{id}/tickets",
+                    web::post().to(ticket_handlers::create_ticket),
+                )
+                .route("/{id}/tickets", web::get().to(ticket_handlers::list_tickets))
+                .route(
+                    "/{id}/tickets/{ticket_id}",
+                    web::get().to(ticket_handlers::get_ticket),
                 ),
         )
-        .service(web::scope("/tickets"))
         .service(web::scope("/ai"))
         .service(
             web::scope("/admin")

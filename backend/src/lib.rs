@@ -6,4 +6,5 @@ pub mod group;
 pub mod rbac;
 pub mod server;
 pub mod state;
+pub mod ticket;
 pub mod user;

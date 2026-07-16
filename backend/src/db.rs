@@ -95,5 +95,38 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), Error> {
         )
         .await?;
 
+    // Serves every group-scoped ticket query (docs/database.md, "Multi-Tenancy
+    // Rule") — every ticket read/write filters on group_id.
+    db.collection::<Document>("tickets")
+        .create_index(IndexModel::builder().keys(doc! { "group_id": 1 }).build())
+        .await?;
+
+    db.collection::<Document>("tickets")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "status": 1 })
+                .build(),
+        )
+        .await?;
+
+    db.collection::<Document>("tickets")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "created_by": 1 })
+                .build(),
+        )
+        .await?;
+
+    // Enforces the per-group ticket_number sequence stays unique, in addition
+    // to the atomic counter that allocates it (TicketRepository::next_ticket_number).
+    db.collection::<Document>("tickets")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "ticket_number": 1 })
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+        )
+        .await?;
+
     Ok(())
 }

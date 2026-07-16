@@ -266,7 +266,9 @@ Returns tickets in the group (any group member)
 Supports:
 
 - pagination
-- filters (status, assignee)
+- search by title (`q`, case-insensitive substring match; falls back to
+  typo-tolerant similarity matching when the substring match returns nothing)
+- filters: status, priority, creator
 
 ---
 
@@ -279,6 +281,15 @@ Request:
 - title
 - description
 - priority
+
+Server-assigned on creation, not accepted from the client:
+
+- `status` — always starts `open`
+- `ticket_number` — a running number scoped to the group (the first ticket in
+  a group is `1`, independent of other groups' numbering)
+- `created_by` — the caller
+
+There is no assignment: tickets have no assignee field.
 
 ---
 
@@ -293,12 +304,20 @@ another group).
 
 ## PATCH /groups/{id}/tickets/{ticket_id}
 
-Update ticket
+Update ticket — Group Admin only. This includes status changes (there is no
+separate status endpoint): `status`, `title`, `description`, and `priority` are
+all edited through this one endpoint.
 
-Permissions:
+Not even the ticket's creator may edit it after opening — editing is Group
+Admin only, full stop. A Contributor may open tickets but cannot modify one
+afterward, including their own.
 
-- Contributor: own tickets only (ownership = creator_id)
-- Group Admin: all tickets in the group
+Request (all fields optional, but at least one required):
+
+- title
+- description
+- priority
+- status
 
 ---
 
@@ -308,29 +327,14 @@ Group Admin only
 
 ---
 
-## POST /groups/{id}/tickets/{ticket_id}/assign
-
-Assign ticket (Group Admin only)
-
-Request:
-
-- user_id
-
----
-
-## POST /groups/{id}/tickets/{ticket_id}/status
-
-Change status
-
-Group Admin only
-
----
-
 ### Ticket Rules:
 
-- Contributor can only modify own tickets
-- Group Admin can modify any ticket in the group
-- Ownership defined by creator_id
+- Any group member may create a ticket
+- Only a Group Admin may edit or delete a ticket — including status changes —
+  regardless of who created it
+- Status: `open` | `closed`
+- Priority: `low` | `high` | `critical`
+- No assignment: tickets have no assignee
 
 ---
 
