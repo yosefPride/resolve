@@ -92,6 +92,39 @@ Requires JWT.
 
 ---
 
+## PATCH /auth/me
+
+Update the caller's own profile. Requires JWT.
+
+Request (both fields optional; at least one required):
+
+- name
+- email
+- current_password — required only when `email` differs from the current one
+
+Response:
+
+- user (the updated UserResponse)
+
+Changing the email requires `current_password` because the email is the login identity (and the key Group Admins add members by). A name-only change does not. Rejected `400` if the body changes nothing, if a supplied name/email is blank/malformed, or if an email change omits `current_password`; `401` if `current_password` is wrong; `409` (`duplicate_email`) if the email is already in use by another account.
+
+---
+
+## POST /auth/me/password
+
+Change the caller's own password. Requires JWT.
+
+Request:
+
+- current_password
+- new_password (minimum 8 characters)
+
+Response: `200` with no body.
+
+On success, every *other* outstanding refresh token for the user is revoked — all other devices are signed out — while the session that made the change (identified by its own refresh_token cookie) stays valid. Rejected `400` if `new_password` is shorter than 8 characters or `current_password` is empty; `401` if `current_password` is wrong.
+
+---
+
 ## POST /auth/refresh
 
 Exchanges the refresh_token cookie for a new access token.

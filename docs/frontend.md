@@ -70,6 +70,7 @@ src/
         ui/             (design-system primitives: cards, tables, form wrappers)
     features/
         auth/
+        account/        (own profile: summary, profile edit, password change)
         groups/
         tickets/
         comments/
@@ -88,6 +89,21 @@ src/
 ---
 
 # Feature Breakdown
+
+## account/
+
+The Account page (`/account`, reached from the user menu) is where a user
+manages their own identity — no group or admin scope involved. Three cards:
+
+- Profile summary — read-only header (avatar initials, name, email, member-since,
+  a System Admin chip where applicable), rendered straight from the auth context
+- Profile edit — update name and/or email (`PATCH /auth/me`). Changing the email
+  reveals a required current-password field; a taken email surfaces under the
+  Email input via the `duplicate_email` code. On success the auth context user is
+  updated in place, so the header/menu reflect a new name without a reload
+- Password change — current / new / confirm, with client-side min-length and
+  match checks (`POST /auth/me/password`). Succeeds by signing out the user's
+  other devices while keeping this session
 
 ## groups/
 
@@ -206,5 +222,5 @@ Public:
 - Tickets
 - Ticket details (includes AI panel)
 - Group management
-- Account
+- Account — own profile: summary, profile edit, password change (see account/ above)
 - Admin (System Admin only)
