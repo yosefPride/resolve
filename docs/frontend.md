@@ -76,6 +76,7 @@ src/
         users/
         ai/
         dashboard/
+        admin/          (System Admin panels: users, groups, audit log)
     hooks/
     lib/
     pages/
@@ -122,6 +123,36 @@ AI is embedded inside existing pages:
 
 - Group Dashboard (secondary)
   - AI reports (Group Admin only)
+
+## admin/ (System Admin only)
+
+The Admin page (`/admin`, reached from the user menu) is an additive section
+gated by the global System Admin role — it does not replace the regular app, so
+a System Admin who is also a group member still uses the normal group UI for
+ticket/comment work. The route is guarded by `AdminRoute` (auth + System Admin;
+non-admins are redirected to /dashboard); the backend enforces every action via
+the `SystemAdminUser` extractor, so this gating is UX-only.
+
+Three tabs, each a panel under `features/admin/`:
+
+- Users — system-wide user list (GET /admin/users). Per-row delete opens the
+  succession flow: GET /admin/users/:id/deletion-check classifies the target's
+  groups, then the modal collects a successor for each group where they are the
+  sole Group Admin (or warns that a sole-member group will be auto-deleted)
+  before POST /admin/users/:id/delete. A 409 (the server re-derived a different
+  plan because membership shifted) re-runs the check in place. The admin's own
+  row has no delete action.
+- Groups — system-wide group list (GET /admin/groups, metadata only: name +
+  created; no membership, per group isolation). Per-row delete removes the whole
+  group (DELETE /admin/groups/:id).
+- Audit Log — the succession / auto-deletion trail (GET /admin/audit-log),
+  newest-first, filterable by group and by deleted user. Entries carry ids only;
+  names are resolved best-effort from the loaded user/group lists (a deleted
+  user or auto-deleted group no longer exists, so those show a shortened id).
+
+Consistent with group isolation: the admin sees group *metadata* only, never a
+group's tickets, comments, or membership roster — the sole exception being the
+eligible-successor list surfaced during a sole-Group-Admin deletion.
 
 ---
 

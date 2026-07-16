@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import UsersPanel from '../features/admin/UsersPanel';
 import GroupsPanel from '../features/admin/GroupsPanel';
+import AuditLogPanel from '../features/admin/AuditLogPanel';
 
 const TABS = [
   { id: 'users', label: 'Users' },
@@ -12,7 +13,7 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState('users');
 
   return (
-    <section className="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-20 sm:px-6 lg:px-8">
+    <section className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-20 sm:px-6 lg:px-8">
       <h1 className="text-2xl font-bold text-white">Admin</h1>
 
       <div role="tablist" aria-label="Admin sections" className="flex gap-2 border-b border-white/10">
@@ -40,9 +41,7 @@ export default function AdminPage() {
       <div role="tabpanel">
         {activeTab === 'users' && <UsersPanel />}
         {activeTab === 'groups' && <GroupsPanel />}
-        {activeTab === 'audit' && (
-          <p className="text-sm text-slate-400">Audit log coming soon.</p>
-        )}
+        {activeTab === 'audit' && <AuditLogPanel />}
       </div>
     </section>
   );
