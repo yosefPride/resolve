@@ -4,4 +4,4 @@
 
 Ort final project
 
-![Resolve Logo](frontend/src/assets/logo.png)
+![Resolve Logo](frontend/src/assets/brand-logo.jpeg)
