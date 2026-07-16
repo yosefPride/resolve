@@ -304,6 +304,11 @@ fn test_delete_user_with_successor_succeeds() {
             .expect("list failed");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].successor_user_id, Some(contributor_id));
+        // Names are snapshotted at write time.
+        assert_eq!(entries[0].group_name, "Team");
+        assert_eq!(entries[0].deleted_user_name, "sole-admin");
+        assert_eq!(entries[0].successor_user_name.as_deref(), Some("contributor"));
+        assert_eq!(entries[0].performed_by_name, "sysadmin");
     });
 }
 
@@ -342,6 +347,11 @@ fn test_delete_user_auto_deletes_lone_group() {
             .expect("list failed");
         assert_eq!(entries.len(), 1);
         assert!(entries[0].successor_user_id.is_none());
+        // Group name is snapshotted even though the group is now gone.
+        assert_eq!(entries[0].group_name, "SoloTeam");
+        assert_eq!(entries[0].deleted_user_name, "lone-admin");
+        assert!(entries[0].successor_user_name.is_none());
+        assert_eq!(entries[0].performed_by_name, "sysadmin");
     });
 }
 

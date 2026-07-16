@@ -36,7 +36,7 @@ export default function GroupSelectionPage() {
   }
 
   return (
-    <section className="mx-auto flex max-w-4xl flex-col gap-6 px-4 py-20 sm:px-6 lg:px-8">
+    <section className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-20 sm:px-6 lg:px-8">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-white">Your groups</h1>
         <button

@@ -418,14 +418,20 @@ Optional query filters, independent (either may be used alone, both may be combi
 - `group_id` — only entries for that group
 - `user_id` — only entries where that user was the one deleted
 
-Entries are returned newest-first. Each entry:
+Entries are returned newest-first. The `*_name` fields are snapshots taken when
+the entry was written (the deleted user, and an auto-deleted group, no longer
+exist to be looked up at read time). Each entry:
 
 - id
 - action (succession | group_auto_deleted)
 - group_id
+- group_name
 - deleted_user_id
+- deleted_user_name
 - successor_user_id (null when action = group_auto_deleted)
+- successor_user_name (null when action = group_auto_deleted)
 - performed_by (the System Admin who ran the deletion)
+- performed_by_name
 - created_at
 
 ---

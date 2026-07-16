@@ -93,10 +93,19 @@ impl AdminService {
         successors: HashMap<ObjectId, ObjectId>,
     ) -> Result<(), ApiError> {
         self.rbac.require_system_admin(caller_id).await?;
-        self.user_service
+        let target_user = self
+            .user_service
             .find_by_id(target_user_id)
             .await?
             .ok_or(ApiError::NotFound)?;
+        // Snapshot names for the audit log now, while the entities still exist.
+        let deleted_user_name = target_user.name;
+        let performed_by_name = self
+            .user_service
+            .find_by_id(caller_id)
+            .await?
+            .map(|u| u.name)
+            .unwrap_or_default();
 
         let plan = self.build_plan(target_user_id).await?;
 
@@ -115,8 +124,14 @@ impl AdminService {
             }
         }
 
-        for (group_id, _name, _others) in &plan.blocked {
+        for (group_id, group_name, _others) in &plan.blocked {
             let successor_id = successors[group_id];
+            let successor_name = self
+                .user_service
+                .find_by_id(successor_id)
+                .await?
+                .map(|u| u.name)
+                .unwrap_or_default();
             self.group_repo
                 .update_member_role(*group_id, successor_id, Role::GroupAdmin)
                 .await?;
@@ -128,15 +143,19 @@ impl AdminService {
                     id: None,
                     action: AuditAction::Succession,
                     group_id: *group_id,
+                    group_name: group_name.clone(),
                     deleted_user_id: target_user_id,
+                    deleted_user_name: deleted_user_name.clone(),
                     successor_user_id: Some(successor_id),
+                    successor_user_name: Some(successor_name),
                     performed_by: caller_id,
+                    performed_by_name: performed_by_name.clone(),
                     created_at: BsonDateTime::now(),
                 })
                 .await?;
         }
 
-        for (group_id, _name) in &plan.auto_delete {
+        for (group_id, group_name) in &plan.auto_delete {
             self.group_repo.delete_members_by_group(*group_id).await?;
             self.group_repo.delete_group(*group_id).await?;
             self.admin_repo
@@ -144,9 +163,13 @@ impl AdminService {
                     id: None,
                     action: AuditAction::GroupAutoDeleted,
                     group_id: *group_id,
+                    group_name: group_name.clone(),
                     deleted_user_id: target_user_id,
+                    deleted_user_name: deleted_user_name.clone(),
                     successor_user_id: None,
+                    successor_user_name: None,
                     performed_by: caller_id,
+                    performed_by_name: performed_by_name.clone(),
                     created_at: BsonDateTime::now(),
                 })
                 .await?;

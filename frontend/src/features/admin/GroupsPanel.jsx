@@ -2,10 +2,7 @@ import { useEffect, useState } from 'react';
 import Modal from '../../components/ui/Modal';
 import { formatDate } from '../../utils/format';
 import { listGroups, deleteGroup } from '../../services/admin.service';
-
-function extractError(err, fallback) {
-  return err.response?.data?.error?.message || fallback;
-}
+import { errorMessage } from '../../utils/errors';
 
 export default function GroupsPanel() {
   const [groups, setGroups] = useState([]);
@@ -48,7 +45,7 @@ export default function GroupsPanel() {
       setGroups(data);
       setTarget(null);
     } catch (err) {
-      setDeleteError(extractError(err, 'Failed to delete group.'));
+      setDeleteError(errorMessage(err, 'Failed to delete group.'));
     } finally {
       setIsDeleting(false);
     }

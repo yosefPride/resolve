@@ -4,6 +4,7 @@ import { useGroup } from '../hooks/useGroup';
 import { useAuth } from '../hooks/useAuth';
 import { isGroupAdmin } from '../utils/roles';
 import { deleteGroup } from '../services/groups.service';
+import { errorMessage } from '../utils/errors';
 import MemberManager from '../features/groups/MemberManager';
 import Modal from '../components/ui/Modal';
 
@@ -44,7 +45,7 @@ export default function GroupManagementPage() {
       await deleteGroup(id);
       navigate('/groups');
     } catch (err) {
-      setDeleteError(err.response?.data?.error?.message || 'Failed to delete group.');
+      setDeleteError(errorMessage(err, 'Failed to delete group.'));
       setIsDeleting(false);
     }
   }

@@ -2,10 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { addMember, lookupUserByEmail, removeMember, updateMemberRole } from '../../services/groups.service';
 import { GROUP_ROLES, isGroupAdmin } from '../../utils/roles';
-
-function extractError(err, fallback) {
-  return err.response?.data?.error?.message || fallback;
-}
+import { errorMessage } from '../../utils/errors';
 
 function AddMemberForm({ groupId, onAdded }) {
   const [email, setEmail] = useState('');
@@ -22,7 +19,7 @@ function AddMemberForm({ groupId, onAdded }) {
       const user = await lookupUserByEmail(groupId, email);
       setFound(user);
     } catch (err) {
-      setError(extractError(err, 'No user found with that email.'));
+      setError(errorMessage(err, 'No user found with that email.'));
     } finally {
       setIsBusy(false);
     }
@@ -37,7 +34,7 @@ function AddMemberForm({ groupId, onAdded }) {
       setEmail('');
       onAdded();
     } catch (err) {
-      setError(extractError(err, 'Failed to add member.'));
+      setError(errorMessage(err, 'Failed to add member.'));
     } finally {
       setIsBusy(false);
     }
@@ -172,7 +169,7 @@ export default function MemberManager({ groupId, members, myUserId, myRole, onCh
       await updateMemberRole(groupId, member.user_id, nextRole);
       onChanged();
     } catch (err) {
-      setError(extractError(err, 'Failed to update role.'));
+      setError(errorMessage(err, 'Failed to update role.'));
     } finally {
       setBusyId(null);
     }
@@ -189,7 +186,7 @@ export default function MemberManager({ groupId, members, myUserId, myRole, onCh
       }
       onChanged();
     } catch (err) {
-      setError(extractError(err, 'Failed to remove member.'));
+      setError(errorMessage(err, 'Failed to remove member.'));
       setBusyId(null);
     }
   }

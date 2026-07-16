@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import { errorMessage } from '../../utils/errors';
 
 export default function LoginForm() {
   const { login } = useAuth();
@@ -22,7 +23,7 @@ export default function LoginForm() {
       await login(form);
       navigate('/groups');
     } catch (err) {
-      setError(err.response?.data?.message || 'Invalid email or password.');
+      setError(errorMessage(err, 'Invalid email or password.'));
     } finally {
       setIsSubmitting(false);
     }
