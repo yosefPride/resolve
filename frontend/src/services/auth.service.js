@@ -19,3 +19,9 @@ export function refresh() {
 export function me() {
   return api.get('/auth/me').then((res) => res.data);
 }
+
+// current_password is only required by the backend when the email changes;
+// callers omit it for a name-only update.
+export function updateProfile({ name, email, current_password }) {
+  return api.patch('/auth/me', { name, email, current_password }).then((res) => res.data);
+}
