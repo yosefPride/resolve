@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import { errorMessage } from '../../utils/errors';
 
 export default function RegisterForm() {
   const { register } = useAuth();
@@ -22,7 +23,7 @@ export default function RegisterForm() {
       await register(form);
       navigate('/groups');
     } catch (err) {
-      setError(err.response?.data?.message || 'Registration failed. Please try again.');
+      setError(errorMessage(err, 'Registration failed. Please try again.'));
     } finally {
       setIsSubmitting(false);
     }

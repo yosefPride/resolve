@@ -1,10 +1,7 @@
 import { useEffect, useState } from 'react';
 import Modal from '../../components/ui/Modal';
 import { deletionCheck, deleteUser } from '../../services/admin.service';
-
-function extractError(err, fallback) {
-  return err.response?.data?.error?.message || fallback;
-}
+import { errorMessage } from '../../utils/errors';
 
 // Drives the admin user-deletion flow for a single target user:
 //   GET /admin/users/:id/deletion-check  → classify the target's groups
@@ -78,11 +75,11 @@ export default function DeleteUserModal({ user, onClose, onDeleted }) {
     } catch (err) {
       if (err.response?.status === 409) {
         setSubmitError(
-          extractError(err, 'These groups changed since the last check. Please review and try again.'),
+          errorMessage(err, 'These groups changed since the last check. Please review and try again.'),
         );
         await runCheck();
       } else {
-        setSubmitError(extractError(err, 'Failed to delete user.'));
+        setSubmitError(errorMessage(err, 'Failed to delete user.'));
       }
     } finally {
       setIsSubmitting(false);

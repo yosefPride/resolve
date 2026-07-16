@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { createGroup } from '../../services/groups.service';
+import { errorMessage } from '../../utils/errors';
 
 export default function CreateGroupForm({ onCreated }) {
   const [name, setName] = useState('');
@@ -15,7 +16,7 @@ export default function CreateGroupForm({ onCreated }) {
       setName('');
       onCreated(group);
     } catch (err) {
-      setError(err.response?.data?.error?.message || 'Failed to create group. Please try again.');
+      setError(errorMessage(err, 'Failed to create group. Please try again.'));
     } finally {
       setIsSubmitting(false);
     }
