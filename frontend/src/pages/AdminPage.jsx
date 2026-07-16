@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import UsersPanel from '../features/admin/UsersPanel';
+import GroupsPanel from '../features/admin/GroupsPanel';
 
 const TABS = [
   { id: 'users', label: 'Users' },
@@ -36,12 +38,8 @@ export default function AdminPage() {
       </div>
 
       <div role="tabpanel">
-        {activeTab === 'users' && (
-          <p className="text-sm text-slate-400">User management coming soon.</p>
-        )}
-        {activeTab === 'groups' && (
-          <p className="text-sm text-slate-400">Group management coming soon.</p>
-        )}
+        {activeTab === 'users' && <UsersPanel />}
+        {activeTab === 'groups' && <GroupsPanel />}
         {activeTab === 'audit' && (
           <p className="text-sm text-slate-400">Audit log coming soon.</p>
         )}
