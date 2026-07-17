@@ -489,7 +489,7 @@ fn test_list_users_requires_system_admin() {
         let (_db, admin, _groups, users, _audit) = setup().await;
         let caller_id = create_user(&users, "not-admin").await;
 
-        let result = admin.list_users(caller_id).await;
+        let result = admin.list_users(caller_id, None).await;
         assert_forbidden(result);
     });
 }
@@ -505,7 +505,7 @@ fn test_list_users_returns_all_users() {
         create_user(&users, "someone-else").await;
 
         let all_users = admin
-            .list_users(caller_id)
+            .list_users(caller_id, None)
             .await
             .expect("list_users failed");
         assert_eq!(all_users.len(), 3); // caller + the two created above
@@ -519,7 +519,7 @@ fn test_list_groups_requires_system_admin() {
         let (_db, admin, _groups, users, _audit) = setup().await;
         let caller_id = create_user(&users, "not-admin").await;
 
-        let result = admin.list_groups(caller_id).await;
+        let result = admin.list_groups(caller_id, None).await;
         assert_forbidden(result);
     });
 }
@@ -543,7 +543,7 @@ fn test_list_groups_returns_all_groups() {
             .expect("create group failed");
 
         let all_groups = admin
-            .list_groups(caller_id)
+            .list_groups(caller_id, None)
             .await
             .expect("list_groups failed");
         assert_eq!(all_groups.len(), 2);

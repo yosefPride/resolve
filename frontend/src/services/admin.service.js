@@ -3,12 +3,22 @@ import api from '../lib/axios';
 // System-Admin-only endpoints (backend guards them with SystemAdminUser).
 // Non-admin user operations live in users.service.js / groups.service.js.
 
-export function listUsers() {
-  return api.get('/admin/users').then((res) => res.data);
+// search: optional case-insensitive substring, matched on name or email. Sent
+// only when non-empty (trimmed); omitted returns the full list.
+export function listUsers(search) {
+  const params = {};
+  const term = search?.trim();
+  if (term) params.search = term;
+  return api.get('/admin/users', { params }).then((res) => res.data);
 }
 
-export function listGroups() {
-  return api.get('/admin/groups').then((res) => res.data);
+// search: optional case-insensitive substring, matched on the group name. Sent
+// only when non-empty (trimmed); omitted returns the full list.
+export function listGroups(search) {
+  const params = {};
+  const term = search?.trim();
+  if (term) params.search = term;
+  return api.get('/admin/groups', { params }).then((res) => res.data);
 }
 
 export function deleteGroup(groupId) {

@@ -7,6 +7,7 @@ use mongodb::{
 };
 
 use crate::user::models::{CreateUserInput, User};
+use crate::utils::substring_regex;
 
 #[derive(Debug)]
 pub enum UserRepoError {
@@ -116,8 +117,17 @@ impl UserRepository {
         Ok(self.collection.find_one(doc! { "_id": id }).await?)
     }
 
-    pub async fn list_all(&self) -> Result<Vec<User>, UserRepoError> {
-        let cursor = self.collection.find(doc! {}).await?;
+    // `search`, when present and non-empty, filters to users whose name or email
+    // contains it (case-insensitive substring). Absent/blank returns every user.
+    pub async fn list_all(&self, search: Option<&str>) -> Result<Vec<User>, UserRepoError> {
+        let filter = match search {
+            Some(term) if !term.is_empty() => {
+                let rx = substring_regex(term);
+                doc! { "$or": [ { "name": rx.clone() }, { "email": rx } ] }
+            }
+            _ => doc! {},
+        };
+        let cursor = self.collection.find(filter).await?;
         cursor.try_collect().await.map_err(Into::into)
     }
 

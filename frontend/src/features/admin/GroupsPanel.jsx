@@ -3,6 +3,7 @@ import Modal from '../../components/ui/Modal';
 import { formatDate } from '../../utils/format';
 import { listGroups, deleteGroup } from '../../services/admin.service';
 import { errorMessage } from '../../utils/errors';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 
 export default function GroupsPanel() {
   const [groups, setGroups] = useState([]);
@@ -10,10 +11,15 @@ export default function GroupsPanel() {
   const [target, setTarget] = useState(null); // group pending deletion, or null
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
 
+  // Refetches on debounced-term changes. Status only flips to 'loading' for the
+  // initial load, so typing swaps results in place (input keeps focus); the
+  // cancelled flag drops a response the term has already moved past.
   useEffect(() => {
     let cancelled = false;
-    listGroups()
+    listGroups(debouncedSearch)
       .then((data) => {
         if (cancelled) return;
         setGroups(data);
@@ -26,7 +32,7 @@ export default function GroupsPanel() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [debouncedSearch]);
 
   function closeModal() {
     if (isDeleting) return; // don't let a click-away abandon an in-flight delete
@@ -40,8 +46,8 @@ export default function GroupsPanel() {
     try {
       await deleteGroup(target.id);
       // Refetch server truth rather than optimistically splicing (no status
-      // flip, so the table doesn't flash a spinner).
-      const data = await listGroups();
+      // flip, so the table doesn't flash a spinner), keeping the active filter.
+      const data = await listGroups(debouncedSearch);
       setGroups(data);
       setTarget(null);
     } catch (err) {
@@ -51,43 +57,54 @@ export default function GroupsPanel() {
     }
   }
 
-  if (status === 'loading') return <p className="text-sm text-slate-400">Loading…</p>;
-  if (status === 'error') return <p className="text-sm text-red-500">Failed to load teams.</p>;
-
   return (
     <>
-      {groups.length === 0 ? (
-        <p className="text-sm text-slate-400">No teams found.</p>
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-white/10">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-white/10 text-xs font-medium tracking-wide text-slate-400 uppercase">
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Created</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {groups.map((group) => (
-                <tr key={group.id} className="border-b border-white/5 last:border-0 hover:bg-white/5">
-                  <td className="px-4 py-3 font-medium text-white">{group.name}</td>
-                  <td className="px-4 py-3 text-slate-400">{formatDate(group.created_at)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      type="button"
-                      onClick={() => setTarget(group)}
-                      className="rounded-full border border-red-500/30 px-3 py-1 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/10"
-                    >
-                      Delete team
-                    </button>
-                  </td>
+      <input
+        type="search"
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        placeholder="Search by name"
+        aria-label="Search teams"
+        className="mb-4 w-full max-w-sm rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50"
+      />
+
+      {status === 'loading' && <p className="text-sm text-slate-400">Loading…</p>}
+      {status === 'error' && <p className="text-sm text-red-500">Failed to load teams.</p>}
+      {status === 'ready' &&
+        (groups.length === 0 ? (
+          <p className="text-sm text-slate-400">
+            {debouncedSearch ? `No teams match “${debouncedSearch}”.` : 'No teams found.'}
+          </p>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-white/10">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-white/10 text-xs font-medium tracking-wide text-slate-400 uppercase">
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Created</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {groups.map((group) => (
+                  <tr key={group.id} className="border-b border-white/5 last:border-0 hover:bg-white/5">
+                    <td className="px-4 py-3 font-medium text-white">{group.name}</td>
+                    <td className="px-4 py-3 text-slate-400">{formatDate(group.created_at)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => setTarget(group)}
+                        className="rounded-full border border-red-500/30 px-3 py-1 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/10"
+                      >
+                        Delete team
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
 
       <Modal isOpen={!!target} onClose={closeModal} title="Delete team">
         <div className="flex flex-col gap-4">
