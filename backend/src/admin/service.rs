@@ -213,7 +213,7 @@ impl AdminService {
         self.rbac.require_system_admin(caller_id).await?;
         Ok(self
             .group_repo
-            .list_all_groups()
+            .list_all_groups(None)
             .await?
             .into_iter()
             .map(Into::into)

@@ -60,7 +60,7 @@ impl UserService {
 
     pub async fn list_all(&self) -> Result<Vec<UserResponse>, UserRepoError> {
         self.repo
-            .list_all()
+            .list_all(None)
             .await
             .map(|users| users.into_iter().map(Into::into).collect())
     }
