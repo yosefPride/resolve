@@ -833,3 +833,241 @@ fn test_delete_group_not_found() {
             .ok();
     });
 }
+
+// 15. GET /admin/users?search= filters by name OR email, case-insensitively,
+// and a blank term returns the full list. A fresh ObjectId nonce is embedded in
+// the seeded rows so the search matches only this test's data despite the shared
+// users collection — which makes the exact-count assertions on nonce searches
+// safe. Also checks the param doesn't relax the System-Admin guard.
+#[test]
+fn test_list_users_search() {
+    support::runtime().block_on(async {
+        let (db, uri) = setup_db().await;
+        let user_repo = UserRepository::new(&db);
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(build_app_state(db.clone(), uri))
+                .service(web::scope("/api/v1").configure(routes::configure)),
+        )
+        .await;
+
+        let sysadmin: AuthResponse = actix_test::read_body_json(
+            actix_test::call_service(&app, register_request("sysadmin").to_request()).await,
+        )
+        .await;
+        make_system_admin(&db, ObjectId::parse_str(&sysadmin.user.id).unwrap()).await;
+
+        let nonce = ObjectId::new().to_hex();
+
+        // A: nonce in the name only. B: nonce in the email only. C: neither.
+        let name_hit: AuthResponse = actix_test::read_body_json(
+            actix_test::call_service(
+                &app,
+                actix_test::TestRequest::post()
+                    .uri("/api/v1/auth/register")
+                    .set_json(&RegisterRequest {
+                        email: unique_email("srch-name"),
+                        password: "password123".to_string(),
+                        name: format!("Alice {nonce}"),
+                    })
+                    .to_request(),
+            )
+            .await,
+        )
+        .await;
+        let email_hit: AuthResponse = actix_test::read_body_json(
+            actix_test::call_service(
+                &app,
+                actix_test::TestRequest::post()
+                    .uri("/api/v1/auth/register")
+                    .set_json(&RegisterRequest {
+                        email: format!("srch-{nonce}@test.com"),
+                        password: "password123".to_string(),
+                        name: "Bob".to_string(),
+                    })
+                    .to_request(),
+            )
+            .await,
+        )
+        .await;
+        let control: AuthResponse = actix_test::read_body_json(
+            actix_test::call_service(&app, register_request("srch-control").to_request()).await,
+        )
+        .await;
+
+        // Searching the nonce returns exactly the name- and email-matched users.
+        let hits: Vec<UserResponse> = actix_test::read_body_json(
+            actix_test::call_service(
+                &app,
+                actix_test::TestRequest::get()
+                    .uri(&format!("/api/v1/admin/users?search={nonce}"))
+                    .insert_header(auth_header(&sysadmin.jwt))
+                    .to_request(),
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(hits.len(), 2);
+        assert!(hits.iter().any(|u| u.id == name_hit.user.id));
+        assert!(hits.iter().any(|u| u.id == email_hit.user.id));
+        assert!(!hits.iter().any(|u| u.id == control.user.id));
+
+        // Same query, uppercased: case-insensitive match still finds both.
+        let ci_hits: Vec<UserResponse> = actix_test::read_body_json(
+            actix_test::call_service(
+                &app,
+                actix_test::TestRequest::get()
+                    .uri(&format!("/api/v1/admin/users?search={}", nonce.to_uppercase()))
+                    .insert_header(auth_header(&sysadmin.jwt))
+                    .to_request(),
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(ci_hits.len(), 2);
+
+        // Blank term = no filter: the full list still contains the seeded users.
+        let all: Vec<UserResponse> = actix_test::read_body_json(
+            actix_test::call_service(
+                &app,
+                actix_test::TestRequest::get()
+                    .uri("/api/v1/admin/users?search=")
+                    .insert_header(auth_header(&sysadmin.jwt))
+                    .to_request(),
+            )
+            .await,
+        )
+        .await;
+        assert!(all.iter().any(|u| u.id == name_hit.user.id));
+        assert!(all.iter().any(|u| u.id == control.user.id));
+
+        // The param doesn't relax the guard: a regular user is still forbidden.
+        let forbidden = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::get()
+                .uri(&format!("/api/v1/admin/users?search={nonce}"))
+                .insert_header(auth_header(&control.jwt))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(forbidden.status(), 403);
+
+        for id in [
+            sysadmin.user.id,
+            name_hit.user.id,
+            email_hit.user.id,
+            control.user.id,
+        ] {
+            user_repo
+                .delete(ObjectId::parse_str(&id).unwrap())
+                .await
+                .ok();
+        }
+    });
+}
+
+// 16. GET /admin/groups?search= filters by name, case-insensitively, and a
+// blank term returns the full list. Same unique-nonce trick as test 15 so the
+// match is scoped to this test's groups on the shared groups collection.
+#[test]
+fn test_list_groups_search() {
+    support::runtime().block_on(async {
+        let (db, uri) = setup_db().await;
+        let group_repo = GroupRepository::new(&db);
+        let user_repo = UserRepository::new(&db);
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(build_app_state(db.clone(), uri))
+                .service(web::scope("/api/v1").configure(routes::configure)),
+        )
+        .await;
+
+        let sysadmin: AuthResponse = actix_test::read_body_json(
+            actix_test::call_service(&app, register_request("sysadmin").to_request()).await,
+        )
+        .await;
+        make_system_admin(&db, ObjectId::parse_str(&sysadmin.user.id).unwrap()).await;
+        let owner: AuthResponse = actix_test::read_body_json(
+            actix_test::call_service(&app, register_request("owner").to_request()).await,
+        )
+        .await;
+
+        let nonce = ObjectId::new().to_hex();
+
+        let create_group = |name: String| {
+            actix_test::TestRequest::post()
+                .uri("/api/v1/groups")
+                .insert_header(auth_header(&owner.jwt))
+                .set_json(&CreateGroupRequest { name })
+                .to_request()
+        };
+
+        // A: nonce in the name. B: control, no nonce.
+        let hit: GroupResponse = actix_test::read_body_json(
+            actix_test::call_service(&app, create_group(format!("Payments {nonce}"))).await,
+        )
+        .await;
+        let control: GroupResponse = actix_test::read_body_json(
+            actix_test::call_service(&app, create_group("Infra control".to_string())).await,
+        )
+        .await;
+
+        // Nonce search returns exactly the matching group.
+        let hits: Vec<GroupResponse> = actix_test::read_body_json(
+            actix_test::call_service(
+                &app,
+                actix_test::TestRequest::get()
+                    .uri(&format!("/api/v1/admin/groups?search={nonce}"))
+                    .insert_header(auth_header(&sysadmin.jwt))
+                    .to_request(),
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, hit.id);
+        assert!(!hits.iter().any(|g| g.id == control.id));
+
+        // Case-insensitive: uppercased query still matches.
+        let ci_hits: Vec<GroupResponse> = actix_test::read_body_json(
+            actix_test::call_service(
+                &app,
+                actix_test::TestRequest::get()
+                    .uri(&format!("/api/v1/admin/groups?search={}", nonce.to_uppercase()))
+                    .insert_header(auth_header(&sysadmin.jwt))
+                    .to_request(),
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(ci_hits.len(), 1);
+        assert_eq!(ci_hits[0].id, hit.id);
+
+        // Blank term = no filter: both seeded groups are present.
+        let all: Vec<GroupResponse> = actix_test::read_body_json(
+            actix_test::call_service(
+                &app,
+                actix_test::TestRequest::get()
+                    .uri("/api/v1/admin/groups?search=")
+                    .insert_header(auth_header(&sysadmin.jwt))
+                    .to_request(),
+            )
+            .await,
+        )
+        .await;
+        assert!(all.iter().any(|g| g.id == hit.id));
+        assert!(all.iter().any(|g| g.id == control.id));
+
+        for id in [&hit.id, &control.id] {
+            let group_id = ObjectId::parse_str(id).unwrap();
+            group_repo.delete_members_by_group(group_id).await.ok();
+            group_repo.delete_group(group_id).await.ok();
+        }
+        for id in [sysadmin.user.id, owner.user.id] {
+            user_repo
+                .delete(ObjectId::parse_str(&id).unwrap())
+                .await
+                .ok();
+        }
+    });
+}
