@@ -86,6 +86,14 @@ pub struct AuditLogQuery {
     pub user_id: Option<String>,
 }
 
+// Query params shared by the admin list endpoints (GET /admin/users and
+// GET /admin/groups). `search` is a case-insensitive substring match; absent or
+// blank returns the full list. Grows a page/per_page pair when pagination lands.
+#[derive(Debug, Deserialize)]
+pub struct AdminListQuery {
+    pub search: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BlockedGroupInfo {
     pub group_id: String,

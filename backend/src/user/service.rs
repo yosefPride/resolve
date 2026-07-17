@@ -58,9 +58,9 @@ impl UserService {
             .map(|opt| opt.map(Into::into))
     }
 
-    pub async fn list_all(&self) -> Result<Vec<UserResponse>, UserRepoError> {
+    pub async fn list_all(&self, search: Option<&str>) -> Result<Vec<UserResponse>, UserRepoError> {
         self.repo
-            .list_all(None)
+            .list_all(search)
             .await
             .map(|users| users.into_iter().map(Into::into).collect())
     }

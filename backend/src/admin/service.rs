@@ -186,9 +186,13 @@ impl AdminService {
         Ok(())
     }
 
-    pub async fn list_users(&self, caller_id: ObjectId) -> Result<Vec<UserResponse>, ApiError> {
+    pub async fn list_users(
+        &self,
+        caller_id: ObjectId,
+        search: Option<&str>,
+    ) -> Result<Vec<UserResponse>, ApiError> {
         self.rbac.require_system_admin(caller_id).await?;
-        Ok(self.user_service.list_all().await?)
+        Ok(self.user_service.list_all(search).await?)
     }
 
     // Read-only view of the succession/auto-deletion audit trail, System Admin
@@ -209,11 +213,15 @@ impl AdminService {
             .collect())
     }
 
-    pub async fn list_groups(&self, caller_id: ObjectId) -> Result<Vec<GroupResponse>, ApiError> {
+    pub async fn list_groups(
+        &self,
+        caller_id: ObjectId,
+        search: Option<&str>,
+    ) -> Result<Vec<GroupResponse>, ApiError> {
         self.rbac.require_system_admin(caller_id).await?;
         Ok(self
             .group_repo
-            .list_all_groups(None)
+            .list_all_groups(search)
             .await?
             .into_iter()
             .map(Into::into)
