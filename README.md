@@ -2,6 +2,4 @@
 
 # RESOLVE
 
----
-
 Ort end project
