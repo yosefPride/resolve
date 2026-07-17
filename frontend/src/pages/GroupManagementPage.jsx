@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Pencil } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useGroup } from '../hooks/useGroup';
 import { useAuth } from '../hooks/useAuth';
@@ -92,9 +93,7 @@ export default function GroupManagementPage() {
               title="Rename team"
               className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-slate-300 transition-colors hover:bg-white/20 hover:text-white"
             >
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.75">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
-              </svg>
+              <Pencil className="h-4 w-4" />
             </button>
             <button
               type="button"

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Menu } from 'lucide-react';
 import { Link, NavLink } from 'react-router-dom';
 import UserMenu from './UserMenu';
 import { useAuth } from '../../hooks/useAuth';
@@ -86,9 +87,7 @@ export default function Header() {
                 aria-label="Toggle navigation"
                 className="ml-1 flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-300 transition-all duration-200 hover:border-sky-400/50 hover:text-sky-300 hover:ring-2 hover:ring-sky-500/20 md:hidden"
               >
-                <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.75">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 5.5h16M4 12h16M4 18.5h16" />
-                </svg>
+                <Menu className="h-6 w-6" />
               </button>
             )}
           </div>

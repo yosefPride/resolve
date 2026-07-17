@@ -1,9 +1,5 @@
 import { Link } from 'react-router-dom';
-import GroupIcon from '../../components/ui/icons/GroupIcon';
-import RoleIcon from '../../components/ui/icons/RoleIcon';
-import MembersIcon from '../../components/ui/icons/MembersIcon';
-import TicketsIcon from '../../components/ui/icons/TicketsIcon';
-import ActivityIcon from '../../components/ui/icons/ActivityIcon';
+import { Users, Shield, User, Ticket, Clock } from 'lucide-react';
 import { isGroupAdmin } from '../../utils/roles';
 
 export default function GroupList({ groups }) {
@@ -19,31 +15,31 @@ export default function GroupList({ groups }) {
             <th className="px-4 py-3">
               <span className="flex items-center gap-2">
                 Team
-                <GroupIcon className="h-4 w-4 text-slate-400" />
+                <Users className="h-4 w-4 text-slate-400" />
               </span>
             </th>
             <th className="px-4 py-3">
               <span className="flex items-center gap-2">
                 Role
-                <RoleIcon className="h-4 w-4 text-slate-400" />
+                <Shield className="h-4 w-4 text-slate-400" />
               </span>
             </th>
             <th className="px-4 py-3">
               <span className="flex items-center gap-2">
                 Members
-                <MembersIcon className="h-4 w-4 text-slate-400" />
+                <User className="h-4 w-4 text-slate-400" />
               </span>
             </th>
             <th className="px-4 py-3">
               <span className="flex items-center gap-2">
                 Open Tickets
-                <TicketsIcon className="h-4 w-4 text-slate-400" />
+                <Ticket className="h-4 w-4 text-slate-400" />
               </span>
             </th>
             <th className="px-4 py-3">
               <span className="flex items-center gap-2">
                 Last Activity
-                <ActivityIcon className="h-4 w-4 text-slate-400" />
+                <Clock className="h-4 w-4 text-slate-400" />
               </span>
             </th>
           </tr>

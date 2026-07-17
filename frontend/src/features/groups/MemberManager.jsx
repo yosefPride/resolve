@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { MoreVertical } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { addMember, lookupUserByEmail, removeMember, updateMemberRole } from '../../services/groups.service';
 import { GROUP_ROLES, isGroupAdmin } from '../../utils/roles';
@@ -118,11 +119,7 @@ function MemberActionsMenu({ member, isSelf, canChangeRole, isBusy, onToggleRole
         aria-expanded={isOpen}
         className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
       >
-        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
-          <circle cx="12" cy="5" r="1.5" />
-          <circle cx="12" cy="12" r="1.5" />
-          <circle cx="12" cy="19" r="1.5" />
-        </svg>
+        <MoreVertical className="h-5 w-5" />
       </button>
 
       {isOpen && (
