@@ -60,9 +60,8 @@ export default function GroupList({ groups }) {
                 {isGroupAdmin(group.role) ? 'Team Admin' : 'Contributor'}
               </td>
               <td className="px-4 py-3 text-slate-300">{group.member_count}</td>
-              {/* No ticket module yet, and no activity-tracking in the schema — real
-                  once both exist. */}
-              <td className="px-4 py-3 text-slate-500">—</td>
+              <td className="px-4 py-3 text-slate-300">{group.open_ticket_count}</td>
+              {/* No activity-tracking in the schema yet — real once it exists. */}
               <td className="px-4 py-3 text-slate-500">—</td>
             </tr>
           ))}

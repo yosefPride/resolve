@@ -31,7 +31,10 @@ export default function MyGroupsPage() {
     // The creator is always Group Admin and the sole member at creation time
     // (see GroupService::create_group) — safe to fill these in client-side
     // rather than round-tripping to GET /groups just to get the same values.
-    setGroups((prev) => [...prev, { ...group, role: GROUP_ROLES.GROUP_ADMIN, member_count: 1 }]);
+    setGroups((prev) => [
+      ...prev,
+      { ...group, role: GROUP_ROLES.GROUP_ADMIN, member_count: 1, open_ticket_count: 0 },
+    ]);
     setIsCreating(false);
   }
 

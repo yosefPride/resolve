@@ -180,6 +180,7 @@ Response, per group (list-view shape, distinct from the plain group metadata ret
 - id, name, created_at
 - role — caller's role in that group
 - member_count
+- open_ticket_count — number of tickets in the group with status `open`
 
 ---
 
