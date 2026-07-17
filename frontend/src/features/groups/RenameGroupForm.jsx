@@ -18,7 +18,7 @@ export default function RenameGroupForm({ groupId, currentName, onRenamed }) {
       await renameGroup(groupId, trimmed);
       onRenamed();
     } catch (err) {
-      setError(errorMessage(err, 'Failed to rename group.'));
+      setError(errorMessage(err, 'Failed to rename team.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -27,7 +27,7 @@ export default function RenameGroupForm({ groupId, currentName, onRenamed }) {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <label className="flex flex-col gap-1 text-sm text-slate-300">
-        Group name
+        Team name
         <input
           type="text"
           name="name"

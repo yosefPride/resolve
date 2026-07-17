@@ -5,7 +5,7 @@ import AuditLogPanel from '../features/admin/AuditLogPanel';
 
 const TABS = [
   { id: 'users', label: 'Users' },
-  { id: 'groups', label: 'Groups' },
+  { id: 'groups', label: 'Teams' },
   { id: 'audit', label: 'Audit Log' },
 ];
 

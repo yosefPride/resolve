@@ -34,7 +34,7 @@ export default function GroupManagementPage() {
     return (
       <section className="mx-auto max-w-2xl px-4 py-20 sm:px-6 lg:px-8">
         <p className="text-sm text-red-500">
-          Couldn't load this group. You may not be a member, or it may not exist.
+          Couldn't load this team. You may not be a member, or it may not exist.
         </p>
       </section>
     );
@@ -50,7 +50,7 @@ export default function GroupManagementPage() {
       await deleteGroup(id);
       navigate('/groups');
     } catch (err) {
-      setDeleteError(errorMessage(err, 'Failed to delete group.'));
+      setDeleteError(errorMessage(err, 'Failed to delete team.'));
       setIsDeleting(false);
     }
   }
@@ -67,7 +67,7 @@ export default function GroupManagementPage() {
       await removeMember(id, user.id);
       navigate('/groups');
     } catch (err) {
-      setLeaveError(errorMessage(err, 'Failed to leave group.'));
+      setLeaveError(errorMessage(err, 'Failed to leave team.'));
       setIsLeaving(false);
     }
   }
@@ -79,7 +79,7 @@ export default function GroupManagementPage() {
           <h1 className="text-2xl font-bold text-white">{group.name}</h1>
           {myRole && (
             <p className="text-sm text-slate-400">
-              Your role: {isGroupAdmin(myRole) ? 'Group Admin' : 'Contributor'}
+              Your role: {isGroupAdmin(myRole) ? 'Team Admin' : 'Contributor'}
             </p>
           )}
         </div>
@@ -88,8 +88,8 @@ export default function GroupManagementPage() {
             <button
               type="button"
               onClick={() => setIsRenaming(true)}
-              aria-label="Rename group"
-              title="Rename group"
+              aria-label="Rename team"
+              title="Rename team"
               className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-slate-300 transition-colors hover:bg-white/20 hover:text-white"
             >
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.75">
@@ -101,7 +101,7 @@ export default function GroupManagementPage() {
               onClick={() => setIsConfirmingDelete(true)}
               className="rounded-full border border-red-500/50 px-4 py-2 text-sm font-semibold text-red-400 transition-colors hover:bg-red-500/10"
             >
-              Delete group
+              Delete team
             </button>
           </div>
         ) : (
@@ -110,7 +110,7 @@ export default function GroupManagementPage() {
             onClick={() => setIsConfirmingLeave(true)}
             className="rounded-full border border-red-500/50 px-4 py-2 text-sm font-semibold text-red-400 transition-colors hover:bg-red-500/10"
           >
-            Leave group
+            Leave team
           </button>
         )}
       </div>
@@ -118,7 +118,7 @@ export default function GroupManagementPage() {
       <Modal
         isOpen={isRenaming}
         onClose={() => setIsRenaming(false)}
-        title="Rename group"
+        title="Rename team"
       >
         <RenameGroupForm groupId={id} currentName={group.name} onRenamed={handleRenamed} />
       </Modal>
@@ -129,11 +129,11 @@ export default function GroupManagementPage() {
           setIsConfirmingLeave(false);
           setLeaveError('');
         }}
-        title="Leave group"
+        title="Leave team"
       >
         <p className="text-sm text-slate-300">
           Are you sure you want to leave <span className="font-semibold text-white">{group.name}</span>? You'll
-          lose access to its tickets, and a Group Admin would need to add you back to rejoin.
+          lose access to its tickets, and a Team Admin would need to add you back to rejoin.
         </p>
 
         {leaveError && <p className="mt-3 text-sm text-red-500">{leaveError}</p>}
@@ -155,7 +155,7 @@ export default function GroupManagementPage() {
             onClick={handleLeave}
             className="rounded-full bg-red-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isLeaving ? 'Leaving…' : 'Leave group'}
+            {isLeaving ? 'Leaving…' : 'Leave team'}
           </button>
         </div>
       </Modal>
@@ -166,7 +166,7 @@ export default function GroupManagementPage() {
           setIsConfirmingDelete(false);
           setDeleteError('');
         }}
-        title="Delete group"
+        title="Delete team"
       >
         <p className="text-sm text-slate-300">
           Are you sure you want to delete <span className="font-semibold text-white">{group.name}</span>? This
@@ -192,7 +192,7 @@ export default function GroupManagementPage() {
             onClick={handleDelete}
             className="rounded-full bg-red-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isDeleting ? 'Deleting…' : 'Delete group'}
+            {isDeleting ? 'Deleting…' : 'Delete team'}
           </button>
         </div>
       </Modal>

@@ -7,7 +7,7 @@ import logo from '../../assets/logo.png';
 const NAV_LINKS = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/tickets', label: 'Tickets' },
-  { to: '/groups', label: 'Groups' },
+  { to: '/groups', label: 'Teams' },
 ];
 
 function NavItem({ to, label, onClick }) {

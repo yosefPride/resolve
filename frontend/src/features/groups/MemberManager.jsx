@@ -83,7 +83,7 @@ function AddMemberForm({ groupId, onAdded }) {
               onClick={() => handleConfirm(GROUP_ROLES.GROUP_ADMIN)}
               className="rounded-full border border-white/10 px-3 py-1 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10 disabled:opacity-50"
             >
-              Add as Group Admin
+              Add as Team Admin
             </button>
           </div>
         </div>
@@ -210,7 +210,7 @@ export default function MemberManager({ groupId, members, myUserId, myRole, onCh
               </div>
               <div className="flex items-center gap-2">
                 <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-slate-300">
-                  {isGroupAdmin(member.role) ? 'Group Admin' : 'Contributor'}
+                  {isGroupAdmin(member.role) ? 'Team Admin' : 'Contributor'}
                 </span>
                 {iAmAdmin && (
                   <MemberActionsMenu

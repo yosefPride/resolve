@@ -4,7 +4,7 @@ import { listAuditLog } from '../../services/admin.service';
 
 const ACTION_LABELS = {
   succession: 'Succession',
-  group_auto_deleted: 'Group auto-deleted',
+  group_auto_deleted: 'Team auto-deleted',
 };
 
 // Distinct { id, name } pairs from the log, first-seen order. The log carries
@@ -64,13 +64,13 @@ export default function AuditLogPanel() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap gap-3">
         <label className="flex flex-col gap-1 text-xs text-slate-400">
-          Group
+          Team
           <select
             value={groupFilter}
             onChange={(event) => setGroupFilter(event.target.value)}
             className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50"
           >
-            <option value="">All groups</option>
+            <option value="">All teams</option>
             {groupOptions.map((option) => (
               <option key={option.id} value={option.id}>
                 {option.name}
@@ -104,7 +104,7 @@ export default function AuditLogPanel() {
             <thead>
               <tr className="border-b border-white/10 text-xs font-medium tracking-wide text-slate-400 uppercase">
                 <th className="px-4 py-3">Action</th>
-                <th className="px-4 py-3">Group</th>
+                <th className="px-4 py-3">Team</th>
                 <th className="px-4 py-3">Deleted user</th>
                 <th className="px-4 py-3">Successor</th>
                 <th className="px-4 py-3">Performed by</th>

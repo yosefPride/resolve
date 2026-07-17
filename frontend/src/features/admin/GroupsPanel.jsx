@@ -45,19 +45,19 @@ export default function GroupsPanel() {
       setGroups(data);
       setTarget(null);
     } catch (err) {
-      setDeleteError(errorMessage(err, 'Failed to delete group.'));
+      setDeleteError(errorMessage(err, 'Failed to delete team.'));
     } finally {
       setIsDeleting(false);
     }
   }
 
   if (status === 'loading') return <p className="text-sm text-slate-400">Loading…</p>;
-  if (status === 'error') return <p className="text-sm text-red-500">Failed to load groups.</p>;
+  if (status === 'error') return <p className="text-sm text-red-500">Failed to load teams.</p>;
 
   return (
     <>
       {groups.length === 0 ? (
-        <p className="text-sm text-slate-400">No groups found.</p>
+        <p className="text-sm text-slate-400">No teams found.</p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-white/10">
           <table className="w-full text-left text-sm">
@@ -79,7 +79,7 @@ export default function GroupsPanel() {
                       onClick={() => setTarget(group)}
                       className="rounded-full border border-red-500/30 px-3 py-1 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/10"
                     >
-                      Delete group
+                      Delete team
                     </button>
                   </td>
                 </tr>
@@ -89,7 +89,7 @@ export default function GroupsPanel() {
         </div>
       )}
 
-      <Modal isOpen={!!target} onClose={closeModal} title="Delete group">
+      <Modal isOpen={!!target} onClose={closeModal} title="Delete team">
         <div className="flex flex-col gap-4">
           <p className="text-sm text-slate-300">
             Delete <span className="font-semibold text-white">{target?.name}</span> and all of its
@@ -113,7 +113,7 @@ export default function GroupsPanel() {
               disabled={isDeleting}
               className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isDeleting ? 'Deleting…' : 'Delete group'}
+              {isDeleting ? 'Deleting…' : 'Delete team'}
             </button>
           </div>
         </div>

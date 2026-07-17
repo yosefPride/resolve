@@ -1,7 +1,7 @@
 const STEPS = [
   {
     title: 'Report',
-    description: 'A contributor files a ticket inside their group, with full context attached.',
+    description: 'A contributor files a ticket inside their team, with full context attached.',
   },
   {
     title: 'Triage',
@@ -9,11 +9,11 @@ const STEPS = [
   },
   {
     title: 'Discuss & assign',
-    description: 'The team comments, updates status, and assigns ownership within the group.',
+    description: 'The team comments, updates status, and assigns ownership within the team.',
   },
   {
     title: 'Resolve',
-    description: 'The ticket closes, and its history stays with the group for future reference.',
+    description: 'The ticket closes, and its history stays with the team for future reference.',
   },
 ];
 
@@ -26,7 +26,7 @@ export default function WorkflowTimeline() {
             From bug report to resolution
           </h2>
           <p className="mt-4 text-base text-slate-400">
-            One workflow, scoped to your group, from the first report to the final fix.
+            One workflow, scoped to your team, from the first report to the final fix.
           </p>
         </div>
 

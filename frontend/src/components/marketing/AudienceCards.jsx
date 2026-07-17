@@ -5,18 +5,18 @@ const AUDIENCES = [
     title: 'Contributors',
     description: 'Focus on fixing bugs, not managing tools.',
     points: [
-      'File and track tickets in your group',
+      'File and track tickets in your team',
       'Comment and collaborate with your team',
       'AI-assisted context on every ticket',
     ],
   },
   {
-    title: 'Group Admins',
-    description: 'Full control over your group, without extra overhead.',
+    title: 'Team Admins',
+    description: 'Full control over your team, without extra overhead.',
     points: [
       'Manage members and roles',
       'Assign and prioritize tickets',
-      'AI-generated group reports',
+      'AI-generated team reports',
     ],
   },
   {
@@ -24,7 +24,7 @@ const AUDIENCES = [
     description: 'Visibility into progress, without needing to touch code.',
     points: [
       'Read-only insight into ticket status',
-      'Group-scoped, never cross-tenant',
+      'Team-scoped, never cross-tenant',
       'No separate tool to learn',
     ],
   },
@@ -76,7 +76,7 @@ export default function AudienceCards() {
             Ready to fix bugs faster?
           </h2>
           <p className="mx-auto mt-3 max-w-md text-sm text-slate-400">
-            Create a group and start tracking tickets in minutes.
+            Create a team and start tracking tickets in minutes.
           </p>
           <div className="mt-7 flex items-center justify-center gap-4">
             <Link

@@ -75,7 +75,7 @@ export default function DeleteUserModal({ user, onClose, onDeleted }) {
     } catch (err) {
       if (err.response?.status === 409) {
         setSubmitError(
-          errorMessage(err, 'These groups changed since the last check. Please review and try again.'),
+          errorMessage(err, 'These teams changed since the last check. Please review and try again.'),
         );
         await runCheck();
       } else {
@@ -94,11 +94,11 @@ export default function DeleteUserModal({ user, onClose, onDeleted }) {
   return (
     <Modal isOpen onClose={closeIfIdle} title={`Delete ${user.name}`}>
       <div className="flex flex-col gap-4">
-        {checkStatus === 'loading' && <p className="text-sm text-slate-400">Checking groups…</p>}
+        {checkStatus === 'loading' && <p className="text-sm text-slate-400">Checking teams…</p>}
 
         {checkStatus === 'error' && (
           <>
-            <p className="text-sm text-red-500">Couldn't check this user's groups.</p>
+            <p className="text-sm text-red-500">Couldn't check this user's teams.</p>
             <div className="flex justify-end gap-2">
               <button
                 type="button"
@@ -126,12 +126,12 @@ export default function DeleteUserModal({ user, onClose, onDeleted }) {
             {blocked.length === 0 && autoDelete.length === 0 ? (
               <p className="text-sm text-slate-300">
                 Delete <span className="font-semibold text-white">{user.name}</span> ({user.email})?
-                This removes their account and every group membership. This cannot be undone.
+                This removes their account and every team membership. This cannot be undone.
               </p>
             ) : (
               <p className="text-sm text-slate-300">
-                <span className="font-semibold text-white">{user.name}</span> is the sole Group Admin
-                of the group(s) below. Resolve each before deleting.
+                <span className="font-semibold text-white">{user.name}</span> is the sole Team Admin
+                of the team(s) below. Resolve each before deleting.
               </p>
             )}
 
@@ -142,7 +142,7 @@ export default function DeleteUserModal({ user, onClose, onDeleted }) {
               >
                 <p className="text-sm font-medium text-white">{group.group_name}</p>
                 <label className="text-xs text-slate-400">
-                  Promote a member to Group Admin:
+                  Promote a member to Team Admin:
                 </label>
                 <select
                   value={successors[group.group_id] || ''}
@@ -170,7 +170,7 @@ export default function DeleteUserModal({ user, onClose, onDeleted }) {
               >
                 <p className="text-sm font-medium text-white">{group.group_name}</p>
                 <p className="text-xs text-red-400">
-                  This group has no other members and will be deleted.
+                  This team has no other members and will be deleted.
                 </p>
               </div>
             ))}

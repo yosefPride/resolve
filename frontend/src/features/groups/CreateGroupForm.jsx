@@ -16,7 +16,7 @@ export default function CreateGroupForm({ onCreated }) {
       setName('');
       onCreated(group);
     } catch (err) {
-      setError(errorMessage(err, 'Failed to create group. Please try again.'));
+      setError(errorMessage(err, 'Failed to create team. Please try again.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -25,7 +25,7 @@ export default function CreateGroupForm({ onCreated }) {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <label className="flex flex-col gap-1 text-sm text-slate-300">
-        Group name
+        Team name
         <input
           type="text"
           name="name"
@@ -43,7 +43,7 @@ export default function CreateGroupForm({ onCreated }) {
         disabled={isSubmitting}
         className="mt-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition-all duration-200 hover:bg-slate-200 disabled:opacity-50"
       >
-        {isSubmitting ? 'Creating…' : 'Create group'}
+        {isSubmitting ? 'Creating…' : 'Create team'}
       </button>
     </form>
   );

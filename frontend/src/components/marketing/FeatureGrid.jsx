@@ -1,14 +1,14 @@
 const FEATURES = [
   {
-    title: 'Strict group isolation',
-    description: 'Tickets and comments belong to exactly one group. No cross-tenant access, ever.',
+    title: 'Strict team isolation',
+    description: 'Tickets and comments belong to exactly one team. No cross-tenant access, ever.',
     icon: (
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 3l7 3.5v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9v-5L12 3z" />
     ),
   },
   {
     title: 'Role-aware access',
-    description: 'Contributor, Group Admin, and System Admin roles are enforced on every request, not just the UI.',
+    description: 'Contributor, Team Admin, and System Admin roles are enforced on every request, not just the UI.',
     icon: (
       <>
         <circle cx="12" cy="7.5" r="3" />
@@ -39,8 +39,8 @@ const FEATURES = [
     ),
   },
   {
-    title: 'Live group dashboards',
-    description: 'See ticket volume, status, and AI-generated reports scoped to your active group in real time.',
+    title: 'Live team dashboards',
+    description: 'See ticket volume, status, and AI-generated reports scoped to your active team in real time.',
     icon: (
       <path strokeLinecap="round" strokeLinejoin="round" d="M4 20V10M10 20V4M16 20v-7M4 20h16" />
     ),
