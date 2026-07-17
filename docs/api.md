@@ -400,11 +400,19 @@ List all groups (metadata only)
 
 No ticket access
 
+Optional query param:
+
+- `search` — case-insensitive substring match on the group name. Omitted or blank returns all groups.
+
 ---
 
 ## GET /admin/users
 
 List users
+
+Optional query param:
+
+- `search` — case-insensitive substring match on user name or email. Omitted or blank returns all users.
 
 ---
 
