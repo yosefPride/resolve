@@ -1,5 +1,6 @@
 import { formatDate } from '../../utils/format';
 import { isSystemAdmin } from '../../utils/roles';
+import Badge from '../../components/ui/Badge';
 
 // First letter of the first two words of the name, e.g. "Ada Lovelace" → "AL".
 function initials(name) {
@@ -24,9 +25,7 @@ export default function ProfileSummary({ user }) {
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="truncate text-lg font-semibold text-white">{user?.name}</h2>
           {isSystemAdmin(user) && (
-            <span className="rounded-full border border-sky-400/30 bg-sky-500/10 px-3 py-1 text-xs font-medium text-sky-300">
-              System Admin
-            </span>
+            <Badge variant="accent">System Admin</Badge>
           )}
         </div>
         <p className="truncate text-sm text-slate-300">{user?.email}</p>

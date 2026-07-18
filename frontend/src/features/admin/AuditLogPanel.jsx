@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { formatDateTime } from '../../utils/format';
 import { listAuditLog } from '../../services/admin.service';
+import Badge from '../../components/ui/Badge';
 
 const ACTION_LABELS = {
   succession: 'Succession',
@@ -115,9 +116,7 @@ export default function AuditLogPanel() {
               {visible.map((entry) => (
                 <tr key={entry.id} className="border-b border-white/5 last:border-0 hover:bg-white/5">
                   <td className="px-4 py-3">
-                    <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-slate-200">
-                      {ACTION_LABELS[entry.action] || entry.action}
-                    </span>
+                    <Badge>{ACTION_LABELS[entry.action] || entry.action}</Badge>
                   </td>
                   <td className="px-4 py-3 text-slate-300">{entry.group_name}</td>
                   <td className="px-4 py-3 text-slate-300">{entry.deleted_user_name}</td>

@@ -6,6 +6,7 @@ import { GROUP_ROLES, isGroupAdmin } from '../../utils/roles';
 import { errorMessage } from '../../utils/errors';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
+import Badge from '../../components/ui/Badge';
 
 function AddMemberForm({ groupId, onAdded }) {
   const [email, setEmail] = useState('');
@@ -206,9 +207,7 @@ export default function MemberManager({ groupId, members, myUserId, myRole, onCh
                 <p className="text-xs text-slate-400">{member.email}</p>
               </div>
               <div className="flex items-center gap-2">
-                <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-slate-300">
-                  {isGroupAdmin(member.role) ? 'Team Admin' : 'Contributor'}
-                </span>
+                <Badge>{isGroupAdmin(member.role) ? 'Team Admin' : 'Contributor'}</Badge>
                 {iAmAdmin && (
                   <MemberActionsMenu
                     member={member}
