@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { createGroup } from '../../services/groups.service';
 import { errorMessage } from '../../utils/errors';
 import Button from '../../components/ui/Button';
+import Input from '../../components/ui/Input';
 
 export default function CreateGroupForm({ onCreated }) {
   const [name, setName] = useState('');
@@ -27,13 +28,12 @@ export default function CreateGroupForm({ onCreated }) {
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <label className="flex flex-col gap-1 text-sm text-slate-300">
         Team name
-        <input
+        <Input
           type="text"
           name="name"
           value={name}
           onChange={(event) => setName(event.target.value)}
           required
-          className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50"
         />
       </label>
 

@@ -4,6 +4,7 @@ import DeleteUserModal from './DeleteUserModal';
 import { listUsers } from '../../services/admin.service';
 import { useAuth } from '../../hooks/useAuth';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import Input from '../../components/ui/Input';
 
 export default function UsersPanel() {
   const { user: currentUser } = useAuth();
@@ -44,13 +45,13 @@ export default function UsersPanel() {
 
   return (
     <>
-      <input
+      <Input
         type="search"
         value={search}
         onChange={(event) => setSearch(event.target.value)}
         placeholder="Search by name or email"
         aria-label="Search users"
-        className="mb-4 w-full max-w-sm rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50"
+        className="mb-4 w-full max-w-sm text-sm"
       />
 
       {status === 'loading' && <p className="text-sm text-slate-400">Loading…</p>}

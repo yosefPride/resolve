@@ -5,6 +5,7 @@ import { addMember, lookupUserByEmail, removeMember, updateMemberRole } from '..
 import { GROUP_ROLES, isGroupAdmin } from '../../utils/roles';
 import { errorMessage } from '../../utils/errors';
 import Button from '../../components/ui/Button';
+import Input from '../../components/ui/Input';
 
 function AddMemberForm({ groupId, onAdded }) {
   const [email, setEmail] = useState('');
@@ -45,13 +46,13 @@ function AddMemberForm({ groupId, onAdded }) {
   return (
     <div className="flex flex-col gap-3">
       <form onSubmit={handleLookup} className="flex gap-2">
-        <input
+        <Input
           type="email"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
           placeholder="Exact email address"
           required
-          className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50"
+          className="flex-1"
         />
         <Button type="submit" disabled={isBusy}>
           Find

@@ -3,9 +3,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { updateProfile } from '../../services/auth.service';
 import { errorMessage } from '../../utils/errors';
 import Button from '../../components/ui/Button';
-
-const INPUT_CLASS =
-  'rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50';
+import Input from '../../components/ui/Input';
 
 export default function ProfileForm() {
   const { user, updateUser } = useAuth();
@@ -65,25 +63,23 @@ export default function ProfileForm() {
       <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-4">
         <label className="flex flex-col gap-1 text-sm text-slate-300">
           Name
-          <input
+          <Input
             type="text"
             name="name"
             value={form.name}
             onChange={handleChange}
             required
-            className={INPUT_CLASS}
           />
         </label>
 
         <label className="flex flex-col gap-1 text-sm text-slate-300">
           Email
-          <input
+          <Input
             type="email"
             name="email"
             value={form.email}
             onChange={handleChange}
             required
-            className={INPUT_CLASS}
           />
           {emailError && <span className="text-sm text-red-500">{emailError}</span>}
         </label>
@@ -91,14 +87,13 @@ export default function ProfileForm() {
         {emailChanged && (
           <label className="flex flex-col gap-1 text-sm text-slate-300">
             Current password
-            <input
+            <Input
               type="password"
               name="currentPassword"
               value={form.currentPassword}
               onChange={handleChange}
               required
               autoComplete="current-password"
-              className={INPUT_CLASS}
             />
             <span className="text-xs text-slate-400">Required to change your email.</span>
           </label>

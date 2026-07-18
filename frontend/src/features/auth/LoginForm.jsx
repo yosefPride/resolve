@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { errorMessage } from '../../utils/errors';
 import Button from '../../components/ui/Button';
+import Input from '../../components/ui/Input';
 
 export default function LoginForm() {
   const { login } = useAuth();
@@ -34,25 +35,23 @@ export default function LoginForm() {
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <label className="flex flex-col gap-1 text-sm text-slate-300">
         Email
-        <input
+        <Input
           type="email"
           name="email"
           value={form.email}
           onChange={handleChange}
           required
-          className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50"
         />
       </label>
 
       <label className="flex flex-col gap-1 text-sm text-slate-300">
         Password
-        <input
+        <Input
           type="password"
           name="password"
           value={form.password}
           onChange={handleChange}
           required
-          className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50"
         />
       </label>
 
