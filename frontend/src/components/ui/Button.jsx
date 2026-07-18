@@ -8,17 +8,19 @@ import { Link } from 'react-router-dom';
 // type="button" so it never submits a form by accident — set type="submit"
 // explicitly when needed).
 //
-// Hover is a simple opacity dim (no ring / no color invert). font-weight lives
-// in each VARIANT, not BASE, so the two never fight over CSS source order.
+// Hover lives per-VARIANT: filled buttons dim (opacity), transparent ones
+// (ghost / dangerOutline) get a low-opacity background instead — dimming a
+// see-through button reads poorly. font-weight also lives in each VARIANT (not
+// BASE) so the two never fight over CSS source order.
 
 const BASE =
-  'inline-flex items-center justify-center rounded-full transition-opacity duration-200 hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50';
+  'inline-flex items-center justify-center rounded-full transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50';
 
 const VARIANTS = {
-  primary: 'bg-white font-semibold text-black',
-  ghost: 'font-medium text-slate-300',
-  danger: 'bg-red-500 font-semibold text-white',
-  dangerOutline: 'border border-red-500/50 font-semibold text-red-400',
+  primary: 'bg-white font-semibold text-black hover:opacity-80',
+  ghost: 'font-medium text-slate-300 hover:bg-white/10 hover:text-white',
+  danger: 'bg-red-500 font-semibold text-white hover:opacity-80',
+  dangerOutline: 'border border-red-500/50 font-semibold text-red-400 hover:bg-red-500/10',
 };
 
 const SIZES = {
