@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Pencil } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useGroup } from '../hooks/useGroup';
@@ -15,7 +16,8 @@ export default function GroupManagementPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { group, members, status, refresh } = useGroup(id);
+  const queryClient = useQueryClient();
+  const { group, members, status } = useGroup(id);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
@@ -24,7 +26,7 @@ export default function GroupManagementPage() {
   const [leaveError, setLeaveError] = useState('');
   const [isLeaving, setIsLeaving] = useState(false);
 
-  if (status === 'loading') {
+  if (status === 'pending') {
     return (
       <section className="mx-auto max-w-2xl px-4 py-20 sm:px-6 lg:px-8">
         <p className="text-sm text-slate-400">Loading…</p>
@@ -50,6 +52,7 @@ export default function GroupManagementPage() {
     setIsDeleting(true);
     try {
       await deleteGroup(id);
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
       navigate('/groups');
     } catch (err) {
       setDeleteError(errorMessage(err, 'Failed to delete team.'));
@@ -59,7 +62,9 @@ export default function GroupManagementPage() {
 
   function handleRenamed() {
     setIsRenaming(false);
-    refresh(); // re-fetch so the heading (and members) reflect the new name
+    // Refresh the heading here and the teams list (name shown there too).
+    queryClient.invalidateQueries({ queryKey: ['group', id] });
+    queryClient.invalidateQueries({ queryKey: ['groups'] });
   }
 
   async function handleLeave() {
@@ -67,6 +72,7 @@ export default function GroupManagementPage() {
     setIsLeaving(true);
     try {
       await removeMember(id, user.id);
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
       navigate('/groups');
     } catch (err) {
       setLeaveError(errorMessage(err, 'Failed to leave team.'));
@@ -184,7 +190,6 @@ export default function GroupManagementPage() {
           members={members}
           myUserId={user.id}
           myRole={myRole}
-          onChanged={refresh}
         />
       </div>
     </section>

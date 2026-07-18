@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { MoreVertical } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useNavigate } from 'react-router-dom';
@@ -9,40 +10,42 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Badge from '../../components/ui/Badge';
 
-function AddMemberForm({ groupId, onAdded }) {
+function AddMemberForm({ groupId }) {
+  const queryClient = useQueryClient();
   const [email, setEmail] = useState('');
   const [found, setFound] = useState(null);
   const [error, setError] = useState('');
-  const [isBusy, setIsBusy] = useState(false);
+  const [isLookingUp, setIsLookingUp] = useState(false);
+
+  const addMutation = useMutation({
+    mutationFn: ({ userId, role }) => addMember(groupId, userId, role),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['group', groupId, 'members'] });
+      setFound(null);
+      setEmail('');
+    },
+    onError: (err) => setError(errorMessage(err, 'Failed to add member.')),
+  });
+
+  const isBusy = isLookingUp || addMutation.isPending;
 
   async function handleLookup(event) {
     event.preventDefault();
     setError('');
     setFound(null);
-    setIsBusy(true);
+    setIsLookingUp(true);
     try {
-      const user = await lookupUserByEmail(groupId, email);
-      setFound(user);
+      setFound(await lookupUserByEmail(groupId, email));
     } catch (err) {
       setError(errorMessage(err, 'No user found with that email.'));
     } finally {
-      setIsBusy(false);
+      setIsLookingUp(false);
     }
   }
 
-  async function handleConfirm(role) {
+  function handleConfirm(role) {
     setError('');
-    setIsBusy(true);
-    try {
-      await addMember(groupId, found.id, role);
-      setFound(null);
-      setEmail('');
-      onAdded();
-    } catch (err) {
-      setError(errorMessage(err, 'Failed to add member.'));
-    } finally {
-      setIsBusy(false);
-    }
+    addMutation.mutate({ userId: found.id, role });
   }
 
   return (
@@ -132,40 +135,45 @@ function MemberActionsMenu({ member, isSelf, canChangeRole, isBusy, onToggleRole
   );
 }
 
-export default function MemberManager({ groupId, members, myUserId, myRole, onChanged }) {
+export default function MemberManager({ groupId, members, myUserId, myRole }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState(null);
   const iAmAdmin = isGroupAdmin(myRole);
 
-  async function handleRoleToggle(member) {
-    setError('');
-    setBusyId(member.user_id);
-    const nextRole = isGroupAdmin(member.role) ? GROUP_ROLES.CONTRIBUTOR : GROUP_ROLES.GROUP_ADMIN;
-    try {
-      await updateMemberRole(groupId, member.user_id, nextRole);
-      onChanged();
-    } catch (err) {
-      setError(errorMessage(err, 'Failed to update role.'));
-    } finally {
-      setBusyId(null);
-    }
-  }
+  const roleMutation = useMutation({
+    mutationFn: ({ userId, role }) => updateMemberRole(groupId, userId, role),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['group', groupId, 'members'] }),
+    onError: (err) => setError(errorMessage(err, 'Failed to update role.')),
+    onSettled: () => setBusyId(null),
+  });
 
-  async function handleRemove(member) {
-    setError('');
-    setBusyId(member.user_id);
-    try {
-      await removeMember(groupId, member.user_id);
-      if (member.user_id === myUserId) {
+  const removeMutation = useMutation({
+    mutationFn: (userId) => removeMember(groupId, userId),
+    onSuccess: (_data, userId) => {
+      // Removing yourself means you've lost access — leave the page.
+      if (userId === myUserId) {
         navigate('/groups');
         return;
       }
-      onChanged();
-    } catch (err) {
-      setError(errorMessage(err, 'Failed to remove member.'));
-      setBusyId(null);
-    }
+      queryClient.invalidateQueries({ queryKey: ['group', groupId, 'members'] });
+    },
+    onError: (err) => setError(errorMessage(err, 'Failed to remove member.')),
+    onSettled: () => setBusyId(null),
+  });
+
+  function handleRoleToggle(member) {
+    setError('');
+    setBusyId(member.user_id);
+    const nextRole = isGroupAdmin(member.role) ? GROUP_ROLES.CONTRIBUTOR : GROUP_ROLES.GROUP_ADMIN;
+    roleMutation.mutate({ userId: member.user_id, role: nextRole });
+  }
+
+  function handleRemove(member) {
+    setError('');
+    setBusyId(member.user_id);
+    removeMutation.mutate(member.user_id);
   }
 
   return (
@@ -206,7 +214,7 @@ export default function MemberManager({ groupId, members, myUserId, myRole, onCh
       {iAmAdmin && (
         <div className="flex flex-col gap-3 border-t border-white/10 pt-4">
           <h3 className="text-sm font-semibold text-white">Add member</h3>
-          <AddMemberForm groupId={groupId} onAdded={onChanged} />
+          <AddMemberForm groupId={groupId} />
         </div>
       )}
     </div>
