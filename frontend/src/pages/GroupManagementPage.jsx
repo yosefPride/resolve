@@ -9,6 +9,7 @@ import { errorMessage } from '../utils/errors';
 import MemberManager from '../features/groups/MemberManager';
 import RenameGroupForm from '../features/groups/RenameGroupForm';
 import Modal from '../components/ui/Modal';
+import Button from '../components/ui/Button';
 
 export default function GroupManagementPage() {
   const { id } = useParams();
@@ -95,22 +96,14 @@ export default function GroupManagementPage() {
             >
               <Pencil className="h-4 w-4" />
             </button>
-            <button
-              type="button"
-              onClick={() => setIsConfirmingDelete(true)}
-              className="rounded-full border border-red-500/50 px-4 py-2 text-sm font-semibold text-red-400 transition-colors hover:bg-red-500/10"
-            >
+            <Button variant="dangerOutline" onClick={() => setIsConfirmingDelete(true)}>
               Delete team
-            </button>
+            </Button>
           </div>
         ) : (
-          <button
-            type="button"
-            onClick={() => setIsConfirmingLeave(true)}
-            className="rounded-full border border-red-500/50 px-4 py-2 text-sm font-semibold text-red-400 transition-colors hover:bg-red-500/10"
-          >
+          <Button variant="dangerOutline" onClick={() => setIsConfirmingLeave(true)}>
             Leave team
-          </button>
+          </Button>
         )}
       </div>
 
@@ -138,24 +131,18 @@ export default function GroupManagementPage() {
         {leaveError && <p className="mt-3 text-sm text-red-500">{leaveError}</p>}
 
         <div className="mt-6 flex justify-end gap-3">
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             onClick={() => {
               setIsConfirmingLeave(false);
               setLeaveError('');
             }}
-            className="rounded-full px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
           >
             Cancel
-          </button>
-          <button
-            type="button"
-            disabled={isLeaving}
-            onClick={handleLeave}
-            className="rounded-full bg-red-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-          >
+          </Button>
+          <Button variant="danger" disabled={isLeaving} onClick={handleLeave}>
             {isLeaving ? 'Leaving…' : 'Leave team'}
-          </button>
+          </Button>
         </div>
       </Modal>
 
@@ -175,24 +162,18 @@ export default function GroupManagementPage() {
         {deleteError && <p className="mt-3 text-sm text-red-500">{deleteError}</p>}
 
         <div className="mt-6 flex justify-end gap-3">
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             onClick={() => {
               setIsConfirmingDelete(false);
               setDeleteError('');
             }}
-            className="rounded-full px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
           >
             Cancel
-          </button>
-          <button
-            type="button"
-            disabled={isDeleting}
-            onClick={handleDelete}
-            className="rounded-full bg-red-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-          >
+          </Button>
+          <Button variant="danger" disabled={isDeleting} onClick={handleDelete}>
             {isDeleting ? 'Deleting…' : 'Delete team'}
-          </button>
+          </Button>
         </div>
       </Modal>
 

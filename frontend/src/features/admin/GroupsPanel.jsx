@@ -4,6 +4,7 @@ import { formatDate } from '../../utils/format';
 import { listGroups, deleteGroup } from '../../services/admin.service';
 import { errorMessage } from '../../utils/errors';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import Button from '../../components/ui/Button';
 
 export default function GroupsPanel() {
   const [groups, setGroups] = useState([]);
@@ -91,13 +92,9 @@ export default function GroupsPanel() {
                     <td className="px-4 py-3 font-medium text-white">{group.name}</td>
                     <td className="px-4 py-3 text-slate-400">{formatDate(group.created_at)}</td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setTarget(group)}
-                        className="rounded-full border border-red-500/30 px-3 py-1 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/10"
-                      >
+                      <Button variant="dangerOutline" size="sm" onClick={() => setTarget(group)}>
                         Delete team
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -116,22 +113,21 @@ export default function GroupsPanel() {
           {deleteError && <p className="text-sm text-red-500">{deleteError}</p>}
 
           <div className="flex justify-end gap-2">
-            <button
-              type="button"
+            <Button
+              variant="ghost"
               onClick={closeModal}
               disabled={isDeleting}
-              className="rounded-full border border-white/10 px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+              className="border border-white/10"
             >
               Cancel
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="danger"
               onClick={handleConfirmDelete}
               disabled={isDeleting}
-              className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isDeleting ? 'Deleting…' : 'Delete team'}
-            </button>
+            </Button>
           </div>
         </div>
       </Modal>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import Modal from '../../components/ui/Modal';
 import { deletionCheck, deleteUser } from '../../services/admin.service';
 import { errorMessage } from '../../utils/errors';
+import Button from '../../components/ui/Button';
 
 // Drives the admin user-deletion flow for a single target user:
 //   GET /admin/users/:id/deletion-check  → classify the target's groups
@@ -100,23 +101,17 @@ export default function DeleteUserModal({ user, onClose, onDeleted }) {
           <>
             <p className="text-sm text-red-500">Couldn't check this user's teams.</p>
             <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={closeIfIdle}
-                className="rounded-full border border-white/10 px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10"
-              >
+              <Button variant="ghost" onClick={closeIfIdle} className="border border-white/10">
                 Cancel
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
                 onClick={() => {
                   setCheckStatus('loading');
                   runCheck();
                 }}
-                className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-white/90"
               >
                 Retry
-              </button>
+              </Button>
             </div>
           </>
         )}
@@ -178,22 +173,21 @@ export default function DeleteUserModal({ user, onClose, onDeleted }) {
             {submitError && <p className="text-sm text-red-500">{submitError}</p>}
 
             <div className="flex justify-end gap-2">
-              <button
-                type="button"
+              <Button
+                variant="ghost"
                 onClick={closeIfIdle}
                 disabled={isSubmitting}
-                className="rounded-full border border-white/10 px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                className="border border-white/10"
               >
                 Cancel
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                variant="danger"
                 onClick={handleSubmit}
                 disabled={isSubmitting || !allSuccessorsChosen}
-                className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isSubmitting ? 'Deleting…' : 'Delete user'}
-              </button>
+              </Button>
             </div>
           </>
         )}

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { addMember, lookupUserByEmail, removeMember, updateMemberRole } from '../../services/groups.service';
 import { GROUP_ROLES, isGroupAdmin } from '../../utils/roles';
 import { errorMessage } from '../../utils/errors';
+import Button from '../../components/ui/Button';
 
 function AddMemberForm({ groupId, onAdded }) {
   const [email, setEmail] = useState('');
@@ -52,13 +53,9 @@ function AddMemberForm({ groupId, onAdded }) {
           required
           className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50"
         />
-        <button
-          type="submit"
-          disabled={isBusy}
-          className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition-all duration-200 hover:bg-black hover:ring-1 hover:ring-white hover:text-white disabled:cursor-not-allowed disabled:bg-white/50 disabled:text-black/50"
-        >
+        <Button type="submit" disabled={isBusy}>
           Find
-        </button>
+        </Button>
       </form>
 
       {error && <p className="text-sm text-red-500">{error}</p>}
@@ -70,22 +67,24 @@ function AddMemberForm({ groupId, onAdded }) {
             <p className="text-xs text-slate-400">{found.email}</p>
           </div>
           <div className="flex gap-2">
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
               disabled={isBusy}
               onClick={() => handleConfirm(GROUP_ROLES.CONTRIBUTOR)}
-              className="rounded-full border border-white/10 px-3 py-1 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10 disabled:opacity-50"
+              className="border border-white/10"
             >
               Add as Contributor
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               disabled={isBusy}
               onClick={() => handleConfirm(GROUP_ROLES.GROUP_ADMIN)}
-              className="rounded-full border border-white/10 px-3 py-1 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10 disabled:opacity-50"
+              className="border border-white/10"
             >
               Add as Team Admin
-            </button>
+            </Button>
           </div>
         </div>
       )}

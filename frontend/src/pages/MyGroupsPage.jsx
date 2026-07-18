@@ -4,6 +4,7 @@ import CreateGroupForm from '../features/groups/CreateGroupForm';
 import Modal from '../components/ui/Modal';
 import { listGroups } from '../services/groups.service';
 import { GROUP_ROLES } from '../utils/roles';
+import Button from '../components/ui/Button';
 
 export default function MyGroupsPage() {
   const [groups, setGroups] = useState([]);
@@ -42,14 +43,10 @@ export default function MyGroupsPage() {
     <section className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-20 sm:px-6 lg:px-8">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-white">Your teams</h1>
-        <button
-          type="button"
-          onClick={() => setIsCreating(true)}
-          className="flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition-all duration-200 hover:bg-black hover:ring-1 hover:ring-white  hover:text-white disabled:cursor-not-allowed disabled:bg-white/50 disabled:text-black/50"
-        >
+        <Button onClick={() => setIsCreating(true)} className="gap-1.5">
           <span className="text-base leading-none">+</span>
           Create team
-        </button>
+        </Button>
       </div>
 
       <Modal isOpen={isCreating} onClose={() => setIsCreating(false)} title="Create a team">

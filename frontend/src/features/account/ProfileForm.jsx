@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { updateProfile } from '../../services/auth.service';
 import { errorMessage } from '../../utils/errors';
+import Button from '../../components/ui/Button';
 
 const INPUT_CLASS =
   'rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50';
@@ -106,13 +107,9 @@ export default function ProfileForm() {
         {error && <p className="text-sm text-red-500">{error}</p>}
         {success && <p className="text-sm text-green-400">{success}</p>}
 
-        <button
-          type="submit"
-          disabled={isSubmitting || !isDirty}
-          className="mt-2 self-start rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition-all duration-200 hover:bg-black hover:ring-1 hover:ring-white hover:text-white disabled:cursor-not-allowed disabled:bg-white/50 disabled:text-black/50"
-        >
+        <Button type="submit" disabled={isSubmitting || !isDirty} className="mt-2 self-start">
           {isSubmitting ? 'Saving…' : 'Save changes'}
-        </button>
+        </Button>
       </form>
     </div>
   );

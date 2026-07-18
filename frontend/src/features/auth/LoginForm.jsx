@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { errorMessage } from '../../utils/errors';
+import Button from '../../components/ui/Button';
 
 export default function LoginForm() {
   const { login } = useAuth();
@@ -57,13 +58,9 @@ export default function LoginForm() {
 
       {error && <p className="text-sm text-red-500">{error}</p>}
 
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="mt-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition-all duration-200 hover:bg-black hover:ring-1 hover:ring-white hover:text-white disabled:cursor-not-allowed disabled:bg-white/50 disabled:text-black/50"
-      >
+      <Button type="submit" disabled={isSubmitting} className="mt-2">
         {isSubmitting ? 'Logging in…' : 'Log in'}
-      </button>
+      </Button>
     </form>
   );
 }

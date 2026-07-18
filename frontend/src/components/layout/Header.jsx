@@ -4,6 +4,7 @@ import { Link, NavLink } from 'react-router-dom';
 import UserMenu from './UserMenu';
 import { useAuth } from '../../hooks/useAuth';
 import logo from '../../assets/logo.png';
+import Button from '../ui/Button';
 
 const NAV_LINKS = [
   { to: '/dashboard', label: 'Dashboard' },
@@ -65,18 +66,12 @@ export default function Header() {
               <UserMenu user={user} onLogout={handleLogout} />
             ) : (
               <>
-                <Link
-                  to="/login"
-                  className="rounded-full px-3 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
-                >
+                <Button to="/login" variant="ghost">
                   Log in
-                </Link>
-                <Link
-                  to="/register"
-                  className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition-all duration-200 hover:bg-black hover:ring-1 hover:ring-white hover:text-white disabled:cursor-not-allowed disabled:bg-white/50 disabled:text-black/50"
-                >
+                </Button>
+                <Button to="/register">
                   Sign up
-                </Link>
+                </Button>
               </>
             )}
 

@@ -1,5 +1,5 @@
-import { Link } from 'react-router-dom';
 import heroImage from '../../assets/hero.jpeg';
+import Button from '../ui/Button';
 
 export default function Hero() {
   return (
@@ -16,18 +16,12 @@ export default function Hero() {
         </p>
 
         <div className="mt-8 flex items-center justify-center gap-4">
-          <Link
-            to="/register"
-            className="rounded-full bg-white px-6 py-3 text-sm font-semibold text-black transition-all duration-200 hover:bg-black hover:ring-1 hover:ring-white hover:text-white disabled:cursor-not-allowed disabled:bg-white/50 disabled:text-black/50"
-          >
+          <Button to="/register" size="lg">
             Get started
-          </Link>
-          <Link
-            to="/login"
-            className="rounded-full border border-white/10 px-6 py-3 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
-          >
+          </Button>
+          <Button to="/login" variant="ghost" size="lg" className="border border-white/10">
             Log in
-          </Link>
+          </Button>
         </div>
       </div>
 

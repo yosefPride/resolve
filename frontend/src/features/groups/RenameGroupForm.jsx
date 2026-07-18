@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { renameGroup } from '../../services/groups.service';
 import { errorMessage } from '../../utils/errors';
+import Button from '../../components/ui/Button';
 
 export default function RenameGroupForm({ groupId, currentName, onRenamed }) {
   const [name, setName] = useState(currentName);
@@ -41,13 +42,9 @@ export default function RenameGroupForm({ groupId, currentName, onRenamed }) {
 
       {error && <p className="text-sm text-red-500">{error}</p>}
 
-      <button
-        type="submit"
-        disabled={isSubmitting || trimmed === '' || unchanged}
-        className="mt-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition-all duration-200 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
-      >
+      <Button type="submit" disabled={isSubmitting || trimmed === '' || unchanged} className="mt-2">
         {isSubmitting ? 'Saving…' : 'Save'}
-      </button>
+      </Button>
     </form>
   );
 }
