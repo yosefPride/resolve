@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { MoreVertical } from 'lucide-react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useNavigate } from 'react-router-dom';
 import { addMember, lookupUserByEmail, removeMember, updateMemberRole } from '../../services/groups.service';
 import { GROUP_ROLES, isGroupAdmin } from '../../utils/roles';
@@ -94,62 +95,40 @@ function AddMemberForm({ groupId, onAdded }) {
   );
 }
 
-// Mirrors UserMenu.jsx's dropdown pattern (own open state + outside-click close).
 function MemberActionsMenu({ member, isSelf, canChangeRole, isBusy, onToggleRole, onRemove }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const menuRef = useRef(null);
-
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   return (
-    <div className="relative" ref={menuRef}>
-      <button
-        type="button"
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger
         disabled={isBusy}
-        onClick={() => setIsOpen((open) => !open)}
         aria-label="Member actions"
-        aria-haspopup="true"
-        aria-expanded={isOpen}
         className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
       >
         <MoreVertical className="h-5 w-5" />
-      </button>
+      </DropdownMenu.Trigger>
 
-      {isOpen && (
-        <div className="absolute right-0 z-10 mt-2 w-40 rounded-lg border border-white/10 bg-neutral-950 py-1 shadow-2xl shadow-black/50">
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="end"
+          sideOffset={8}
+          className="z-50 w-40 rounded-lg border border-white/10 bg-neutral-950 py-1 shadow-2xl shadow-black/50"
+        >
           {canChangeRole && (
-            <button
-              type="button"
-              onClick={() => {
-                setIsOpen(false);
-                onToggleRole();
-              }}
-              className="block w-full px-4 py-2 text-left text-sm text-slate-300 transition-colors hover:bg-white/10"
+            <DropdownMenu.Item
+              onSelect={onToggleRole}
+              className="cursor-pointer px-4 py-2 text-sm text-slate-300 outline-none transition-colors data-highlighted:bg-white/10"
             >
               {isGroupAdmin(member.role) ? 'Demote' : 'Promote'}
-            </button>
+            </DropdownMenu.Item>
           )}
-          <button
-            type="button"
-            onClick={() => {
-              setIsOpen(false);
-              onRemove();
-            }}
-            className="block w-full px-4 py-2 text-left text-sm text-red-400 transition-colors hover:bg-white/10"
+          <DropdownMenu.Item
+            onSelect={onRemove}
+            className="cursor-pointer px-4 py-2 text-sm text-red-400 outline-none transition-colors data-highlighted:bg-white/10"
           >
             {isSelf ? 'Leave' : 'Remove'}
-          </button>
-        </div>
-      )}
-    </div>
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }
 
