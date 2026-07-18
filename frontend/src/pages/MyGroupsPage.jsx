@@ -1,41 +1,25 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import GroupList from '../features/groups/GroupList';
 import CreateGroupForm from '../features/groups/CreateGroupForm';
 import Modal from '../components/ui/Modal';
 import { listGroups } from '../services/groups.service';
-import { GROUP_ROLES } from '../utils/roles';
 import Button from '../components/ui/Button';
 
 export default function MyGroupsPage() {
-  const [groups, setGroups] = useState([]);
-  const [status, setStatus] = useState('loading');
+  const queryClient = useQueryClient();
   const [isCreating, setIsCreating] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    listGroups()
-      .then((data) => {
-        if (cancelled) return;
-        setGroups(data);
-        setStatus('ready');
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setStatus('error');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { data: groups = [], status } = useQuery({
+    queryKey: ['groups'],
+    queryFn: listGroups,
+  });
 
-  function handleCreated(group) {
-    // The creator is always Group Admin and the sole member at creation time
-    // (see GroupService::create_group) — safe to fill these in client-side
-    // rather than round-tripping to GET /groups just to get the same values.
-    setGroups((prev) => [
-      ...prev,
-      { ...group, role: GROUP_ROLES.GROUP_ADMIN, member_count: 1, open_ticket_count: 0 },
-    ]);
+  function handleCreated() {
+    // The new group is server truth now, so just invalidate the cache — this
+    // list (and any future consumer of ['groups'], e.g. the sidebar) refetches
+    // automatically. No more hand-fabricated optimistic group object.
+    queryClient.invalidateQueries({ queryKey: ['groups'] });
     setIsCreating(false);
   }
 
@@ -53,9 +37,9 @@ export default function MyGroupsPage() {
         <CreateGroupForm onCreated={handleCreated} />
       </Modal>
 
-      {status === 'loading' && <p className="text-sm text-slate-400">Loading…</p>}
+      {status === 'pending' && <p className="text-sm text-slate-400">Loading…</p>}
       {status === 'error' && <p className="text-sm text-red-500">Failed to load teams.</p>}
-      {status === 'ready' && <GroupList groups={groups} />}
+      {status === 'success' && <GroupList groups={groups} />}
     </section>
   );
 }
