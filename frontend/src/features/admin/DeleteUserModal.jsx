@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import Modal from '../../components/ui/Modal';
 import { deletionCheck, deleteUser } from '../../services/admin.service';
 import { errorMessage } from '../../utils/errors';
@@ -12,83 +13,66 @@ import Button from '../../components/ui/Button';
 // A 409 at commit means the server re-derived a different plan (membership
 // shifted since the check) — we surface it and re-run the check in place.
 export default function DeleteUserModal({ user, onClose, onDeleted }) {
-  const [checkStatus, setCheckStatus] = useState('loading'); // loading | ready | error
-  const [check, setCheck] = useState(null);
   const [successors, setSuccessors] = useState({}); // group_id -> successor user_id
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
 
-  // Re-fetch and re-classify the target's groups. Used by the retry button and
-  // the 409 re-check (both event-driven). Deliberately leaves submitError alone
-  // so a 409 message survives the re-check it triggers.
-  async function runCheck() {
-    try {
-      const result = await deletionCheck(user.id);
-      setCheck(result);
-      // Keep any prior selections that are still valid for the refreshed plan;
-      // drop groups that vanished or whose chosen successor is no longer eligible.
-      setSuccessors((prev) => {
-        const next = {};
-        for (const group of result.blocked_groups) {
-          const chosen = prev[group.group_id];
-          if (chosen && group.eligible_successors.some((m) => m.user_id === chosen)) {
-            next[group.group_id] = chosen;
-          }
-        }
-        return next;
-      });
-      setCheckStatus('ready');
-    } catch {
-      setCheckStatus('error');
-    }
-  }
-
-  // Initial check when the modal opens. Inlined (rather than calling runCheck)
-  // because the react-hooks lint forbids invoking a setState-ing callback
-  // synchronously from an effect; state here is only set in the async callback.
-  useEffect(() => {
-    let cancelled = false;
-    deletionCheck(user.id)
-      .then((result) => {
-        if (cancelled) return;
-        setCheck(result);
-        setCheckStatus('ready');
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setCheckStatus('error');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [user.id]);
-
+  const deletionQuery = useQuery({
+    queryKey: ['admin', 'deletionCheck', user.id],
+    queryFn: () => deletionCheck(user.id),
+  });
+  const check = deletionQuery.data;
   const blocked = check?.blocked_groups ?? [];
   const autoDelete = check?.auto_delete_groups ?? [];
-  const allSuccessorsChosen = blocked.every((group) => successors[group.group_id]);
 
-  async function handleSubmit() {
-    setSubmitError('');
-    setIsSubmitting(true);
-    try {
-      await deleteUser(user.id, successors);
-      onDeleted();
-    } catch (err) {
+  // The chosen successor for a group, but only if it's still eligible. After a
+  // 409 re-check the plan can change, so a prior pick may no longer be valid.
+  // Deriving this (instead of pruning successor state in an effect) keeps the
+  // enable-state and submit payload correct without syncing state.
+  function chosenSuccessor(group) {
+    const chosen = successors[group.group_id];
+    return group.eligible_successors.some((m) => m.user_id === chosen) ? chosen : '';
+  }
+  const allSuccessorsChosen = blocked.every((group) => chosenSuccessor(group));
+
+  const deleteMutation = useMutation({
+    mutationFn: () => {
+      const chosen = {};
+      for (const group of blocked) {
+        const s = chosenSuccessor(group);
+        if (s) chosen[group.group_id] = s;
+      }
+      return deleteUser(user.id, chosen);
+    },
+    onSuccess: () => onDeleted(),
+    onError: (err) => {
       if (err.response?.status === 409) {
         setSubmitError(
           errorMessage(err, 'These teams changed since the last check. Please review and try again.'),
         );
-        await runCheck();
+        deletionQuery.refetch(); // re-run the check in place
       } else {
         setSubmitError(errorMessage(err, 'Failed to delete user.'));
       }
-    } finally {
-      setIsSubmitting(false);
-    }
+    },
+  });
+
+  // 'loading' for the initial check and for a retry-after-error; a background
+  // re-check of an already-loaded plan (the 409 path) stays 'ready' so the form
+  // doesn't flicker.
+  const checkStatus =
+    !deletionQuery.isSuccess && deletionQuery.isFetching
+      ? 'loading'
+      : deletionQuery.isError
+        ? 'error'
+        : 'ready';
+
+  function handleSubmit() {
+    setSubmitError('');
+    deleteMutation.mutate();
   }
 
   function closeIfIdle() {
-    if (isSubmitting) return;
+    if (deleteMutation.isPending) return;
     onClose();
   }
 
@@ -104,14 +88,7 @@ export default function DeleteUserModal({ user, onClose, onDeleted }) {
               <Button variant="ghost" onClick={closeIfIdle} className="border border-white/10">
                 Cancel
               </Button>
-              <Button
-                onClick={() => {
-                  setCheckStatus('loading');
-                  runCheck();
-                }}
-              >
-                Retry
-              </Button>
+              <Button onClick={() => deletionQuery.refetch()}>Retry</Button>
             </div>
           </>
         )}
@@ -140,7 +117,7 @@ export default function DeleteUserModal({ user, onClose, onDeleted }) {
                   Promote a member to Team Admin:
                 </label>
                 <select
-                  value={successors[group.group_id] || ''}
+                  value={chosenSuccessor(group)}
                   onChange={(event) =>
                     setSuccessors((prev) => ({ ...prev, [group.group_id]: event.target.value }))
                   }
@@ -176,7 +153,7 @@ export default function DeleteUserModal({ user, onClose, onDeleted }) {
               <Button
                 variant="ghost"
                 onClick={closeIfIdle}
-                disabled={isSubmitting}
+                disabled={deleteMutation.isPending}
                 className="border border-white/10"
               >
                 Cancel
@@ -184,9 +161,9 @@ export default function DeleteUserModal({ user, onClose, onDeleted }) {
               <Button
                 variant="danger"
                 onClick={handleSubmit}
-                disabled={isSubmitting || !allSuccessorsChosen}
+                disabled={deleteMutation.isPending || !allSuccessorsChosen}
               >
-                {isSubmitting ? 'Deleting…' : 'Delete user'}
+                {deleteMutation.isPending ? 'Deleting…' : 'Delete user'}
               </Button>
             </div>
           </>
