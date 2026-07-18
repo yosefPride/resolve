@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { formatDateTime } from '../../utils/format';
 import { listAuditLog } from '../../services/admin.service';
 import Badge from '../../components/ui/Badge';
@@ -21,27 +22,13 @@ function distinctBy(entries, idKey, nameKey) {
 }
 
 export default function AuditLogPanel() {
-  const [entries, setEntries] = useState([]);
-  const [status, setStatus] = useState('loading'); // loading | ready | error
   const [groupFilter, setGroupFilter] = useState('');
   const [userFilter, setUserFilter] = useState('');
 
-  useEffect(() => {
-    let cancelled = false;
-    listAuditLog()
-      .then((data) => {
-        if (cancelled) return;
-        setEntries(data);
-        setStatus('ready');
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setStatus('error');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { data: entries = [], status } = useQuery({
+    queryKey: ['admin', 'auditLog'],
+    queryFn: listAuditLog,
+  });
 
   // Options come from the full loaded log so they stay stable while filtering.
   const groupOptions = useMemo(() => distinctBy(entries, 'group_id', 'group_name'), [entries]);
@@ -58,7 +45,7 @@ export default function AuditLogPanel() {
       (!userFilter || entry.deleted_user_id === userFilter),
   );
 
-  if (status === 'loading') return <p className="text-sm text-slate-400">Loading…</p>;
+  if (status === 'pending') return <p className="text-sm text-slate-400">Loading…</p>;
   if (status === 'error') return <p className="text-sm text-red-500">Failed to load the audit log.</p>;
 
   return (

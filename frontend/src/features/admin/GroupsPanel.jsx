@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import Modal from '../../components/ui/Modal';
 import { formatDate } from '../../utils/format';
 import { listGroups, deleteGroup } from '../../services/admin.service';
@@ -8,55 +9,37 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 
 export default function GroupsPanel() {
-  const [groups, setGroups] = useState([]);
-  const [status, setStatus] = useState('loading');
+  const queryClient = useQueryClient();
   const [target, setTarget] = useState(null); // group pending deletion, or null
-  const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 300);
 
-  // Refetches on debounced-term changes. Status only flips to 'loading' for the
-  // initial load, so typing swaps results in place (input keeps focus); the
-  // cancelled flag drops a response the term has already moved past.
-  useEffect(() => {
-    let cancelled = false;
-    listGroups(debouncedSearch)
-      .then((data) => {
-        if (cancelled) return;
-        setGroups(data);
-        setStatus('ready');
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setStatus('error');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [debouncedSearch]);
+  // keepPreviousData: typing swaps results in place instead of flashing a spinner.
+  const { data: groups = [], status } = useQuery({
+    queryKey: ['admin', 'groups', debouncedSearch],
+    queryFn: () => listGroups(debouncedSearch),
+    placeholderData: keepPreviousData,
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => deleteGroup(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'groups'] });
+      setTarget(null);
+    },
+    onError: (err) => setDeleteError(errorMessage(err, 'Failed to delete team.')),
+  });
 
   function closeModal() {
-    if (isDeleting) return; // don't let a click-away abandon an in-flight delete
+    if (deleteMutation.isPending) return; // don't abandon an in-flight delete
     setTarget(null);
     setDeleteError('');
   }
 
-  async function handleConfirmDelete() {
+  function handleConfirmDelete() {
     setDeleteError('');
-    setIsDeleting(true);
-    try {
-      await deleteGroup(target.id);
-      // Refetch server truth rather than optimistically splicing (no status
-      // flip, so the table doesn't flash a spinner), keeping the active filter.
-      const data = await listGroups(debouncedSearch);
-      setGroups(data);
-      setTarget(null);
-    } catch (err) {
-      setDeleteError(errorMessage(err, 'Failed to delete team.'));
-    } finally {
-      setIsDeleting(false);
-    }
+    deleteMutation.mutate(target.id);
   }
 
   return (
@@ -70,9 +53,9 @@ export default function GroupsPanel() {
         className="mb-4 w-full max-w-sm text-sm"
       />
 
-      {status === 'loading' && <p className="text-sm text-slate-400">Loading…</p>}
+      {status === 'pending' && <p className="text-sm text-slate-400">Loading…</p>}
       {status === 'error' && <p className="text-sm text-red-500">Failed to load teams.</p>}
-      {status === 'ready' &&
+      {status === 'success' &&
         (groups.length === 0 ? (
           <p className="text-sm text-slate-400">
             {debouncedSearch ? `No teams match “${debouncedSearch}”.` : 'No teams found.'}
@@ -117,7 +100,7 @@ export default function GroupsPanel() {
             <Button
               variant="ghost"
               onClick={closeModal}
-              disabled={isDeleting}
+              disabled={deleteMutation.isPending}
               className="border border-white/10"
             >
               Cancel
@@ -125,9 +108,9 @@ export default function GroupsPanel() {
             <Button
               variant="danger"
               onClick={handleConfirmDelete}
-              disabled={isDeleting}
+              disabled={deleteMutation.isPending}
             >
-              {isDeleting ? 'Deleting…' : 'Delete team'}
+              {deleteMutation.isPending ? 'Deleting…' : 'Delete team'}
             </Button>
           </div>
         </div>
