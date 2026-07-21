@@ -8,6 +8,7 @@ import { isGroupAdmin } from '../utils/roles';
 import { deleteGroup, removeMember } from '../services/groups.service';
 import { errorMessage } from '../utils/errors';
 import MemberManager from '../features/groups/MemberManager';
+import GroupStats from '../features/groups/GroupStats';
 import RenameGroupForm from '../features/groups/RenameGroupForm';
 import Modal from '../components/ui/Modal';
 import Button from '../components/ui/Button';
@@ -53,7 +54,7 @@ export default function GroupManagementPage() {
     try {
       await deleteGroup(id);
       queryClient.invalidateQueries({ queryKey: ['groups'] });
-      navigate('/groups');
+      navigate('/dashboard');
     } catch (err) {
       setDeleteError(errorMessage(err, 'Failed to delete team.'));
       setIsDeleting(false);
@@ -73,7 +74,7 @@ export default function GroupManagementPage() {
     try {
       await removeMember(id, user.id);
       queryClient.invalidateQueries({ queryKey: ['groups'] });
-      navigate('/groups');
+      navigate('/dashboard');
     } catch (err) {
       setLeaveError(errorMessage(err, 'Failed to leave team.'));
       setIsLeaving(false);
@@ -112,6 +113,8 @@ export default function GroupManagementPage() {
           </Button>
         )}
       </div>
+
+      <GroupStats groupId={id} memberCount={members.length} />
 
       <Modal
         isOpen={isRenaming}

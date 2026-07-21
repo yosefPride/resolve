@@ -6,7 +6,6 @@ import RegisterPage from './pages/RegisterPage';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import AccountPage from './pages/AccountPage';
-import MyGroupsPage from './pages/MyGroupsPage';
 import GroupManagementPage from './pages/GroupManagementPage';
 import AdminPage from './pages/AdminPage';
 import NotFoundPage from './pages/NotFoundPage';
@@ -39,7 +38,6 @@ export default function App() {
       >
         <Route path='/dashboard' element={<DashboardPage />} />
         <Route path='/account' element={<AccountPage />} />
-        <Route path='/groups' element={<MyGroupsPage />} />
         <Route path='/groups/:id' element={<GroupManagementPage />} />
         <Route
           path='/admin'

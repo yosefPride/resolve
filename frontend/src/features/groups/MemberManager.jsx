@@ -154,7 +154,7 @@ export default function MemberManager({ groupId, members, myUserId, myRole }) {
     onSuccess: (_data, userId) => {
       // Removing yourself means you've lost access — leave the page.
       if (userId === myUserId) {
-        navigate('/groups');
+        navigate('/dashboard');
         return;
       }
       queryClient.invalidateQueries({ queryKey: ['group', groupId, 'members'] });

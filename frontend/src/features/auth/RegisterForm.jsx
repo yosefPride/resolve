@@ -23,7 +23,7 @@ export default function RegisterForm() {
     setIsSubmitting(true);
     try {
       await register(form);
-      navigate('/groups');
+      navigate('/dashboard');
     } catch (err) {
       setError(errorMessage(err, 'Registration failed. Please try again.'));
     } finally {

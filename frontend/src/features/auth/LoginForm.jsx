@@ -23,7 +23,7 @@ export default function LoginForm() {
     setIsSubmitting(true);
     try {
       await login(form);
-      navigate('/groups');
+      navigate('/dashboard');
     } catch (err) {
       setError(errorMessage(err, 'Invalid email or password.'));
     } finally {

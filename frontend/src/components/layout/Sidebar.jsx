@@ -8,16 +8,19 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
+  Plus,
   Shield,
   Ticket,
   User,
   Users,
 } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../hooks/useAuth';
 import { listGroups } from '../../services/groups.service';
+import CreateGroupForm from '../../features/groups/CreateGroupForm';
 import logo from '../../assets/brand-mark.svg';
 import Badge from '../ui/Badge';
+import Modal from '../ui/Modal';
 
 const NAV_LINKS = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -114,45 +117,72 @@ function UserSection({ user, onLogout }) {
   );
 }
 
-// Shares the ['groups'] query key with MyGroupsPage, so creating, renaming or
+// Shares the ['groups'] query key with GroupStats, so creating, renaming or
 // deleting a team anywhere in the app refreshes this list through the
 // invalidations those pages already run.
 function TeamsSection() {
-  // NavItem handles expand-on-click itself in the collapsed branch below.
-  const { collapsed } = useContext(SidebarContext);
+  const { collapsed, expand } = useContext(SidebarContext);
   const [isOpen, setIsOpen] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
+  const queryClient = useQueryClient();
   const { data: groups = [], status } = useQuery({ queryKey: ['groups'], queryFn: listGroups });
 
-  // Collapsed, only the icon shows; clicking it behaves like any other nav row.
+  function handleCreated() {
+    queryClient.invalidateQueries({ queryKey: ['groups'] });
+    setIsCreating(false);
+    setIsOpen(true); // surface the team that was just created
+  }
+
+  // There is no Teams page — the section is a header over the live list, so
+  // collapsed it just reopens the sidebar rather than navigating anywhere.
   if (collapsed) {
-    return <NavItem to="/groups" end label="Teams" icon={Users} />;
+    return (
+      <button
+        type="button"
+        onClick={expand}
+        title="Teams"
+        className={`${rowClasses(true, false)} w-full`}
+      >
+        <Users className="h-4 w-4 shrink-0" />
+      </button>
+    );
   }
 
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center">
-        {/* `end` so this row highlights only on the overview — a specific team
-            highlights its own row instead. */}
-        <NavLink
-          to="/groups"
-          end
-          className={({ isActive }) => `${rowClasses(false, isActive)} grow`}
-        >
-          <Users className="h-4 w-4 shrink-0" />
-          Teams
-        </NavLink>
         <button
           type="button"
           onClick={() => setIsOpen((open) => !open)}
           aria-expanded={isOpen}
-          aria-label="Toggle team list"
-          className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-white/5 hover:text-white"
+          className={`${rowClasses(false, false)} grow`}
         >
+          <Users className="h-4 w-4 shrink-0" />
+          Teams
           <ChevronDown
-            className={`h-4 w-4 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+            className={`ml-auto h-4 w-4 transition-transform duration-200 ${
+              isOpen ? 'rotate-180' : ''
+            }`}
           />
         </button>
+        <button
+          type="button"
+          onClick={() => setIsCreating(true)}
+          title="Create Team"
+          aria-label="Create Team"
+          className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-white/5 hover:text-white"
+        >
+          <Plus className="h-4 w-4" />
+        </button>
       </div>
+
+      <Modal
+        isOpen={isCreating}
+        onClose={() => setIsCreating(false)}
+        title="Create a team"
+      >
+        <CreateGroupForm onCreated={handleCreated} />
+      </Modal>
 
       {isOpen && (
         <div className="flex flex-col gap-1 pl-4">
