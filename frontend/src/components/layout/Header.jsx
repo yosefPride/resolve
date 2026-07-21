@@ -6,7 +6,7 @@ import logo from '../../assets/brand-logo.svg';
 
 const NAV_LINKS = [
   { to: '/dashboard', label: 'Dashboard' },
-  { to: '/tickets', label: 'Tickets' },
+  { to: '/tickets', label: 'Issues' },
   { to: '/groups', label: 'Teams' },
 ];
 

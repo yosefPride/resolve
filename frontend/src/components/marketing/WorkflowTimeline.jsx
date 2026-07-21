@@ -1,7 +1,7 @@
 const STEPS = [
   {
     title: 'Report',
-    description: 'A contributor files a ticket inside their team, with full context attached.',
+    description: 'A contributor files an issue inside their team, with full context attached.',
   },
   {
     title: 'Triage',
@@ -13,7 +13,7 @@ const STEPS = [
   },
   {
     title: 'Resolve',
-    description: 'The ticket closes, and its history stays with the team for future reference.',
+    description: 'The issue closes, and its history stays with the team for future reference.',
   },
 ];
 

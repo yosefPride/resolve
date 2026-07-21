@@ -1,7 +1,7 @@
 const FEATURES = [
   {
     title: 'Strict team isolation',
-    description: 'Tickets and comments belong to exactly one team. No cross-tenant access, ever.',
+    description: 'Issues and comments belong to exactly one team. No cross-tenant access, ever.',
     icon: (
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 3l7 3.5v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9v-5L12 3z" />
     ),
@@ -18,7 +18,7 @@ const FEATURES = [
   },
   {
     title: 'Built-in workflow',
-    description: 'Report, discuss, and resolve tickets in one place, with a full comment and status history.',
+    description: 'Report, discuss, and resolve issues in one place, with a full comment and status history.',
     icon: (
       <path
         strokeLinecap="round"
@@ -29,7 +29,7 @@ const FEATURES = [
   },
   {
     title: 'AI-assisted triage',
-    description: 'Gemini-powered suggestions summarize, categorize, and explain tickets — advisory only, never authoritative.',
+    description: 'Gemini-powered suggestions summarize, categorize, and explain issues — advisory only, never authoritative.',
     icon: (
       <path
         strokeLinecap="round"
@@ -40,7 +40,7 @@ const FEATURES = [
   },
   {
     title: 'Live team dashboards',
-    description: 'See ticket volume, status, and AI-generated reports scoped to your active team in real time.',
+    description: 'See issue volume, status, and AI-generated reports scoped to your active team in real time.',
     icon: (
       <path strokeLinecap="round" strokeLinejoin="round" d="M4 20V10M10 20V4M16 20v-7M4 20h16" />
     ),
