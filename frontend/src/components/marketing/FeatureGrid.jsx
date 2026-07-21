@@ -3,7 +3,7 @@ import { ShieldCheck, UserCheck, ClipboardList, Sparkles, BarChart3, Lock } from
 const FEATURES = [
   {
     title: 'Strict team isolation',
-    description: 'Tickets and comments belong to exactly one team. No cross-tenant access, ever.',
+    description: 'Issues and comments belong to exactly one team. No cross-tenant access, ever.',
     icon: ShieldCheck,
   },
   {

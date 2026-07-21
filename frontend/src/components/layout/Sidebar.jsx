@@ -11,7 +11,9 @@ import {
   User,
   Users,
 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../hooks/useAuth';
+import { listGroups } from '../../services/groups.service';
 import logo from '../../assets/logo.png';
 import Badge from '../ui/Badge';
 
@@ -19,7 +21,6 @@ const NAV_LINKS = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   // Labeled "Issues" in the UI; the route stays /tickets to match the backend.
   { to: '/tickets', label: 'Issues', icon: Ticket },
-  { to: '/groups', label: 'Teams', icon: Users },
 ];
 
 const ROW = 'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors';
@@ -82,6 +83,81 @@ function UserSection({ user, onLogout }) {
   );
 }
 
+// Shares the ['groups'] query key with MyGroupsPage, so creating, renaming or
+// deleting a team anywhere in the app refreshes this list through the
+// invalidations those pages already run.
+function TeamsSection() {
+  const [isOpen, setIsOpen] = useState(true);
+  const { data: groups = [], status } = useQuery({ queryKey: ['groups'], queryFn: listGroups });
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center">
+        {/* `end` so this row highlights only on the overview — a specific team
+            highlights its own row instead. */}
+        <NavLink
+          to="/groups"
+          end
+          className={({ isActive }) =>
+            `${ROW} grow border-l-2 ${
+              isActive ? 'border-sky-400 bg-white/10 text-white' : IDLE
+            }`
+          }
+        >
+          <Users className="h-4 w-4 shrink-0" />
+          Teams
+        </NavLink>
+        <button
+          type="button"
+          onClick={() => setIsOpen((open) => !open)}
+          aria-expanded={isOpen}
+          aria-label="Toggle team list"
+          className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-white/5 hover:text-white"
+        >
+          <ChevronDown
+            className={`h-4 w-4 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+          />
+        </button>
+      </div>
+
+      {isOpen && (
+        <div className="flex flex-col gap-1 pl-4">
+          {status === 'pending' && <p className="px-3 py-2 text-xs text-slate-500">Loading…</p>}
+          {status === 'error' && (
+            <p className="px-3 py-2 text-xs text-red-500">Couldn't load teams.</p>
+          )}
+          {status === 'success' && groups.length === 0 && (
+            <p className="px-3 py-2 text-xs text-slate-500">No teams yet.</p>
+          )}
+
+          {groups.map((group) => (
+            <NavLink
+              key={group.id}
+              to={`/groups/${group.id}`}
+              className={({ isActive }) =>
+                `${ROW} border-l-2 ${
+                  isActive ? 'border-sky-400 bg-white/10 text-white' : IDLE
+                }`
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <span
+                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                      isActive ? 'bg-sky-400' : 'bg-white/20'
+                    }`}
+                  />
+                  <span className="truncate">{group.name}</span>
+                </>
+              )}
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Sidebar() {
   const { user, logout } = useAuth();
 
@@ -114,6 +190,8 @@ export default function Sidebar() {
         {NAV_LINKS.map((link) => (
           <NavItem key={link.to} {...link} />
         ))}
+
+        <TeamsSection />
       </nav>
     </aside>
   );

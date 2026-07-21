@@ -131,7 +131,7 @@ export default function GroupManagementPage() {
       >
         <p className="text-sm text-slate-300">
           Are you sure you want to leave <span className="font-semibold text-white">{group.name}</span>? You'll
-          lose access to its tickets, and a Team Admin would need to add you back to rejoin.
+          lose access to its issues, and a Team Admin would need to add you back to rejoin.
         </p>
 
         {leaveError && <p className="mt-3 text-sm text-red-500">{leaveError}</p>}
