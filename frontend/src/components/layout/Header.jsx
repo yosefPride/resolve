@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import UserMenu from './UserMenu';
 import { useAuth } from '../../hooks/useAuth';
-import logo from '../../assets/logo.png';
+import logo from '../../assets/brand-logo.svg';
 
 const NAV_LINKS = [
   { to: '/dashboard', label: 'Dashboard' },
@@ -32,7 +32,7 @@ function Logo({ isAuthenticated }) {
       <img
         src={logo}
         alt="Resolve"
-        className="h-20 w-auto object-contain transition-all duration-200 group-hover:drop-shadow-[0_0_10px_rgba(56,189,248,0.8)]"
+        className="h-6 w-auto object-contain transition-all duration-200 group-hover:drop-shadow-[0_0_10px_rgba(56,189,248,0.8)]"
       />
     </Link>
   );
