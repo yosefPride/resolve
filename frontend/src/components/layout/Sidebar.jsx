@@ -1,8 +1,18 @@
+import { useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { Bell, LayoutDashboard, Ticket, Users } from 'lucide-react';
-import UserMenu from './UserMenu';
+import {
+  Bell,
+  ChevronDown,
+  CircleUser,
+  LayoutDashboard,
+  LogOut,
+  Shield,
+  Ticket,
+  User,
+  Users,
+} from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
-import logo from '../../assets/brand-mark.svg';
+import logo from '../../assets/logo.png';
 import Badge from '../ui/Badge';
 
 const NAV_LINKS = [
@@ -13,6 +23,7 @@ const NAV_LINKS = [
 ];
 
 const ROW = 'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors';
+const IDLE = 'border-transparent text-slate-400 hover:bg-white/5 hover:text-white';
 
 function NavItem({ to, label, icon: Icon }) {
   return (
@@ -20,15 +31,54 @@ function NavItem({ to, label, icon: Icon }) {
       to={to}
       className={({ isActive }) =>
         `${ROW} border-l-2 ${
-          isActive
-            ? 'border-sky-400 bg-white/10 text-white'
-            : 'border-transparent text-slate-400 hover:bg-white/5 hover:text-white'
+          isActive ? 'border-sky-400 bg-white/10 text-white' : IDLE
         }`
       }
     >
       <Icon className="h-4 w-4 shrink-0" />
       {label}
     </NavLink>
+  );
+}
+
+// The account actions expand inline rather than in a floating menu, so the
+// sidebar stays one continuous surface.
+function UserSection({ user, onLogout }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const isSystemAdmin = user?.global_role === 'SystemAdmin';
+
+  return (
+    <div className="flex flex-col gap-1">
+      <button
+        type="button"
+        onClick={() => setIsOpen((open) => !open)}
+        aria-expanded={isOpen}
+        className={`${ROW} w-full border-l-2 ${IDLE}`}
+      >
+        <CircleUser className="h-5 w-5 shrink-0" strokeWidth={1.5} />
+        <span className="truncate text-white">{user?.name}</span>
+        <ChevronDown
+          className={`ml-auto h-4 w-4 shrink-0 transition-transform duration-200 ${
+            isOpen ? 'rotate-180' : ''
+          }`}
+        />
+      </button>
+
+      {isOpen && (
+        <div className="flex flex-col gap-1 pl-4">
+          <NavItem to="/account" label="Account" icon={User} />
+          {isSystemAdmin && <NavItem to="/admin" label="Admin" icon={Shield} />}
+          <button
+            type="button"
+            onClick={onLogout}
+            className={`${ROW} w-full border-l-2 ${IDLE}`}
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            Log out
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -45,10 +95,7 @@ export default function Sidebar() {
         />
       </Link>
 
-      <div className="flex items-center gap-3 px-1">
-        <UserMenu user={user} onLogout={logout} />
-        <span className="truncate text-sm font-medium text-white">{user?.name}</span>
-      </div>
+      <UserSection user={user} onLogout={logout} />
 
       <nav className="flex flex-col gap-1">
         {/* No notifications backend yet — present but deliberately inert, so the
