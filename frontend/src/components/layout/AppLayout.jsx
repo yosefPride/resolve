@@ -1,19 +1,16 @@
 import { Outlet } from 'react-router-dom';
-import Header from './Header';
-import Footer from './Footer';
+import Sidebar from './Sidebar';
 
-// Chrome for the authenticated app routes. Deliberately identical to
-// MarketingLayout for now so extracting the layouts is a pure refactor with no
-// visual change; the next stage replaces the Header/Footer here with the
-// persistent left Sidebar.
+// Chrome for the authenticated app routes: a persistent left sidebar beside the
+// page body. No top header and no footer here — navigation lives in the
+// sidebar, and app pages are working surfaces rather than marketing pages.
 export default function AppLayout() {
   return (
-    <div className="flex min-h-screen flex-col">
-      <div className="grow">
-        <Header />
+    <div className="flex min-h-screen">
+      <Sidebar />
+      <main className="grow">
         <Outlet />
-      </div>
-      <Footer />
+      </main>
     </div>
   );
 }
