@@ -217,7 +217,7 @@ export default function Sidebar() {
             <img
               src={logo}
               alt="Resolve"
-              className="h-6 w-auto object-contain transition-all duration-200 group-hover:drop-shadow-[0_0_10px_rgba(56,189,248,0.8)]"
+              className="h-5 w-auto object-contain transition-all duration-200 group-hover:drop-shadow-[0_0_10px_rgba(56,189,248,0.8)]"
             />
           </Link>
           <button
@@ -228,9 +228,9 @@ export default function Sidebar() {
             className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-white/5 hover:text-white"
           >
             {collapsed ? (
-              <PanelLeftOpen className="h-4 w-4" />
+              <PanelLeftOpen className="h-5 w-5" />
             ) : (
-              <PanelLeftClose className="h-4 w-4" />
+              <PanelLeftClose className="h-5 w-5" />
             )}
           </button>
         </div>
