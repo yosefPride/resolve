@@ -36,7 +36,7 @@ export default function GroupList({ groups }) {
             </th>
             <th className="px-4 py-3">
               <span className="flex items-center gap-2">
-                Open Tickets
+                Open Issues
                 <TicketsIcon className="h-4 w-4 text-slate-400" />
               </span>
             </th>
