@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { createContext, useContext, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import {
   Bell,
@@ -6,6 +6,8 @@ import {
   CircleUser,
   LayoutDashboard,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
   Shield,
   Ticket,
   User,
@@ -14,7 +16,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../hooks/useAuth';
 import { listGroups } from '../../services/groups.service';
-import logo from '../../assets/logo.png';
+import logo from '../../assets/brand-mark.svg';
 import Badge from '../ui/Badge';
 
 const NAV_LINKS = [
@@ -25,19 +27,31 @@ const NAV_LINKS = [
 
 const ROW = 'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors';
 const IDLE = 'border-transparent text-slate-400 hover:bg-white/5 hover:text-white';
+const ACTIVE = 'border-sky-400 bg-white/10 text-white';
+const STORAGE_KEY = 'sidebar:collapsed';
 
-function NavItem({ to, label, icon: Icon }) {
+// Collapsed state reaches the nav rows without drilling it through every
+// section. `expand` is called on navigation so a click while collapsed both
+// follows the link and restores the full sidebar.
+const SidebarContext = createContext({ collapsed: false, expand: () => {} });
+
+function rowClasses(collapsed, isActive) {
+  return `${ROW} border-l-2 ${collapsed ? 'justify-center px-2' : ''} ${isActive ? ACTIVE : IDLE}`;
+}
+
+function NavItem({ to, label, icon: Icon, end }) {
+  const { collapsed, expand } = useContext(SidebarContext);
+
   return (
     <NavLink
       to={to}
-      className={({ isActive }) =>
-        `${ROW} border-l-2 ${
-          isActive ? 'border-sky-400 bg-white/10 text-white' : IDLE
-        }`
-      }
+      end={end}
+      onClick={expand}
+      title={collapsed ? label : undefined}
+      className={({ isActive }) => rowClasses(collapsed, isActive)}
     >
       <Icon className="h-4 w-4 shrink-0" />
-      {label}
+      {!collapsed && label}
     </NavLink>
   );
 }
@@ -45,34 +59,51 @@ function NavItem({ to, label, icon: Icon }) {
 // The account actions expand inline rather than in a floating menu, so the
 // sidebar stays one continuous surface.
 function UserSection({ user, onLogout }) {
+  const { collapsed, expand } = useContext(SidebarContext);
   const [isOpen, setIsOpen] = useState(false);
   const isSystemAdmin = user?.global_role === 'SystemAdmin';
+
+  // Collapsed, the row is too narrow for the menu, so a click reopens the
+  // sidebar and reveals the actions in one step.
+  function handleToggle() {
+    if (collapsed) {
+      expand();
+      setIsOpen(true);
+      return;
+    }
+    setIsOpen((open) => !open);
+  }
 
   return (
     <div className="flex flex-col gap-1">
       <button
         type="button"
-        onClick={() => setIsOpen((open) => !open)}
-        aria-expanded={isOpen}
-        className={`${ROW} w-full border-l-2 ${IDLE}`}
+        onClick={handleToggle}
+        aria-expanded={collapsed ? false : isOpen}
+        title={collapsed ? user?.name : undefined}
+        className={`${rowClasses(collapsed, false)} w-full`}
       >
         <CircleUser className="h-5 w-5 shrink-0" strokeWidth={1.5} />
-        <span className="truncate text-white">{user?.name}</span>
-        <ChevronDown
-          className={`ml-auto h-4 w-4 shrink-0 transition-transform duration-200 ${
-            isOpen ? 'rotate-180' : ''
-          }`}
-        />
+        {!collapsed && (
+          <>
+            <span className="truncate text-white">{user?.name}</span>
+            <ChevronDown
+              className={`ml-auto h-4 w-4 shrink-0 transition-transform duration-200 ${
+                isOpen ? 'rotate-180' : ''
+              }`}
+            />
+          </>
+        )}
       </button>
 
-      {isOpen && (
+      {isOpen && !collapsed && (
         <div className="flex flex-col gap-1 pl-4">
           <NavItem to="/account" label="Account" icon={User} />
           {isSystemAdmin && <NavItem to="/admin" label="Admin" icon={Shield} />}
           <button
             type="button"
             onClick={onLogout}
-            className={`${ROW} w-full border-l-2 ${IDLE}`}
+            className={`${rowClasses(false, false)} w-full`}
           >
             <LogOut className="h-4 w-4 shrink-0" />
             Log out
@@ -87,8 +118,15 @@ function UserSection({ user, onLogout }) {
 // deleting a team anywhere in the app refreshes this list through the
 // invalidations those pages already run.
 function TeamsSection() {
+  // NavItem handles expand-on-click itself in the collapsed branch below.
+  const { collapsed } = useContext(SidebarContext);
   const [isOpen, setIsOpen] = useState(true);
   const { data: groups = [], status } = useQuery({ queryKey: ['groups'], queryFn: listGroups });
+
+  // Collapsed, only the icon shows; clicking it behaves like any other nav row.
+  if (collapsed) {
+    return <NavItem to="/groups" end label="Teams" icon={Users} />;
+  }
 
   return (
     <div className="flex flex-col gap-1">
@@ -98,11 +136,7 @@ function TeamsSection() {
         <NavLink
           to="/groups"
           end
-          className={({ isActive }) =>
-            `${ROW} grow border-l-2 ${
-              isActive ? 'border-sky-400 bg-white/10 text-white' : IDLE
-            }`
-          }
+          className={({ isActive }) => `${rowClasses(false, isActive)} grow`}
         >
           <Users className="h-4 w-4 shrink-0" />
           Teams
@@ -134,11 +168,7 @@ function TeamsSection() {
             <NavLink
               key={group.id}
               to={`/groups/${group.id}`}
-              className={({ isActive }) =>
-                `${ROW} border-l-2 ${
-                  isActive ? 'border-sky-400 bg-white/10 text-white' : IDLE
-                }`
-              }
+              className={({ isActive }) => rowClasses(false, isActive)}
             >
               {({ isActive }) => (
                 <>
@@ -160,39 +190,81 @@ function TeamsSection() {
 
 export default function Sidebar() {
   const { user, logout } = useAuth();
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem(STORAGE_KEY) === 'true',
+  );
+
+  function updateCollapsed(next) {
+    setCollapsed(next);
+    localStorage.setItem(STORAGE_KEY, String(next));
+  }
+
+  const context = { collapsed, expand: () => updateCollapsed(false) };
 
   return (
-    <aside className="sticky top-0 flex h-screen w-64 shrink-0 flex-col gap-4 border-r border-white/10 bg-[#141414] p-3">
-      <Link to="/dashboard" className="group flex items-center px-1">
-        <img
-          src={logo}
-          alt="Resolve"
-          className="h-12 w-auto object-contain transition-all duration-200 group-hover:drop-shadow-[0_0_10px_rgba(56,189,248,0.8)]"
-        />
-      </Link>
-
-      <UserSection user={user} onLogout={logout} />
-
-      <nav className="flex flex-col gap-1">
-        {/* No notifications backend yet — present but deliberately inert, so the
-            row reads as planned rather than broken. */}
+    <SidebarContext.Provider value={context}>
+      <aside
+        className={`sticky top-0 flex h-screen shrink-0 flex-col gap-4 border-r border-white/10 bg-[#141414] p-3 transition-[width] duration-200 ${
+          collapsed ? 'w-16' : 'w-64'
+        }`}
+      >
         <div
-          aria-disabled="true"
-          className={`${ROW} cursor-not-allowed border-l-2 border-transparent text-slate-600`}
+          className={`flex gap-2 ${
+            collapsed ? 'flex-col items-center' : 'items-center justify-between px-1'
+          }`}
         >
-          <Bell className="h-4 w-4 shrink-0" />
-          Notifications
-          <Badge variant="outline" size="sm" className="ml-auto">
-            soon
-          </Badge>
+          <Link to="/dashboard" className="group flex items-center">
+            <img
+              src={logo}
+              alt="Resolve"
+              className="h-6 w-auto object-contain transition-all duration-200 group-hover:drop-shadow-[0_0_10px_rgba(56,189,248,0.8)]"
+            />
+          </Link>
+          <button
+            type="button"
+            onClick={() => updateCollapsed(!collapsed)}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-white/5 hover:text-white"
+          >
+            {collapsed ? (
+              <PanelLeftOpen className="h-4 w-4" />
+            ) : (
+              <PanelLeftClose className="h-4 w-4" />
+            )}
+          </button>
         </div>
 
-        {NAV_LINKS.map((link) => (
-          <NavItem key={link.to} {...link} />
-        ))}
+        <UserSection user={user} onLogout={logout} />
 
-        <TeamsSection />
-      </nav>
-    </aside>
+        <nav className="flex flex-col gap-1">
+          {/* No notifications backend yet — present but deliberately inert, so
+              the row reads as planned rather than broken. */}
+          <div
+            aria-disabled="true"
+            title={collapsed ? 'Notifications (coming soon)' : undefined}
+            className={`${ROW} cursor-not-allowed border-l-2 border-transparent text-slate-600 ${
+              collapsed ? 'justify-center px-2' : ''
+            }`}
+          >
+            <Bell className="h-4 w-4 shrink-0" />
+            {!collapsed && (
+              <>
+                Notifications
+                <Badge variant="outline" size="sm" className="ml-auto">
+                  soon
+                </Badge>
+              </>
+            )}
+          </div>
+
+          {NAV_LINKS.map((link) => (
+            <NavItem key={link.to} {...link} />
+          ))}
+
+          <TeamsSection />
+        </nav>
+      </aside>
+    </SidebarContext.Provider>
   );
 }
