@@ -1,6 +1,6 @@
 import { Routes, Route } from 'react-router-dom';
-import Header from './components/layout/Header';
-import Footer from './components/layout/Footer';
+import MarketingLayout from './components/layout/MarketingLayout';
+import AppLayout from './components/layout/AppLayout';
 import LandingPage from './pages/LandingPage';
 import RegisterPage from './pages/RegisterPage';
 import LoginPage from './pages/LoginPage';
@@ -9,61 +9,47 @@ import AccountPage from './pages/AccountPage';
 import MyGroupsPage from './pages/MyGroupsPage';
 import GroupManagementPage from './pages/GroupManagementPage';
 import AdminPage from './pages/AdminPage';
+import NotFoundPage from './pages/NotFoundPage';
 import ProtectedRoute from './lib/ProtectedRoute';
 import AdminRoute from './lib/AdminRoute';
 
+// Two layout routes: public pages keep the marketing chrome, authenticated
+// pages share one AppLayout instance so its chrome never remounts while
+// navigating between them. The auth gate wraps the layout (not each page), and
+// AdminRoute stays on the /admin leaf since it is an extra role check on top.
 export default function App() {
   return (
-    <div className='flex flex-col min-h-screen'> {/* Added min-h-screen for sticky footer */}
-      <div className='grow'>
-        <Header />
-        <Routes>
-          <Route path='/' element={<LandingPage />} />
-          <Route path='/register' element={<RegisterPage />} />
-          <Route path='/login' element={<LoginPage />} />
-          <Route
-            path='/dashboard'
-            element={
-              <ProtectedRoute>
-                <DashboardPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path='/account'
-            element={
-              <ProtectedRoute>
-                <AccountPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path='/groups'
-            element={
-              <ProtectedRoute>
-                <MyGroupsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path='/groups/:id'
-            element={
-              <ProtectedRoute>
-                <GroupManagementPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path='/admin'
-            element={
-              <AdminRoute>
-                <AdminPage />
-              </AdminRoute>
-            }
-          />
-        </Routes>
-      </div>
-      <Footer />
-    </div>
+    <Routes>
+      <Route element={<MarketingLayout />}>
+        <Route path='/' element={<LandingPage />} />
+        <Route path='/register' element={<RegisterPage />} />
+        <Route path='/login' element={<LoginPage />} />
+        {/* Catch-all: unmatched paths get the marketing chrome rather than a
+            blank page. Sits here (not in AppLayout) so it renders whether or
+            not you are signed in. */}
+        <Route path='*' element={<NotFoundPage />} />
+      </Route>
+
+      <Route
+        element={
+          <ProtectedRoute>
+            <AppLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route path='/dashboard' element={<DashboardPage />} />
+        <Route path='/account' element={<AccountPage />} />
+        <Route path='/groups' element={<MyGroupsPage />} />
+        <Route path='/groups/:id' element={<GroupManagementPage />} />
+        <Route
+          path='/admin'
+          element={
+            <AdminRoute>
+              <AdminPage />
+            </AdminRoute>
+          }
+        />
+      </Route>
+    </Routes>
   );
 }
