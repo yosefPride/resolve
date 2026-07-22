@@ -116,7 +116,6 @@ manages their own identity — no group or admin scope involved. Three cards:
 - Create ticket
 - View tickets (group-scoped)
 - Update status (role-dependent)
-- Assign tickets (Group Admin only)
 
 Ticket Detail page includes:
 

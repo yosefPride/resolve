@@ -49,6 +49,14 @@ pub fn configure(config: &mut web::ServiceConfig) {
                 .route(
                     "/{id}/tickets/{ticket_id}",
                     web::get().to(ticket_handlers::get_ticket),
+                )
+                .route(
+                    "/{id}/tickets/{ticket_id}",
+                    web::patch().to(ticket_handlers::update_ticket),
+                )
+                .route(
+                    "/{id}/tickets/{ticket_id}",
+                    web::delete().to(ticket_handlers::delete_ticket),
                 ),
         )
         .service(web::scope("/ai"))
