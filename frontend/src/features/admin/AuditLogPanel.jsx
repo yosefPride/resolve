@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { formatDateTime } from '../../utils/format';
 import { listAuditLog } from '../../services/admin.service';
+import Badge from '../../components/ui/Badge';
 
 const ACTION_LABELS = {
   succession: 'Succession',
@@ -20,27 +22,13 @@ function distinctBy(entries, idKey, nameKey) {
 }
 
 export default function AuditLogPanel() {
-  const [entries, setEntries] = useState([]);
-  const [status, setStatus] = useState('loading'); // loading | ready | error
   const [groupFilter, setGroupFilter] = useState('');
   const [userFilter, setUserFilter] = useState('');
 
-  useEffect(() => {
-    let cancelled = false;
-    listAuditLog()
-      .then((data) => {
-        if (cancelled) return;
-        setEntries(data);
-        setStatus('ready');
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setStatus('error');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { data: entries = [], status } = useQuery({
+    queryKey: ['admin', 'auditLog'],
+    queryFn: listAuditLog,
+  });
 
   // Options come from the full loaded log so they stay stable while filtering.
   const groupOptions = useMemo(() => distinctBy(entries, 'group_id', 'group_name'), [entries]);
@@ -57,7 +45,7 @@ export default function AuditLogPanel() {
       (!userFilter || entry.deleted_user_id === userFilter),
   );
 
-  if (status === 'loading') return <p className="text-sm text-slate-400">Loading…</p>;
+  if (status === 'pending') return <p className="text-sm text-slate-400">Loading…</p>;
   if (status === 'error') return <p className="text-sm text-red-500">Failed to load the audit log.</p>;
 
   return (
@@ -115,9 +103,7 @@ export default function AuditLogPanel() {
               {visible.map((entry) => (
                 <tr key={entry.id} className="border-b border-white/5 last:border-0 hover:bg-white/5">
                   <td className="px-4 py-3">
-                    <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-slate-200">
-                      {ACTION_LABELS[entry.action] || entry.action}
-                    </span>
+                    <Badge>{ACTION_LABELS[entry.action] || entry.action}</Badge>
                   </td>
                   <td className="px-4 py-3 text-slate-300">{entry.group_name}</td>
                   <td className="px-4 py-3 text-slate-300">{entry.deleted_user_name}</td>

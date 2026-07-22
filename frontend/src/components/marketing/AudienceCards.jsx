@@ -1,4 +1,5 @@
-import { Link } from 'react-router-dom';
+import { Check } from 'lucide-react';
+import Button from '../ui/Button';
 
 const AUDIENCES = [
   {
@@ -54,15 +55,7 @@ export default function AudienceCards() {
               <ul className="mt-5 space-y-2.5">
                 {audience.points.map((point) => (
                   <li key={point} className="flex items-start gap-2 text-sm text-slate-300">
-                    <svg
-                      viewBox="0 0 24 24"
-                      className="mt-0.5 h-4 w-4 shrink-0 text-gray-100"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
+                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-gray-100" />
                     {point}
                   </li>
                 ))}
@@ -79,18 +72,12 @@ export default function AudienceCards() {
             Create a team and start tracking issues in minutes.
           </p>
           <div className="mt-7 flex items-center justify-center gap-4">
-            <Link
-              to="/register"
-              className="rounded-full bg-white px-6 py-3 text-sm font-semibold text-black transition-all duration-200 hover:bg-black hover:ring-1 hover:ring-white hover:text-white disabled:cursor-not-allowed disabled:bg-white/50 disabled:text-black/50"
-            >
+            <Button to="/register" size="lg">
               Get started
-            </Link>
-            <Link
-              to="/login"
-              className="rounded-full px-6 py-3 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
-            >
+            </Button>
+            <Button to="/login" variant="ghost" size="lg">
               Log in
-            </Link>
+            </Button>
           </div>
         </div>
       </div>

@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { renameGroup } from '../../services/groups.service';
 import { errorMessage } from '../../utils/errors';
+import Button from '../../components/ui/Button';
+import Input from '../../components/ui/Input';
 
 export default function RenameGroupForm({ groupId, currentName, onRenamed }) {
   const [name, setName] = useState(currentName);
@@ -28,26 +30,21 @@ export default function RenameGroupForm({ groupId, currentName, onRenamed }) {
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <label className="flex flex-col gap-1 text-sm text-slate-300">
         Team name
-        <input
+        <Input
           type="text"
           name="name"
           value={name}
           onChange={(event) => setName(event.target.value)}
           required
           autoFocus
-          className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50"
         />
       </label>
 
       {error && <p className="text-sm text-red-500">{error}</p>}
 
-      <button
-        type="submit"
-        disabled={isSubmitting || trimmed === '' || unchanged}
-        className="mt-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition-all duration-200 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
-      >
+      <Button type="submit" disabled={isSubmitting || trimmed === '' || unchanged} className="mt-2">
         {isSubmitting ? 'Saving…' : 'Save'}
-      </button>
+      </Button>
     </form>
   );
 }

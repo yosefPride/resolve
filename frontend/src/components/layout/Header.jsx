@@ -1,13 +1,14 @@
 import { useState } from 'react';
+import { Menu } from 'lucide-react';
 import { Link, NavLink } from 'react-router-dom';
 import UserMenu from './UserMenu';
 import { useAuth } from '../../hooks/useAuth';
+import Button from '../ui/Button';
 import logo from '../../assets/brand-logo.svg';
 
 const NAV_LINKS = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/tickets', label: 'Issues' },
-  { to: '/groups', label: 'Teams' },
 ];
 
 function NavItem({ to, label, onClick }) {
@@ -64,18 +65,12 @@ export default function Header() {
               <UserMenu user={user} onLogout={handleLogout} />
             ) : (
               <>
-                <Link
-                  to="/login"
-                  className="rounded-full px-3 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
-                >
+                <Button to="/login" variant="ghost">
                   Log in
-                </Link>
-                <Link
-                  to="/register"
-                  className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition-all duration-200 hover:bg-black hover:ring-1 hover:ring-white hover:text-white disabled:cursor-not-allowed disabled:bg-white/50 disabled:text-black/50"
-                >
+                </Button>
+                <Button to="/register">
                   Sign up
-                </Link>
+                </Button>
               </>
             )}
 
@@ -86,9 +81,7 @@ export default function Header() {
                 aria-label="Toggle navigation"
                 className="ml-1 flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-300 transition-all duration-200 hover:border-sky-400/50 hover:text-sky-300 hover:ring-2 hover:ring-sky-500/20 md:hidden"
               >
-                <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.75">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 5.5h16M4 12h16M4 18.5h16" />
-                </svg>
+                <Menu className="h-6 w-6" />
               </button>
             )}
           </div>

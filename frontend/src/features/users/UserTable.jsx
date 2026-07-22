@@ -1,5 +1,6 @@
 import { formatDate } from '../../utils/format';
 import { isSystemAdmin } from '../../utils/roles';
+import Button from '../../components/ui/Button';
 
 // Presentational: renders the system-wide user list (GET /admin/users →
 // UserResponse[]). Loading/error live in the parent panel. The caller's own row
@@ -34,13 +35,9 @@ export default function UserTable({ users, currentUserId, onDelete }) {
                 {user.id === currentUserId ? (
                   <span className="text-xs text-slate-500">You</span>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => onDelete(user)}
-                    className="rounded-full border border-red-500/30 px-3 py-1 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/10"
-                  >
+                  <Button variant="dangerOutline" size="sm" onClick={() => onDelete(user)}>
                     Delete
-                  </button>
+                  </Button>
                 )}
               </td>
             </tr>

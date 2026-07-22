@@ -2,9 +2,8 @@ import { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { updateProfile } from '../../services/auth.service';
 import { errorMessage } from '../../utils/errors';
-
-const INPUT_CLASS =
-  'rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50';
+import Button from '../../components/ui/Button';
+import Input from '../../components/ui/Input';
 
 export default function ProfileForm() {
   const { user, updateUser } = useAuth();
@@ -64,25 +63,23 @@ export default function ProfileForm() {
       <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-4">
         <label className="flex flex-col gap-1 text-sm text-slate-300">
           Name
-          <input
+          <Input
             type="text"
             name="name"
             value={form.name}
             onChange={handleChange}
             required
-            className={INPUT_CLASS}
           />
         </label>
 
         <label className="flex flex-col gap-1 text-sm text-slate-300">
           Email
-          <input
+          <Input
             type="email"
             name="email"
             value={form.email}
             onChange={handleChange}
             required
-            className={INPUT_CLASS}
           />
           {emailError && <span className="text-sm text-red-500">{emailError}</span>}
         </label>
@@ -90,14 +87,13 @@ export default function ProfileForm() {
         {emailChanged && (
           <label className="flex flex-col gap-1 text-sm text-slate-300">
             Current password
-            <input
+            <Input
               type="password"
               name="currentPassword"
               value={form.currentPassword}
               onChange={handleChange}
               required
               autoComplete="current-password"
-              className={INPUT_CLASS}
             />
             <span className="text-xs text-slate-400">Required to change your email.</span>
           </label>
@@ -106,13 +102,9 @@ export default function ProfileForm() {
         {error && <p className="text-sm text-red-500">{error}</p>}
         {success && <p className="text-sm text-green-400">{success}</p>}
 
-        <button
-          type="submit"
-          disabled={isSubmitting || !isDirty}
-          className="mt-2 self-start rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition-all duration-200 hover:bg-black hover:ring-1 hover:ring-white hover:text-white disabled:cursor-not-allowed disabled:bg-white/50 disabled:text-black/50"
-        >
+        <Button type="submit" disabled={isSubmitting || !isDirty} className="mt-2 self-start">
           {isSubmitting ? 'Saving…' : 'Save changes'}
-        </button>
+        </Button>
       </form>
     </div>
   );

@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { changePassword } from '../../services/auth.service';
 import { errorMessage } from '../../utils/errors';
+import Button from '../../components/ui/Button';
+import Input from '../../components/ui/Input';
 
 const MIN_PASSWORD_LENGTH = 8;
-
-const INPUT_CLASS =
-  'rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50';
 
 const EMPTY_FORM = { currentPassword: '', newPassword: '', confirmPassword: '' };
 
@@ -75,14 +74,13 @@ export default function ChangePasswordForm() {
       <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-4">
         <label className="flex flex-col gap-1 text-sm text-slate-300">
           Current password
-          <input
+          <Input
             type="password"
             name="currentPassword"
             value={form.currentPassword}
             onChange={handleChange}
             required
             autoComplete="current-password"
-            className={INPUT_CLASS}
           />
           {fieldErrors.currentPassword && (
             <span className="text-sm text-red-500">{fieldErrors.currentPassword}</span>
@@ -91,14 +89,13 @@ export default function ChangePasswordForm() {
 
         <label className="flex flex-col gap-1 text-sm text-slate-300">
           New password
-          <input
+          <Input
             type="password"
             name="newPassword"
             value={form.newPassword}
             onChange={handleChange}
             required
             autoComplete="new-password"
-            className={INPUT_CLASS}
           />
           {fieldErrors.newPassword && (
             <span className="text-sm text-red-500">{fieldErrors.newPassword}</span>
@@ -107,14 +104,13 @@ export default function ChangePasswordForm() {
 
         <label className="flex flex-col gap-1 text-sm text-slate-300">
           Confirm new password
-          <input
+          <Input
             type="password"
             name="confirmPassword"
             value={form.confirmPassword}
             onChange={handleChange}
             required
             autoComplete="new-password"
-            className={INPUT_CLASS}
           />
           {fieldErrors.confirmPassword && (
             <span className="text-sm text-red-500">{fieldErrors.confirmPassword}</span>
@@ -124,13 +120,9 @@ export default function ChangePasswordForm() {
         {error && <p className="text-sm text-red-500">{error}</p>}
         {success && <p className="text-sm text-green-400">{success}</p>}
 
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="mt-2 self-start rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition-all duration-200 hover:bg-black hover:ring-1 hover:ring-white hover:text-white disabled:cursor-not-allowed disabled:bg-white/50 disabled:text-black/50"
-        >
+        <Button type="submit" disabled={isSubmitting} className="mt-2 self-start">
           {isSubmitting ? 'Changing…' : 'Change password'}
-        </button>
+        </Button>
       </form>
     </div>
   );

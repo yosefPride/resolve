@@ -1,76 +1,61 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import Modal from '../../components/ui/Modal';
 import { formatDate } from '../../utils/format';
 import { listGroups, deleteGroup } from '../../services/admin.service';
 import { errorMessage } from '../../utils/errors';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import Button from '../../components/ui/Button';
+import Input from '../../components/ui/Input';
 
 export default function GroupsPanel() {
-  const [groups, setGroups] = useState([]);
-  const [status, setStatus] = useState('loading');
+  const queryClient = useQueryClient();
   const [target, setTarget] = useState(null); // group pending deletion, or null
-  const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 300);
 
-  // Refetches on debounced-term changes. Status only flips to 'loading' for the
-  // initial load, so typing swaps results in place (input keeps focus); the
-  // cancelled flag drops a response the term has already moved past.
-  useEffect(() => {
-    let cancelled = false;
-    listGroups(debouncedSearch)
-      .then((data) => {
-        if (cancelled) return;
-        setGroups(data);
-        setStatus('ready');
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setStatus('error');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [debouncedSearch]);
+  // keepPreviousData: typing swaps results in place instead of flashing a spinner.
+  const { data: groups = [], status } = useQuery({
+    queryKey: ['admin', 'groups', debouncedSearch],
+    queryFn: () => listGroups(debouncedSearch),
+    placeholderData: keepPreviousData,
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => deleteGroup(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'groups'] });
+      setTarget(null);
+    },
+    onError: (err) => setDeleteError(errorMessage(err, 'Failed to delete team.')),
+  });
 
   function closeModal() {
-    if (isDeleting) return; // don't let a click-away abandon an in-flight delete
+    if (deleteMutation.isPending) return; // don't abandon an in-flight delete
     setTarget(null);
     setDeleteError('');
   }
 
-  async function handleConfirmDelete() {
+  function handleConfirmDelete() {
     setDeleteError('');
-    setIsDeleting(true);
-    try {
-      await deleteGroup(target.id);
-      // Refetch server truth rather than optimistically splicing (no status
-      // flip, so the table doesn't flash a spinner), keeping the active filter.
-      const data = await listGroups(debouncedSearch);
-      setGroups(data);
-      setTarget(null);
-    } catch (err) {
-      setDeleteError(errorMessage(err, 'Failed to delete team.'));
-    } finally {
-      setIsDeleting(false);
-    }
+    deleteMutation.mutate(target.id);
   }
 
   return (
     <>
-      <input
+      <Input
         type="search"
         value={search}
         onChange={(event) => setSearch(event.target.value)}
         placeholder="Search by name"
         aria-label="Search teams"
-        className="mb-4 w-full max-w-sm rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50"
+        className="mb-4 w-full max-w-sm text-sm"
       />
 
-      {status === 'loading' && <p className="text-sm text-slate-400">Loading…</p>}
+      {status === 'pending' && <p className="text-sm text-slate-400">Loading…</p>}
       {status === 'error' && <p className="text-sm text-red-500">Failed to load teams.</p>}
-      {status === 'ready' &&
+      {status === 'success' &&
         (groups.length === 0 ? (
           <p className="text-sm text-slate-400">
             {debouncedSearch ? `No teams match “${debouncedSearch}”.` : 'No teams found.'}
@@ -91,13 +76,9 @@ export default function GroupsPanel() {
                     <td className="px-4 py-3 font-medium text-white">{group.name}</td>
                     <td className="px-4 py-3 text-slate-400">{formatDate(group.created_at)}</td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setTarget(group)}
-                        className="rounded-full border border-red-500/30 px-3 py-1 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/10"
-                      >
+                      <Button variant="dangerOutline" size="sm" onClick={() => setTarget(group)}>
                         Delete team
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -116,22 +97,21 @@ export default function GroupsPanel() {
           {deleteError && <p className="text-sm text-red-500">{deleteError}</p>}
 
           <div className="flex justify-end gap-2">
-            <button
-              type="button"
+            <Button
+              variant="ghost"
               onClick={closeModal}
-              disabled={isDeleting}
-              className="rounded-full border border-white/10 px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={deleteMutation.isPending}
+              className="border border-white/10"
             >
               Cancel
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="danger"
               onClick={handleConfirmDelete}
-              disabled={isDeleting}
-              className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={deleteMutation.isPending}
             >
-              {isDeleting ? 'Deleting…' : 'Delete team'}
-            </button>
+              {deleteMutation.isPending ? 'Deleting…' : 'Delete team'}
+            </Button>
           </div>
         </div>
       </Modal>

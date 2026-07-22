@@ -1,63 +1,67 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { MoreVertical } from 'lucide-react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useNavigate } from 'react-router-dom';
 import { addMember, lookupUserByEmail, removeMember, updateMemberRole } from '../../services/groups.service';
 import { GROUP_ROLES, isGroupAdmin } from '../../utils/roles';
 import { errorMessage } from '../../utils/errors';
+import Button from '../../components/ui/Button';
+import Input from '../../components/ui/Input';
+import Badge from '../../components/ui/Badge';
 
-function AddMemberForm({ groupId, onAdded }) {
+function AddMemberForm({ groupId }) {
+  const queryClient = useQueryClient();
   const [email, setEmail] = useState('');
   const [found, setFound] = useState(null);
   const [error, setError] = useState('');
-  const [isBusy, setIsBusy] = useState(false);
+  const [isLookingUp, setIsLookingUp] = useState(false);
+
+  const addMutation = useMutation({
+    mutationFn: ({ userId, role }) => addMember(groupId, userId, role),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['group', groupId, 'members'] });
+      setFound(null);
+      setEmail('');
+    },
+    onError: (err) => setError(errorMessage(err, 'Failed to add member.')),
+  });
+
+  const isBusy = isLookingUp || addMutation.isPending;
 
   async function handleLookup(event) {
     event.preventDefault();
     setError('');
     setFound(null);
-    setIsBusy(true);
+    setIsLookingUp(true);
     try {
-      const user = await lookupUserByEmail(groupId, email);
-      setFound(user);
+      setFound(await lookupUserByEmail(groupId, email));
     } catch (err) {
       setError(errorMessage(err, 'No user found with that email.'));
     } finally {
-      setIsBusy(false);
+      setIsLookingUp(false);
     }
   }
 
-  async function handleConfirm(role) {
+  function handleConfirm(role) {
     setError('');
-    setIsBusy(true);
-    try {
-      await addMember(groupId, found.id, role);
-      setFound(null);
-      setEmail('');
-      onAdded();
-    } catch (err) {
-      setError(errorMessage(err, 'Failed to add member.'));
-    } finally {
-      setIsBusy(false);
-    }
+    addMutation.mutate({ userId: found.id, role });
   }
 
   return (
     <div className="flex flex-col gap-3">
       <form onSubmit={handleLookup} className="flex gap-2">
-        <input
+        <Input
           type="email"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
           placeholder="Exact email address"
           required
-          className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50"
+          className="flex-1"
         />
-        <button
-          type="submit"
-          disabled={isBusy}
-          className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition-all duration-200 hover:bg-black hover:ring-1 hover:ring-white hover:text-white disabled:cursor-not-allowed disabled:bg-white/50 disabled:text-black/50"
-        >
+        <Button type="submit" disabled={isBusy}>
           Find
-        </button>
+        </Button>
       </form>
 
       {error && <p className="text-sm text-red-500">{error}</p>}
@@ -69,22 +73,24 @@ function AddMemberForm({ groupId, onAdded }) {
             <p className="text-xs text-slate-400">{found.email}</p>
           </div>
           <div className="flex gap-2">
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
               disabled={isBusy}
               onClick={() => handleConfirm(GROUP_ROLES.CONTRIBUTOR)}
-              className="rounded-full border border-white/10 px-3 py-1 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10 disabled:opacity-50"
+              className="border border-white/10"
             >
               Add as Contributor
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               disabled={isBusy}
               onClick={() => handleConfirm(GROUP_ROLES.GROUP_ADMIN)}
-              className="rounded-full border border-white/10 px-3 py-1 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10 disabled:opacity-50"
+              className="border border-white/10"
             >
               Add as Team Admin
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -92,103 +98,82 @@ function AddMemberForm({ groupId, onAdded }) {
   );
 }
 
-// Mirrors UserMenu.jsx's dropdown pattern (own open state + outside-click close).
 function MemberActionsMenu({ member, isSelf, canChangeRole, isBusy, onToggleRole, onRemove }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const menuRef = useRef(null);
-
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   return (
-    <div className="relative" ref={menuRef}>
-      <button
-        type="button"
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger
         disabled={isBusy}
-        onClick={() => setIsOpen((open) => !open)}
         aria-label="Member actions"
-        aria-haspopup="true"
-        aria-expanded={isOpen}
         className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
       >
-        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
-          <circle cx="12" cy="5" r="1.5" />
-          <circle cx="12" cy="12" r="1.5" />
-          <circle cx="12" cy="19" r="1.5" />
-        </svg>
-      </button>
+        <MoreVertical className="h-5 w-5" />
+      </DropdownMenu.Trigger>
 
-      {isOpen && (
-        <div className="absolute right-0 z-10 mt-2 w-40 rounded-lg border border-white/10 bg-neutral-950 py-1 shadow-2xl shadow-black/50">
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="end"
+          sideOffset={8}
+          className="z-50 w-40 rounded-lg border border-white/10 bg-neutral-950 py-1 shadow-2xl shadow-black/50"
+        >
           {canChangeRole && (
-            <button
-              type="button"
-              onClick={() => {
-                setIsOpen(false);
-                onToggleRole();
-              }}
-              className="block w-full px-4 py-2 text-left text-sm text-slate-300 transition-colors hover:bg-white/10"
+            <DropdownMenu.Item
+              onSelect={onToggleRole}
+              className="cursor-pointer px-4 py-2 text-sm text-slate-300 outline-none transition-colors data-highlighted:bg-white/10"
             >
               {isGroupAdmin(member.role) ? 'Demote' : 'Promote'}
-            </button>
+            </DropdownMenu.Item>
           )}
-          <button
-            type="button"
-            onClick={() => {
-              setIsOpen(false);
-              onRemove();
-            }}
-            className="block w-full px-4 py-2 text-left text-sm text-red-400 transition-colors hover:bg-white/10"
+          <DropdownMenu.Item
+            onSelect={onRemove}
+            className="cursor-pointer px-4 py-2 text-sm text-red-400 outline-none transition-colors data-highlighted:bg-white/10"
           >
             {isSelf ? 'Leave' : 'Remove'}
-          </button>
-        </div>
-      )}
-    </div>
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }
 
-export default function MemberManager({ groupId, members, myUserId, myRole, onChanged }) {
+export default function MemberManager({ groupId, members, myUserId, myRole }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState(null);
   const iAmAdmin = isGroupAdmin(myRole);
 
-  async function handleRoleToggle(member) {
+  const roleMutation = useMutation({
+    mutationFn: ({ userId, role }) => updateMemberRole(groupId, userId, role),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['group', groupId, 'members'] }),
+    onError: (err) => setError(errorMessage(err, 'Failed to update role.')),
+    onSettled: () => setBusyId(null),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (userId) => removeMember(groupId, userId),
+    onSuccess: (_data, userId) => {
+      // Removing yourself means you've lost access — leave the page.
+      if (userId === myUserId) {
+        navigate('/dashboard');
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: ['group', groupId, 'members'] });
+    },
+    onError: (err) => setError(errorMessage(err, 'Failed to remove member.')),
+    onSettled: () => setBusyId(null),
+  });
+
+  function handleRoleToggle(member) {
     setError('');
     setBusyId(member.user_id);
     const nextRole = isGroupAdmin(member.role) ? GROUP_ROLES.CONTRIBUTOR : GROUP_ROLES.GROUP_ADMIN;
-    try {
-      await updateMemberRole(groupId, member.user_id, nextRole);
-      onChanged();
-    } catch (err) {
-      setError(errorMessage(err, 'Failed to update role.'));
-    } finally {
-      setBusyId(null);
-    }
+    roleMutation.mutate({ userId: member.user_id, role: nextRole });
   }
 
-  async function handleRemove(member) {
+  function handleRemove(member) {
     setError('');
     setBusyId(member.user_id);
-    try {
-      await removeMember(groupId, member.user_id);
-      if (member.user_id === myUserId) {
-        navigate('/groups');
-        return;
-      }
-      onChanged();
-    } catch (err) {
-      setError(errorMessage(err, 'Failed to remove member.'));
-      setBusyId(null);
-    }
+    removeMutation.mutate(member.user_id);
   }
 
   return (
@@ -209,9 +194,7 @@ export default function MemberManager({ groupId, members, myUserId, myRole, onCh
                 <p className="text-xs text-slate-400">{member.email}</p>
               </div>
               <div className="flex items-center gap-2">
-                <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-slate-300">
-                  {isGroupAdmin(member.role) ? 'Team Admin' : 'Contributor'}
-                </span>
+                <Badge>{isGroupAdmin(member.role) ? 'Team Admin' : 'Contributor'}</Badge>
                 {iAmAdmin && (
                   <MemberActionsMenu
                     member={member}
@@ -231,7 +214,7 @@ export default function MemberManager({ groupId, members, myUserId, myRole, onCh
       {iAmAdmin && (
         <div className="flex flex-col gap-3 border-t border-white/10 pt-4">
           <h3 className="text-sm font-semibold text-white">Add member</h3>
-          <AddMemberForm groupId={groupId} onAdded={onChanged} />
+          <AddMemberForm groupId={groupId} />
         </div>
       )}
     </div>

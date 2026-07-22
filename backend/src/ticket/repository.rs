@@ -105,4 +105,13 @@ impl TicketRepository {
         let cursor = self.tickets.find(doc! { "group_id": group_id }).await?;
         cursor.try_collect().await.map_err(Into::into)
     }
+
+    // status is stored as its snake_case serialization ("open"/"closed"), so we
+    // match the string directly rather than round-tripping through the enum.
+    pub async fn count_open_by_group(&self, group_id: ObjectId) -> Result<u64, TicketRepoError> {
+        Ok(self
+            .tickets
+            .count_documents(doc! { "group_id": group_id, "status": "open" })
+            .await?)
+    }
 }
