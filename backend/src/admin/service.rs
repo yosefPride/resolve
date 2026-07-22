@@ -7,7 +7,8 @@ use mongodb::{
 };
 
 use crate::admin::models::{
-    AuditAction, AuditLogEntry, AutoDeleteGroupInfo, BlockedGroupInfo, DeletionCheckResponse,
+    AuditAction, AuditLogEntry, AuditLogEntryResponse, AutoDeleteGroupInfo, BlockedGroupInfo,
+    DeletionCheckResponse,
 };
 use crate::admin::repository::AdminRepository;
 use crate::errors::ApiError;
@@ -92,10 +93,19 @@ impl AdminService {
         successors: HashMap<ObjectId, ObjectId>,
     ) -> Result<(), ApiError> {
         self.rbac.require_system_admin(caller_id).await?;
-        self.user_service
+        let target_user = self
+            .user_service
             .find_by_id(target_user_id)
             .await?
             .ok_or(ApiError::NotFound)?;
+        // Snapshot names for the audit log now, while the entities still exist.
+        let deleted_user_name = target_user.name;
+        let performed_by_name = self
+            .user_service
+            .find_by_id(caller_id)
+            .await?
+            .map(|u| u.name)
+            .unwrap_or_default();
 
         let plan = self.build_plan(target_user_id).await?;
 
@@ -114,8 +124,14 @@ impl AdminService {
             }
         }
 
-        for (group_id, _name, _others) in &plan.blocked {
+        for (group_id, group_name, _others) in &plan.blocked {
             let successor_id = successors[group_id];
+            let successor_name = self
+                .user_service
+                .find_by_id(successor_id)
+                .await?
+                .map(|u| u.name)
+                .unwrap_or_default();
             self.group_repo
                 .update_member_role(*group_id, successor_id, Role::GroupAdmin)
                 .await?;
@@ -127,15 +143,19 @@ impl AdminService {
                     id: None,
                     action: AuditAction::Succession,
                     group_id: *group_id,
+                    group_name: group_name.clone(),
                     deleted_user_id: target_user_id,
+                    deleted_user_name: deleted_user_name.clone(),
                     successor_user_id: Some(successor_id),
+                    successor_user_name: Some(successor_name),
                     performed_by: caller_id,
+                    performed_by_name: performed_by_name.clone(),
                     created_at: BsonDateTime::now(),
                 })
                 .await?;
         }
 
-        for (group_id, _name) in &plan.auto_delete {
+        for (group_id, group_name) in &plan.auto_delete {
             self.group_repo.delete_members_by_group(*group_id).await?;
             self.group_repo.delete_group(*group_id).await?;
             self.admin_repo
@@ -143,9 +163,13 @@ impl AdminService {
                     id: None,
                     action: AuditAction::GroupAutoDeleted,
                     group_id: *group_id,
+                    group_name: group_name.clone(),
                     deleted_user_id: target_user_id,
+                    deleted_user_name: deleted_user_name.clone(),
                     successor_user_id: None,
+                    successor_user_name: None,
                     performed_by: caller_id,
+                    performed_by_name: performed_by_name.clone(),
                     created_at: BsonDateTime::now(),
                 })
                 .await?;
@@ -162,16 +186,42 @@ impl AdminService {
         Ok(())
     }
 
-    pub async fn list_users(&self, caller_id: ObjectId) -> Result<Vec<UserResponse>, ApiError> {
+    pub async fn list_users(
+        &self,
+        caller_id: ObjectId,
+        search: Option<&str>,
+    ) -> Result<Vec<UserResponse>, ApiError> {
         self.rbac.require_system_admin(caller_id).await?;
-        Ok(self.user_service.list_all().await?)
+        Ok(self.user_service.list_all(search).await?)
     }
 
-    pub async fn list_groups(&self, caller_id: ObjectId) -> Result<Vec<GroupResponse>, ApiError> {
+    // Read-only view of the succession/auto-deletion audit trail, System Admin
+    // only. Filters are optional and independent; results are newest-first.
+    pub async fn list_audit_log(
+        &self,
+        caller_id: ObjectId,
+        group_id: Option<ObjectId>,
+        deleted_user_id: Option<ObjectId>,
+    ) -> Result<Vec<AuditLogEntryResponse>, ApiError> {
+        self.rbac.require_system_admin(caller_id).await?;
+        Ok(self
+            .admin_repo
+            .list_audit_log(group_id, deleted_user_id)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub async fn list_groups(
+        &self,
+        caller_id: ObjectId,
+        search: Option<&str>,
+    ) -> Result<Vec<GroupResponse>, ApiError> {
         self.rbac.require_system_admin(caller_id).await?;
         Ok(self
             .group_repo
-            .list_all_groups()
+            .list_all_groups(search)
             .await?
             .into_iter()
             .map(Into::into)

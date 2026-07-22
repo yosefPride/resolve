@@ -9,6 +9,7 @@ use resolve::group::models::{
 use resolve::group::repository::GroupRepository;
 use resolve::server::routes;
 use resolve::state::AppState;
+use resolve::ticket::models::{CreateTicketRequest, TicketPriority, TicketResponse};
 use resolve::user::repository::UserRepository;
 
 const TEST_JWT_SECRET: &str = "test-secret";
@@ -121,7 +122,79 @@ fn test_create_and_list_groups() {
         assert_eq!(groups[0].id, group.id);
         assert_eq!(groups[0].role, Role::GroupAdmin);
         assert_eq!(groups[0].member_count, 1);
+        // Brand-new group has no tickets yet.
+        assert_eq!(groups[0].open_ticket_count, 0);
 
+        let group_id = ObjectId::parse_str(&group.id).unwrap();
+        group_repo.delete_members_by_group(group_id).await.ok();
+        group_repo.delete_group(group_id).await.ok();
+        user_repo
+            .delete(ObjectId::parse_str(&user_id).unwrap())
+            .await
+            .ok();
+    });
+}
+
+// 1b. Creating a ticket makes it show up in the group's open_ticket_count.
+#[test]
+fn test_list_groups_reports_open_ticket_count() {
+    support::runtime().block_on(async {
+        let (db, uri) = setup_db().await;
+        let group_repo = GroupRepository::new(&db);
+        let user_repo = UserRepository::new(&db);
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(build_app_state(db, uri))
+                .service(web::scope("/api/v1").configure(routes::configure)),
+        )
+        .await;
+
+        let register_resp =
+            actix_test::call_service(&app, register_request("ticket-count").to_request()).await;
+        let registered: AuthResponse = actix_test::read_body_json(register_resp).await;
+        let (user_id, jwt) = (registered.user.id, registered.jwt);
+
+        let create_req = actix_test::TestRequest::post()
+            .uri("/api/v1/groups")
+            .insert_header(auth_header(&jwt))
+            .set_json(&CreateGroupRequest {
+                name: "Bugs".to_string(),
+            })
+            .to_request();
+        let group: GroupResponse =
+            actix_test::read_body_json(actix_test::call_service(&app, create_req).await).await;
+
+        // Open two tickets in the group.
+        for i in 0..2 {
+            let ticket_req = actix_test::TestRequest::post()
+                .uri(&format!("/api/v1/groups/{}/tickets", group.id))
+                .insert_header(auth_header(&jwt))
+                .set_json(&CreateTicketRequest {
+                    title: format!("Ticket {i}"),
+                    description: "boom".to_string(),
+                    priority: TicketPriority::High,
+                })
+                .to_request();
+            let ticket_resp = actix_test::call_service(&app, ticket_req).await;
+            assert_eq!(ticket_resp.status(), 201);
+            let _: TicketResponse = actix_test::read_body_json(ticket_resp).await;
+        }
+
+        let list_req = actix_test::TestRequest::get()
+            .uri("/api/v1/groups")
+            .insert_header(auth_header(&jwt))
+            .to_request();
+        let groups: Vec<GroupSummaryResponse> =
+            actix_test::read_body_json(actix_test::call_service(&app, list_req).await).await;
+        let listed = groups
+            .iter()
+            .find(|g| g.id == group.id)
+            .expect("created group should be listed");
+        assert_eq!(listed.open_ticket_count, 2);
+
+        // Leftover ticket docs are keyed to this now-deleted group's unique id,
+        // so no other test in the shared db can observe them (same tolerance the
+        // group cleanup already has for the per-group counter doc).
         let group_id = ObjectId::parse_str(&group.id).unwrap();
         group_repo.delete_members_by_group(group_id).await.ok();
         group_repo.delete_group(group_id).await.ok();

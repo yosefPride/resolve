@@ -7,6 +7,7 @@ use mongodb::{
 };
 
 use crate::user::models::{CreateUserInput, User};
+use crate::utils::substring_regex;
 
 #[derive(Debug)]
 pub enum UserRepoError {
@@ -35,12 +36,15 @@ impl From<mongodb::error::Error> for UserRepoError {
     }
 }
 
+// Duplicate-key surfaces as a WriteError on insert_one but as a CommandError
+// on find_one_and_update (findAndModify is a command, not a plain write).
 fn is_duplicate_key(err: &mongodb::error::Error) -> bool {
     use mongodb::error::{ErrorKind, WriteFailure};
-    matches!(
-        err.kind.as_ref(),
-        ErrorKind::Write(WriteFailure::WriteError(e)) if e.code == 11000
-    )
+    match err.kind.as_ref() {
+        ErrorKind::Write(WriteFailure::WriteError(e)) => e.code == 11000,
+        ErrorKind::Command(e) => e.code == 11000,
+        _ => false,
+    }
 }
 
 pub struct UserRepository {
@@ -74,6 +78,37 @@ impl UserRepository {
         })
     }
 
+    pub async fn update_profile(
+        &self,
+        id: ObjectId,
+        name: &str,
+        email: &str,
+    ) -> Result<Option<User>, UserRepoError> {
+        Ok(self
+            .collection
+            .find_one_and_update(
+                doc! { "_id": id },
+                doc! { "$set": { "name": name, "email": email } },
+            )
+            .return_document(mongodb::options::ReturnDocument::After)
+            .await?)
+    }
+
+    pub async fn update_password_hash(
+        &self,
+        id: ObjectId,
+        password_hash: &str,
+    ) -> Result<bool, UserRepoError> {
+        let result = self
+            .collection
+            .update_one(
+                doc! { "_id": id },
+                doc! { "$set": { "password_hash": password_hash } },
+            )
+            .await?;
+        Ok(result.matched_count > 0)
+    }
+
     pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, UserRepoError> {
         Ok(self.collection.find_one(doc! { "email": email }).await?)
     }
@@ -82,8 +117,17 @@ impl UserRepository {
         Ok(self.collection.find_one(doc! { "_id": id }).await?)
     }
 
-    pub async fn list_all(&self) -> Result<Vec<User>, UserRepoError> {
-        let cursor = self.collection.find(doc! {}).await?;
+    // `search`, when present and non-empty, filters to users whose name or email
+    // contains it (case-insensitive substring). Absent/blank returns every user.
+    pub async fn list_all(&self, search: Option<&str>) -> Result<Vec<User>, UserRepoError> {
+        let filter = match search {
+            Some(term) if !term.is_empty() => {
+                let rx = substring_regex(term);
+                doc! { "$or": [ { "name": rx.clone() }, { "email": rx } ] }
+            }
+            _ => doc! {},
+        };
+        let cursor = self.collection.find(filter).await?;
         cursor.try_collect().await.map_err(Into::into)
     }
 

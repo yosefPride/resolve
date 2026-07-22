@@ -3,7 +3,7 @@ use std::fmt;
 use futures::TryStreamExt;
 use mongodb::{
     Collection, Database,
-    bson::{doc, oid::ObjectId},
+    bson::{Document, doc, oid::ObjectId},
 };
 
 use crate::admin::models::AuditLogEntry;
@@ -55,21 +55,25 @@ impl AdminRepository {
         })
     }
 
-    pub async fn list_audit_log_for_group(
+    // Returns entries newest-first. Each supplied filter narrows the result;
+    // both absent returns the whole log. `group_id` and `deleted_user_id` each
+    // have their own single-field index (see db.rs ensure_indexes).
+    pub async fn list_audit_log(
         &self,
-        group_id: ObjectId,
+        group_id: Option<ObjectId>,
+        deleted_user_id: Option<ObjectId>,
     ) -> Result<Vec<AuditLogEntry>, AdminRepoError> {
-        let cursor = self.audit_log.find(doc! { "group_id": group_id }).await?;
-        cursor.try_collect().await.map_err(Into::into)
-    }
-
-    pub async fn list_audit_log_for_user(
-        &self,
-        deleted_user_id: ObjectId,
-    ) -> Result<Vec<AuditLogEntry>, AdminRepoError> {
+        let mut filter = Document::new();
+        if let Some(group_id) = group_id {
+            filter.insert("group_id", group_id);
+        }
+        if let Some(deleted_user_id) = deleted_user_id {
+            filter.insert("deleted_user_id", deleted_user_id);
+        }
         let cursor = self
             .audit_log
-            .find(doc! { "deleted_user_id": deleted_user_id })
+            .find(filter)
+            .sort(doc! { "created_at": -1 })
             .await?;
         cursor.try_collect().await.map_err(Into::into)
     }

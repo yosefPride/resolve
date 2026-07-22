@@ -7,6 +7,7 @@ use mongodb::{
 };
 
 use crate::group::models::{CreateGroupInput, Group, GroupMember, Role};
+use crate::utils::substring_regex;
 
 #[derive(Debug)]
 pub enum GroupRepoError {
@@ -80,8 +81,14 @@ impl GroupRepository {
         Ok(self.groups.find_one(doc! { "_id": id }).await?)
     }
 
-    pub async fn list_all_groups(&self) -> Result<Vec<Group>, GroupRepoError> {
-        let cursor = self.groups.find(doc! {}).await?;
+    // `search`, when present and non-empty, filters to groups whose name contains
+    // it (case-insensitive substring). Absent/blank returns every group.
+    pub async fn list_all_groups(&self, search: Option<&str>) -> Result<Vec<Group>, GroupRepoError> {
+        let filter = match search {
+            Some(term) if !term.is_empty() => doc! { "name": substring_regex(term) },
+            _ => doc! {},
+        };
+        let cursor = self.groups.find(filter).await?;
         cursor.try_collect().await.map_err(Into::into)
     }
 

@@ -92,6 +92,39 @@ Requires JWT.
 
 ---
 
+## PATCH /auth/me
+
+Update the caller's own profile. Requires JWT.
+
+Request (both fields optional; at least one required):
+
+- name
+- email
+- current_password — required only when `email` differs from the current one
+
+Response:
+
+- user (the updated UserResponse)
+
+Changing the email requires `current_password` because the email is the login identity (and the key Group Admins add members by). A name-only change does not. Rejected `400` if the body changes nothing, if a supplied name/email is blank/malformed, or if an email change omits `current_password`; `401` if `current_password` is wrong; `409` (`duplicate_email`) if the email is already in use by another account.
+
+---
+
+## POST /auth/me/password
+
+Change the caller's own password. Requires JWT.
+
+Request:
+
+- current_password
+- new_password (minimum 8 characters)
+
+Response: `200` with no body.
+
+On success, every *other* outstanding refresh token for the user is revoked — all other devices are signed out — while the session that made the change (identified by its own refresh_token cookie) stays valid. Rejected `400` if `new_password` is shorter than 8 characters or `current_password` is empty; `401` if `current_password` is wrong.
+
+---
+
 ## POST /auth/refresh
 
 Exchanges the refresh_token cookie for a new access token.
@@ -147,6 +180,7 @@ Response, per group (list-view shape, distinct from the plain group metadata ret
 - id, name, created_at
 - role — caller's role in that group
 - member_count
+- open_ticket_count — number of tickets in the group with status `open`
 
 ---
 
@@ -233,7 +267,9 @@ Returns tickets in the group (any group member)
 Supports:
 
 - pagination
-- filters (status, assignee)
+- search by title (`q`, case-insensitive substring match; falls back to
+  typo-tolerant similarity matching when the substring match returns nothing)
+- filters: status, priority, creator
 
 ---
 
@@ -246,6 +282,15 @@ Request:
 - title
 - description
 - priority
+
+Server-assigned on creation, not accepted from the client:
+
+- `status` — always starts `open`
+- `ticket_number` — a running number scoped to the group (the first ticket in
+  a group is `1`, independent of other groups' numbering)
+- `created_by` — the caller
+
+There is no assignment: tickets have no assignee field.
 
 ---
 
@@ -260,12 +305,20 @@ another group).
 
 ## PATCH /groups/{id}/tickets/{ticket_id}
 
-Update ticket
+Update ticket — Group Admin only. This includes status changes (there is no
+separate status endpoint): `status`, `title`, `description`, and `priority` are
+all edited through this one endpoint.
 
-Permissions:
+Not even the ticket's creator may edit it after opening — editing is Group
+Admin only, full stop. A Contributor may open tickets but cannot modify one
+afterward, including their own.
 
-- Contributor: own tickets only (ownership = creator_id)
-- Group Admin: all tickets in the group
+Request (all fields optional, but at least one required):
+
+- title
+- description
+- priority
+- status
 
 ---
 
@@ -275,29 +328,14 @@ Group Admin only
 
 ---
 
-## POST /groups/{id}/tickets/{ticket_id}/assign
-
-Assign ticket (Group Admin only)
-
-Request:
-
-- user_id
-
----
-
-## POST /groups/{id}/tickets/{ticket_id}/status
-
-Change status
-
-Group Admin only
-
----
-
 ### Ticket Rules:
 
-- Contributor can only modify own tickets
-- Group Admin can modify any ticket in the group
-- Ownership defined by creator_id
+- Any group member may create a ticket
+- Only a Group Admin may edit or delete a ticket — including status changes —
+  regardless of who created it
+- Status: `open` | `closed`
+- Priority: `low` | `high` | `critical`
+- No assignment: tickets have no assignee
 
 ---
 
@@ -363,11 +401,19 @@ List all groups (metadata only)
 
 No ticket access
 
+Optional query param:
+
+- `search` — case-insensitive substring match on the group name. Omitted or blank returns all groups.
+
 ---
 
 ## GET /admin/users
 
 List users
+
+Optional query param:
+
+- `search` — case-insensitive substring match on user name or email. Omitted or blank returns all users.
 
 ---
 
@@ -405,7 +451,34 @@ Per group, as part of the same operation:
 - sole Group Admin, no other members → the group is deleted entirely (cascades its group_members rows)
 - non-sole Group Admin or Contributor → membership is simply removed
 
-Every succession or auto-deletion performed this way is recorded in `admin_audit_log` (see docs/database.md).
+Every succession or auto-deletion performed this way is recorded in `admin_audit_log` (see docs/database.md), readable via `GET /admin/audit-log` below.
+
+---
+
+## GET /admin/audit-log
+
+Read the succession / auto-deletion audit trail — System Admin only.
+
+Optional query filters, independent (either may be used alone, both may be combined, both may be omitted):
+
+- `group_id` — only entries for that group
+- `user_id` — only entries where that user was the one deleted
+
+Entries are returned newest-first. The `*_name` fields are snapshots taken when
+the entry was written (the deleted user, and an auto-deleted group, no longer
+exist to be looked up at read time). Each entry:
+
+- id
+- action (succession | group_auto_deleted)
+- group_id
+- group_name
+- deleted_user_id
+- deleted_user_name
+- successor_user_id (null when action = group_auto_deleted)
+- successor_user_name (null when action = group_auto_deleted)
+- performed_by (the System Admin who ran the deletion)
+- performed_by_name
+- created_at
 
 ---
 

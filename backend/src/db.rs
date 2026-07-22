@@ -63,6 +63,22 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), Error> {
         .create_index(IndexModel::builder().keys(doc! { "user_id": 1 }).build())
         .await?;
 
+    // Serve the audit-log viewer's two filters (GET /admin/audit-log?group_id
+    // / ?user_id) — each query hits admin_audit_log on one of these fields.
+    // Separate single-field indexes, since the two filters are independent and
+    // either may be used alone.
+    db.collection::<Document>("admin_audit_log")
+        .create_index(IndexModel::builder().keys(doc! { "group_id": 1 }).build())
+        .await?;
+
+    db.collection::<Document>("admin_audit_log")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "deleted_user_id": 1 })
+                .build(),
+        )
+        .await?;
+
     // TTL index: MongoDB's background reaper drops a document once its
     // `expires_at` is in the past, so spent/expired refresh tokens are
     // cleaned up automatically without any application-level cron job.
@@ -75,6 +91,39 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), Error> {
                         .expire_after(std::time::Duration::from_secs(0))
                         .build(),
                 )
+                .build(),
+        )
+        .await?;
+
+    // Serves every group-scoped ticket query (docs/database.md, "Multi-Tenancy
+    // Rule") — every ticket read/write filters on group_id.
+    db.collection::<Document>("tickets")
+        .create_index(IndexModel::builder().keys(doc! { "group_id": 1 }).build())
+        .await?;
+
+    db.collection::<Document>("tickets")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "status": 1 })
+                .build(),
+        )
+        .await?;
+
+    db.collection::<Document>("tickets")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "created_by": 1 })
+                .build(),
+        )
+        .await?;
+
+    // Enforces the per-group ticket_number sequence stays unique, in addition
+    // to the atomic counter that allocates it (TicketRepository::next_ticket_number).
+    db.collection::<Document>("tickets")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "ticket_number": 1 })
+                .options(IndexOptions::builder().unique(true).build())
                 .build(),
         )
         .await?;

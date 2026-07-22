@@ -299,11 +299,16 @@ fn test_delete_user_with_successor_succeeds() {
         assert_eq!(members[0].role, Role::GroupAdmin);
 
         let entries = audit
-            .list_audit_log_for_group(group_id)
+            .list_audit_log(Some(group_id), None)
             .await
             .expect("list failed");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].successor_user_id, Some(contributor_id));
+        // Names are snapshotted at write time.
+        assert_eq!(entries[0].group_name, "Team");
+        assert_eq!(entries[0].deleted_user_name, "sole-admin");
+        assert_eq!(entries[0].successor_user_name.as_deref(), Some("contributor"));
+        assert_eq!(entries[0].performed_by_name, "sysadmin");
     });
 }
 
@@ -337,11 +342,16 @@ fn test_delete_user_auto_deletes_lone_group() {
         );
 
         let entries = audit
-            .list_audit_log_for_group(group_id)
+            .list_audit_log(Some(group_id), None)
             .await
             .expect("list failed");
         assert_eq!(entries.len(), 1);
         assert!(entries[0].successor_user_id.is_none());
+        // Group name is snapshotted even though the group is now gone.
+        assert_eq!(entries[0].group_name, "SoloTeam");
+        assert_eq!(entries[0].deleted_user_name, "lone-admin");
+        assert!(entries[0].successor_user_name.is_none());
+        assert_eq!(entries[0].performed_by_name, "sysadmin");
     });
 }
 
@@ -385,7 +395,7 @@ fn test_delete_user_removes_plain_membership() {
         assert_eq!(members.len(), 1);
 
         let entries = audit
-            .list_audit_log_for_user(target_id)
+            .list_audit_log(None, Some(target_id))
             .await
             .expect("list failed");
         assert!(entries.is_empty());
@@ -479,7 +489,7 @@ fn test_list_users_requires_system_admin() {
         let (_db, admin, _groups, users, _audit) = setup().await;
         let caller_id = create_user(&users, "not-admin").await;
 
-        let result = admin.list_users(caller_id).await;
+        let result = admin.list_users(caller_id, None).await;
         assert_forbidden(result);
     });
 }
@@ -495,7 +505,7 @@ fn test_list_users_returns_all_users() {
         create_user(&users, "someone-else").await;
 
         let all_users = admin
-            .list_users(caller_id)
+            .list_users(caller_id, None)
             .await
             .expect("list_users failed");
         assert_eq!(all_users.len(), 3); // caller + the two created above
@@ -509,7 +519,7 @@ fn test_list_groups_requires_system_admin() {
         let (_db, admin, _groups, users, _audit) = setup().await;
         let caller_id = create_user(&users, "not-admin").await;
 
-        let result = admin.list_groups(caller_id).await;
+        let result = admin.list_groups(caller_id, None).await;
         assert_forbidden(result);
     });
 }
@@ -533,7 +543,7 @@ fn test_list_groups_returns_all_groups() {
             .expect("create group failed");
 
         let all_groups = admin
-            .list_groups(caller_id)
+            .list_groups(caller_id, None)
             .await
             .expect("list_groups failed");
         assert_eq!(all_groups.len(), 2);
@@ -610,5 +620,83 @@ fn test_delete_group_not_found() {
 
         let result = admin.delete_group(caller_id, ObjectId::new()).await;
         assert!(matches!(result, Err(ApiError::NotFound)));
+    });
+}
+
+// 19. list_audit_log requires System Admin.
+#[test]
+fn test_list_audit_log_requires_system_admin() {
+    support::runtime().block_on(async {
+        let (_db, admin, _groups, users, _audit) = setup().await;
+        let caller_id = create_user(&users, "not-admin").await;
+
+        let result = admin.list_audit_log(caller_id, None, None).await;
+        assert_forbidden(result);
+    });
+}
+
+// 20. Two successions across two groups produce two entries; the group and
+// user filters each narrow to the matching one, and no filter returns both.
+#[test]
+fn test_list_audit_log_filters() {
+    support::runtime().block_on(async {
+        let (db, admin, groups, users, _audit) = setup().await;
+        let caller_id = create_user(&users, "sysadmin").await;
+        make_system_admin(&db, caller_id).await;
+        let target_id = create_user(&users, "sole-admin").await;
+        let succ_a = create_user(&users, "succ-a").await;
+        let succ_b = create_user(&users, "succ-b").await;
+
+        let group_a = groups
+            .create_group(target_id, "TeamA".to_string())
+            .await
+            .expect("create group failed");
+        let group_a_id = ObjectId::parse_str(&group_a.id).unwrap();
+        groups
+            .add_member(target_id, group_a_id, succ_a, Role::Contributor)
+            .await
+            .expect("add member failed");
+
+        let group_b = groups
+            .create_group(target_id, "TeamB".to_string())
+            .await
+            .expect("create group failed");
+        let group_b_id = ObjectId::parse_str(&group_b.id).unwrap();
+        groups
+            .add_member(target_id, group_b_id, succ_b, Role::Contributor)
+            .await
+            .expect("add member failed");
+
+        let mut successors = HashMap::new();
+        successors.insert(group_a_id, succ_a);
+        successors.insert(group_b_id, succ_b);
+        admin
+            .delete_user(caller_id, target_id, successors)
+            .await
+            .expect("delete_user failed");
+
+        // Filter by group A: only A's succession entry.
+        let only_a = admin
+            .list_audit_log(caller_id, Some(group_a_id), None)
+            .await
+            .expect("list_audit_log failed");
+        assert_eq!(only_a.len(), 1);
+        assert_eq!(only_a[0].group_id, group_a.id);
+        assert_eq!(only_a[0].successor_user_id, Some(succ_a.to_hex()));
+
+        // Filter by the deleted user: both groups' entries (both name that user).
+        let by_user = admin
+            .list_audit_log(caller_id, None, Some(target_id))
+            .await
+            .expect("list_audit_log failed");
+        assert_eq!(by_user.len(), 2);
+        assert!(by_user.iter().all(|e| e.deleted_user_id == target_id.to_hex()));
+
+        // No filter: both entries.
+        let all = admin
+            .list_audit_log(caller_id, None, None)
+            .await
+            .expect("list_audit_log failed");
+        assert_eq!(all.len(), 2);
     });
 }

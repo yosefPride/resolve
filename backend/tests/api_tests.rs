@@ -163,13 +163,61 @@ fn test_list_all() {
             .await
             .expect("create b failed");
 
-        let all = repo.list_all().await.expect("list failed");
+        let all = repo.list_all(None).await.expect("list failed");
         let emails: Vec<&str> = all.iter().map(|u| u.email.as_str()).collect();
         assert!(emails.contains(&"list_a@test.com"));
         assert!(emails.contains(&"list_b@test.com"));
 
         repo.delete(a.id.unwrap()).await.ok();
         repo.delete(b.id.unwrap()).await.ok();
+    });
+}
+
+// 6b. Search filters users by name OR email (case-insensitive substring), with
+// regex metacharacters matched literally and a blank term returning everyone.
+#[test]
+fn test_list_all_search() {
+    support::runtime().block_on(async {
+        let repo = setup().await;
+        let alice = repo
+            .create(CreateUserInput {
+                email: "alice@corp.com".to_string(),
+                name: "Alice Smith".to_string(),
+                password_hash: "pw".to_string(),
+            })
+            .await
+            .expect("create alice failed");
+        let bob = repo
+            .create(CreateUserInput {
+                email: "bob@example.com".to_string(),
+                name: "Bob Jones".to_string(),
+                password_hash: "pw".to_string(),
+            })
+            .await
+            .expect("create bob failed");
+
+        // Name match, case-insensitive.
+        let by_name = repo.list_all(Some("alice")).await.expect("search failed");
+        assert_eq!(by_name.len(), 1);
+        assert_eq!(by_name[0].email, "alice@corp.com");
+
+        // Email match on the other user via a shared substring in the domain.
+        let by_email = repo.list_all(Some("example")).await.expect("search failed");
+        assert_eq!(by_email.len(), 1);
+        assert_eq!(by_email[0].email, "bob@example.com");
+
+        // A term containing a regex metacharacter runs cleanly and matches the
+        // literal substring (escaping proven exhaustively in the group tests).
+        let literal = repo.list_all(Some("corp.com")).await.expect("search failed");
+        assert_eq!(literal.len(), 1);
+        assert_eq!(literal[0].email, "alice@corp.com");
+
+        // Blank term = no filter (both users present).
+        let all = repo.list_all(Some("")).await.expect("search failed");
+        assert_eq!(all.len(), 2);
+
+        repo.delete(alice.id.unwrap()).await.ok();
+        repo.delete(bob.id.unwrap()).await.ok();
     });
 }
 

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use actix_web::{HttpResponse, web};
 use mongodb::bson::oid::ObjectId;
 
-use crate::admin::models::DeleteUserRequest;
+use crate::admin::models::{AdminListQuery, AuditLogQuery, DeleteUserRequest};
 use crate::admin::service::AdminService;
 use crate::errors::ApiError;
 use crate::server::middleware::SystemAdminUser;
@@ -42,16 +42,42 @@ pub async fn delete_user(
     Ok(HttpResponse::NoContent().finish())
 }
 
-pub async fn list_users(user: SystemAdminUser, state: web::Data<AppState>) -> Result<HttpResponse, ApiError> {
+pub async fn list_users(
+    user: SystemAdminUser,
+    state: web::Data<AppState>,
+    query: web::Query<AdminListQuery>,
+) -> Result<HttpResponse, ApiError> {
+    let search = query.search.as_deref().map(str::trim).filter(|s| !s.is_empty());
     let service = AdminService::new(&state.db);
-    let users = service.list_users(user.user_id).await?;
+    let users = service.list_users(user.user_id, search).await?;
     Ok(HttpResponse::Ok().json(users))
 }
 
-pub async fn list_groups(user: SystemAdminUser, state: web::Data<AppState>) -> Result<HttpResponse, ApiError> {
+pub async fn list_groups(
+    user: SystemAdminUser,
+    state: web::Data<AppState>,
+    query: web::Query<AdminListQuery>,
+) -> Result<HttpResponse, ApiError> {
+    let search = query.search.as_deref().map(str::trim).filter(|s| !s.is_empty());
     let service = AdminService::new(&state.db);
-    let groups = service.list_groups(user.user_id).await?;
+    let groups = service.list_groups(user.user_id, search).await?;
     Ok(HttpResponse::Ok().json(groups))
+}
+
+pub async fn list_audit_log(
+    user: SystemAdminUser,
+    state: web::Data<AppState>,
+    query: web::Query<AuditLogQuery>,
+) -> Result<HttpResponse, ApiError> {
+    let query = query.into_inner();
+    let group_id = query.group_id.as_deref().map(parse_id).transpose()?;
+    let deleted_user_id = query.user_id.as_deref().map(parse_id).transpose()?;
+
+    let service = AdminService::new(&state.db);
+    let entries = service
+        .list_audit_log(user.user_id, group_id, deleted_user_id)
+        .await?;
+    Ok(HttpResponse::Ok().json(entries))
 }
 
 pub async fn delete_group(

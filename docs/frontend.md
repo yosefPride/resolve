@@ -70,12 +70,14 @@ src/
         ui/             (design-system primitives: cards, tables, form wrappers)
     features/
         auth/
+        account/        (own profile: summary, profile edit, password change)
         groups/
         tickets/
         comments/
         users/
         ai/
         dashboard/
+        admin/          (System Admin panels: users, groups, audit log)
     hooks/
     lib/
     pages/
@@ -88,6 +90,21 @@ src/
 
 # Feature Breakdown
 
+## account/
+
+The Account page (`/account`, reached from the user menu) is where a user
+manages their own identity — no group or admin scope involved. Three cards:
+
+- Profile summary — read-only header (avatar initials, name, email, member-since,
+  a System Admin chip where applicable), rendered straight from the auth context
+- Profile edit — update name and/or email (`PATCH /auth/me`). Changing the email
+  reveals a required current-password field; a taken email surfaces under the
+  Email input via the `duplicate_email` code. On success the auth context user is
+  updated in place, so the header/menu reflect a new name without a reload
+- Password change — current / new / confirm, with client-side min-length and
+  match checks (`POST /auth/me/password`). Succeeds by signing out the user's
+  other devices while keeping this session
+
 ## groups/
 
 - Create group
@@ -99,7 +116,6 @@ src/
 - Create ticket
 - View tickets (group-scoped)
 - Update status (role-dependent)
-- Assign tickets (Group Admin only)
 
 Ticket Detail page includes:
 
@@ -122,6 +138,37 @@ AI is embedded inside existing pages:
 
 - Group Dashboard (secondary)
   - AI reports (Group Admin only)
+
+## admin/ (System Admin only)
+
+The Admin page (`/admin`, reached from the user menu) is an additive section
+gated by the global System Admin role — it does not replace the regular app, so
+a System Admin who is also a group member still uses the normal group UI for
+ticket/comment work. The route is guarded by `AdminRoute` (auth + System Admin;
+non-admins are redirected to /dashboard); the backend enforces every action via
+the `SystemAdminUser` extractor, so this gating is UX-only.
+
+Three tabs, each a panel under `features/admin/`:
+
+- Users — system-wide user list (GET /admin/users). Per-row delete opens the
+  succession flow: GET /admin/users/:id/deletion-check classifies the target's
+  groups, then the modal collects a successor for each group where they are the
+  sole Group Admin (or warns that a sole-member group will be auto-deleted)
+  before POST /admin/users/:id/delete. A 409 (the server re-derived a different
+  plan because membership shifted) re-runs the check in place. The admin's own
+  row has no delete action.
+- Groups — system-wide group list (GET /admin/groups, metadata only: name +
+  created; no membership, per group isolation). Per-row delete removes the whole
+  group (DELETE /admin/groups/:id).
+- Audit Log — the succession / auto-deletion trail (GET /admin/audit-log),
+  newest-first, filterable by group and by deleted user. Entries carry
+  snapshotted names (group, deleted user, successor, performing admin), so even
+  a deleted user or auto-deleted group displays its real name; the group/user
+  filter options are derived from the log itself.
+
+Consistent with group isolation: the admin sees group *metadata* only, never a
+group's tickets, comments, or membership roster — the sole exception being the
+eligible-successor list surfaced during a sole-Group-Admin deletion.
 
 ---
 
@@ -166,7 +213,7 @@ Public:
 
 ## Setup
 
-- Group selection / creation
+- My groups — list the groups you belong to, and create one
 
 ## Main App
 
@@ -174,5 +221,5 @@ Public:
 - Tickets
 - Ticket details (includes AI panel)
 - Group management
-- Account
+- Account — own profile: summary, profile edit, password change (see account/ above)
 - Admin (System Admin only)
