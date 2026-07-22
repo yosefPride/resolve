@@ -26,6 +26,11 @@ const ago = (hours) => new Date(NOW - hours * HOUR).toISOString();
 // it intentionally avoids real accounts.
 export const DEMO_TEAM_NAME = 'Platform';
 
+// The signed-in identity and team list the demo sidebar shows. Invented for the
+// same reason as the reporter names above — this renders on a public page.
+export const DEMO_USER_NAME = 'Dana Levi';
+export const DEMO_TEAMS = [DEMO_TEAM_NAME, 'Mobile', 'Design System'];
+
 const DEMO_GROUP_ID = '6a1f4c9e2b7d8e0f13a45c67';
 
 // ticket_number is a per-team running sequence starting at 1 (allocated by
