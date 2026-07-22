@@ -36,20 +36,29 @@ const STORAGE_KEY = 'sidebar:collapsed';
 // Collapsed state reaches the nav rows without drilling it through every
 // section. `expand` is called on navigation so a click while collapsed both
 // follows the link and restores the full sidebar.
-const SidebarContext = createContext({ collapsed: false, expand: () => {} });
+const SidebarContext = createContext({
+  collapsed: false,
+  expand: () => {},
+  onNavigate: () => {},
+});
 
 function rowClasses(collapsed, isActive) {
   return `${ROW} border-l-2 ${collapsed ? 'justify-center px-2' : ''} ${isActive ? ACTIVE : IDLE}`;
 }
 
 function NavItem({ to, label, icon: Icon, end }) {
-  const { collapsed, expand } = useContext(SidebarContext);
+  const { collapsed, expand, onNavigate } = useContext(SidebarContext);
+
+  function handleClick() {
+    expand();
+    onNavigate();
+  }
 
   return (
     <NavLink
       to={to}
       end={end}
-      onClick={expand}
+      onClick={handleClick}
       title={collapsed ? label : undefined}
       className={({ isActive }) => rowClasses(collapsed, isActive)}
     >
@@ -121,7 +130,7 @@ function UserSection({ user, onLogout }) {
 // deleting a team anywhere in the app refreshes this list through the
 // invalidations those pages already run.
 function TeamsSection() {
-  const { collapsed, expand } = useContext(SidebarContext);
+  const { collapsed, expand, onNavigate } = useContext(SidebarContext);
   const [isOpen, setIsOpen] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const queryClient = useQueryClient();
@@ -198,6 +207,7 @@ function TeamsSection() {
             <NavLink
               key={group.id}
               to={`/groups/${group.id}`}
+              onClick={onNavigate}
               className={({ isActive }) => rowClasses(false, isActive)}
             >
               {({ isActive }) => (
@@ -218,23 +228,32 @@ function TeamsSection() {
   );
 }
 
-export default function Sidebar() {
+// `className` carries the positioning/display because Tailwind resolves
+// conflicting utilities by CSS source order, not class order — a `fixed` passed
+// in would not reliably beat a hardcoded `sticky` here. `collapsible` is off for
+// the mobile drawer, where a 16-wide rail would be pointless.
+export default function Sidebar({ className = '', collapsible = true, onNavigate }) {
   const { user, logout } = useAuth();
-  const [collapsed, setCollapsed] = useState(
+  const [storedCollapsed, setCollapsed] = useState(
     () => localStorage.getItem(STORAGE_KEY) === 'true',
   );
+  const collapsed = collapsible && storedCollapsed;
 
   function updateCollapsed(next) {
     setCollapsed(next);
     localStorage.setItem(STORAGE_KEY, String(next));
   }
 
-  const context = { collapsed, expand: () => updateCollapsed(false) };
+  const context = {
+    collapsed,
+    expand: () => updateCollapsed(false),
+    onNavigate: onNavigate ?? (() => {}),
+  };
 
   return (
     <SidebarContext.Provider value={context}>
       <aside
-        className={`sticky top-0 flex h-screen shrink-0 flex-col gap-4 border-r border-white/10 bg-[#141414] p-3 transition-[width] duration-200 ${
+        className={`${className} h-screen shrink-0 flex-col gap-4 border-r border-white/10 bg-black p-3 transition-[width] duration-200 ${
           collapsed ? 'w-16' : 'w-64'
         }`}
       >
@@ -250,19 +269,21 @@ export default function Sidebar() {
               className="h-5 w-auto object-contain transition-all duration-200 group-hover:drop-shadow-[0_0_10px_rgba(56,189,248,0.8)]"
             />
           </Link>
-          <button
-            type="button"
-            onClick={() => updateCollapsed(!collapsed)}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-white/5 hover:text-white"
-          >
-            {collapsed ? (
-              <PanelLeftOpen className="h-5 w-5" />
-            ) : (
-              <PanelLeftClose className="h-5 w-5" />
-            )}
-          </button>
+          {collapsible && (
+            <button
+              type="button"
+              onClick={() => updateCollapsed(!collapsed)}
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-white/5 hover:text-white"
+            >
+              {collapsed ? (
+                <PanelLeftOpen className="h-5 w-5" />
+              ) : (
+                <PanelLeftClose className="h-5 w-5" />
+              )}
+            </button>
+          )}
         </div>
 
         <UserSection user={user} onLogout={logout} />
