@@ -125,7 +125,7 @@ export default function ProductDemo() {
   const openCount = DEMO_ISSUES.filter((issue) => issue.status === 'open').length;
 
   return (
-    <div className="mx-auto max-h-9xl flex items-stretch overflow-hidden rounded-2xl border border-white/10 bg-[#141414] shadow-2xl shadow-black/50">
+    <div className="mx-auto max-h-9xl flex items-stretch overflow-hidden rounded-2xl border border-white/10 bg-surface shadow-2xl shadow-black/50">
       {/* Below `md` the rail would leave the issue list nothing to sit in, so
           the preview narrows to the list alone. */}
       <DemoSidebar className="hidden md:flex" />

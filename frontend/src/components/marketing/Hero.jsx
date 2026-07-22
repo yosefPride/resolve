@@ -1,9 +1,12 @@
 import Button from '../ui/Button';
 import ProductDemo from './demo/ProductDemo';
 
+// `isolate` on the section keeps the -z-10 glow in a stacking context of its
+// own. Without it the glow belongs to the root context, where it paints beneath
+// the layout's bg-black and disappears.
 export default function Hero() {
   return (
-    <section className="relative overflow-hidden">
+    <section className="relative isolate overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 pt-20 pb-16 text-left sm:px-6 sm:pt-28 lg:px-8">
 
         <h1 className="mt-6 max-w-3xl text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl">
