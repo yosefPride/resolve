@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import Input from '../../ui/Input';
 import Badge from '../../ui/Badge';
@@ -76,11 +77,55 @@ function FilterSelect({ label, options, ...props }) {
   );
 }
 
+// Search deliberately only looks at what the row actually shows — title,
+// reporter and issue number. Matching on `description` too would be easy, but a
+// query that hides five rows and leaves one whose match is nowhere on screen
+// reads as a bug rather than a filter.
+function matchesQuery(issue, query) {
+  if (!query) return true;
+  const number = query.replace(/^#/, '');
+  return (
+    issue.title.toLowerCase().includes(query) ||
+    issue.created_by_name.toLowerCase().includes(query) ||
+    String(issue.ticket_number) === number
+  );
+}
+
 export default function ProductDemo() {
-  const issues = DEMO_ISSUES;
+  const [query, setQuery] = useState('');
+  const [reporter, setReporter] = useState('');
+  const [status, setStatus] = useState('');
+  const [priority, setPriority] = useState('');
+
+  const isFiltered = Boolean(query || reporter || status || priority);
+
+  function clearFilters() {
+    setQuery('');
+    setReporter('');
+    setStatus('');
+    setPriority('');
+  }
+
+  // Filtering runs against the seeded array in memory. The real issues page
+  // will push this to the API (GET /groups/{id}/tickets with query params);
+  // here it stays client-side so the preview works logged-out and offline.
+  const issues = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return DEMO_ISSUES.filter(
+      (issue) =>
+        (!reporter || issue.created_by_name === reporter) &&
+        (!status || issue.status === status) &&
+        (!priority || issue.priority === priority) &&
+        matchesQuery(issue, normalized),
+    );
+  }, [query, reporter, status, priority]);
+
+  // The header count is a team-level stat (the same figure GET /groups reports
+  // per team), so it stays fixed while filters narrow the list below it.
+  const openCount = DEMO_ISSUES.filter((issue) => issue.status === 'open').length;
 
   return (
-    <div className="mx-auto flex items-stretch overflow-hidden rounded-2xl border border-white/10 bg-[#141414] shadow-2xl shadow-black/50">
+    <div className="mx-auto max-h-9xl flex items-stretch overflow-hidden rounded-2xl border border-white/10 bg-[#141414] shadow-2xl shadow-black/50">
       {/* Below `md` the rail would leave the issue list nothing to sit in, so
           the preview narrows to the list alone. */}
       <DemoSidebar className="hidden md:flex" />
@@ -91,9 +136,12 @@ export default function ProductDemo() {
             <h3 className="text-sm font-semibold text-white">
               {DEMO_TEAM_NAME}
             </h3>
-            <span className="text-xs text-slate-400">
-              {issues.filter((issue) => issue.status === 'open').length} open
-            </span>
+            <span className="text-xs text-slate-400">{openCount} open</span>
+            {isFiltered && (
+              <span className="text-xs text-slate-500">
+                showing {issues.length} of {DEMO_ISSUES.length}
+              </span>
+            )}
           </div>
           <Badge variant="outline" size="sm">
             Sample data
@@ -107,12 +155,29 @@ export default function ProductDemo() {
               type="search"
               placeholder="Search issues"
               aria-label="Search issues"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
               className="w-full py-1.5 pl-9 text-sm"
             />
           </div>
-          <FilterSelect label="Reporter" options={demoCreators()} />
-          <FilterSelect label="Status" options={DEMO_STATUSES} />
-          <FilterSelect label="Priority" options={DEMO_PRIORITIES} />
+          <FilterSelect
+            label="Reporter"
+            options={demoCreators()}
+            value={reporter}
+            onChange={(event) => setReporter(event.target.value)}
+          />
+          <FilterSelect
+            label="Status"
+            options={DEMO_STATUSES}
+            value={status}
+            onChange={(event) => setStatus(event.target.value)}
+          />
+          <FilterSelect
+            label="Priority"
+            options={DEMO_PRIORITIES}
+            value={priority}
+            onChange={(event) => setPriority(event.target.value)}
+          />
         </div>
 
         <div
@@ -124,6 +189,19 @@ export default function ProductDemo() {
           <span>Priority</span>
           <span className="hidden lg:block">Created</span>
         </div>
+
+        {issues.length === 0 && (
+          <div className="flex flex-col items-center gap-3 px-5 py-10 text-center">
+            <p className="text-sm text-slate-400">No issues match those filters.</p>
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/5 hover:text-white"
+            >
+              Clear filters
+            </button>
+          </div>
+        )}
 
         <ul className="divide-y divide-white/5">
           {issues.map((issue) => (

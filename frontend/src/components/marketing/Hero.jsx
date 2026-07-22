@@ -25,7 +25,7 @@ export default function Hero() {
         </div>
       </div>
 
-      <div className="relative mx-auto  px-4 pb-24 sm:px-6 lg:px-8">
+      <div className="relative mx-auto px-4 pb-24 sm:px-6 lg:px-8">
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-x-0 top-20 -z-10 h-225 w-screen bg-linear-to-b from-white/10 via-white/20 to-white/60 blur-[180px]

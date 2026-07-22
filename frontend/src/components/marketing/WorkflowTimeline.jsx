@@ -5,11 +5,11 @@ const STEPS = [
   },
   {
     title: 'Triage',
-    description: 'AI suggests priority and category as an advisory hint — never a database change.',
+    description: 'AI suggests priority and category as an advisory hint.',
   },
   {
     title: 'Discuss & assign',
-    description: 'The team comments, updates status, and assigns ownership within the team.',
+    description: 'The team comments, updates status, and assigns the issue to a developer.',
   },
   {
     title: 'Resolve',
