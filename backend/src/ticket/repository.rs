@@ -3,11 +3,11 @@ use std::fmt;
 use futures::TryStreamExt;
 use mongodb::{
     Collection, Database,
-    bson::{DateTime as BsonDateTime, doc, oid::ObjectId},
+    bson::{self, DateTime as BsonDateTime, Document, doc, oid::ObjectId},
     options::ReturnDocument,
 };
 
-use crate::ticket::models::{CreateTicketInput, Ticket, TicketCounter, TicketStatus};
+use crate::ticket::models::{CreateTicketInput, Ticket, TicketCounter, TicketPriority, TicketStatus};
 
 #[derive(Debug)]
 pub enum TicketRepoError {
@@ -101,9 +101,65 @@ impl TicketRepository {
             .await?)
     }
 
-    pub async fn list_by_group(&self, group_id: ObjectId) -> Result<Vec<Ticket>, TicketRepoError> {
-        let cursor = self.tickets.find(doc! { "group_id": group_id }).await?;
+    // status/priority/creator are exact-match, indexable fields, so they're
+    // filtered here in Mongo; free-text title search (substring + typo-tolerant
+    // fallback) has no Mongo-native equivalent and is done in-process by the
+    // service over this method's result (see TicketService::list_tickets).
+    pub async fn list_by_group(
+        &self,
+        group_id: ObjectId,
+        status: Option<TicketStatus>,
+        priority: Option<TicketPriority>,
+        creator: Option<ObjectId>,
+    ) -> Result<Vec<Ticket>, TicketRepoError> {
+        let mut filter = doc! { "group_id": group_id };
+        if let Some(status) = status {
+            filter.insert(
+                "status",
+                bson::to_bson(&status).expect("TicketStatus always serializes"),
+            );
+        }
+        if let Some(priority) = priority {
+            filter.insert(
+                "priority",
+                bson::to_bson(&priority).expect("TicketPriority always serializes"),
+            );
+        }
+        if let Some(creator) = creator {
+            filter.insert("created_by", creator);
+        }
+        let cursor = self.tickets.find(filter).await?;
         cursor.try_collect().await.map_err(Into::into)
+    }
+
+    // Filtered on group_id as well as _id, same isolation guarantee as
+    // find_by_id: a ticket_id from another group simply matches nothing.
+    pub async fn update_ticket(
+        &self,
+        group_id: ObjectId,
+        ticket_id: ObjectId,
+        changes: Document,
+    ) -> Result<Option<Ticket>, TicketRepoError> {
+        Ok(self
+            .tickets
+            .find_one_and_update(
+                doc! { "_id": ticket_id, "group_id": group_id },
+                doc! { "$set": changes },
+            )
+            .return_document(ReturnDocument::After)
+            .await?)
+    }
+
+    pub async fn delete_ticket(
+        &self,
+        group_id: ObjectId,
+        ticket_id: ObjectId,
+    ) -> Result<bool, TicketRepoError> {
+        let result = self
+            .tickets
+            .delete_one(doc! { "_id": ticket_id, "group_id": group_id })
+            .await?;
+        Ok(result.deleted_count > 0)
     }
 
     // status is stored as its snake_case serialization ("open"/"closed"), so we

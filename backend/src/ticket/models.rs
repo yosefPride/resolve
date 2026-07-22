@@ -75,6 +75,37 @@ pub struct CreateTicketRequest {
     pub priority: TicketPriority,
 }
 
+// All fields optional; the handler rejects a request where every field is
+// absent (docs/api.md, "PATCH /groups/{id}/tickets/{ticket_id}").
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateTicketRequest {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub priority: Option<TicketPriority>,
+    pub status: Option<TicketStatus>,
+}
+
+// Deserialized straight from the query string (web::Query), so every field is
+// optional and `creator` stays a raw hex string (parsed to ObjectId in the
+// service, same as other id path/body params).
+#[derive(Debug, Deserialize)]
+pub struct ListTicketsQuery {
+    pub q: Option<String>,
+    pub status: Option<TicketStatus>,
+    pub priority: Option<TicketPriority>,
+    pub creator: Option<String>,
+    pub page: Option<u64>,
+    pub per_page: Option<u64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TicketListResponse {
+    pub items: Vec<TicketResponse>,
+    pub total: u64,
+    pub page: u64,
+    pub per_page: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
