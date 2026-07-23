@@ -6,7 +6,7 @@ import Footer from './Footer';
 // over a growing content area, with the footer pinned to the bottom.
 export default function MarketingLayout() {
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex min-h-screen flex-col bg-black">
       <div className="grow">
         <Header />
         <Outlet />

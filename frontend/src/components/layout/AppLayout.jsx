@@ -13,7 +13,7 @@ export default function AppLayout() {
   const closeDrawer = () => setIsDrawerOpen(false);
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-surface">
       <Sidebar className="sticky top-0 hidden md:flex" />
 
       {isDrawerOpen && (
