@@ -1,4 +1,4 @@
-![Resolve Logo](frontend/src/assets/brand-logo.jpeg)
+![Resolve Logo](/frontend/public/preview.png)
 
 # RESOLVE
 
