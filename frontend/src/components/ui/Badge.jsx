@@ -9,6 +9,7 @@ const VARIANTS = {
   neutral: 'bg-white/10 text-slate-300',
   accent: 'border border-sky-400/30 bg-sky-500/10 text-sky-300',
   outline: 'border border-white/10 text-slate-500',
+  danger: 'border border-red-500/30 bg-red-500/10 text-red-400',
 };
 
 const SIZES = {

@@ -5,6 +5,8 @@ import LandingPage from './pages/LandingPage';
 import RegisterPage from './pages/RegisterPage';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
+import TicketsPage from './pages/TicketsPage';
+import TicketDetailPage from './pages/TicketDetailPage';
 import AccountPage from './pages/AccountPage';
 import GroupManagementPage from './pages/GroupManagementPage';
 import AdminPage from './pages/AdminPage';
@@ -37,6 +39,8 @@ export default function App() {
         }
       >
         <Route path='/dashboard' element={<DashboardPage />} />
+        <Route path='/tickets' element={<TicketsPage />} />
+        <Route path='/tickets/:ticketId' element={<TicketDetailPage />} />
         <Route path='/account' element={<AccountPage />} />
         <Route path='/groups/:id' element={<GroupManagementPage />} />
         <Route
