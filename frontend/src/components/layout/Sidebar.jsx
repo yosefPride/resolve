@@ -21,6 +21,7 @@ import CreateGroupForm from '../../features/groups/CreateGroupForm';
 import logo from '../../assets/brand-mark.svg';
 import Badge from '../ui/Badge';
 import Modal from '../ui/Modal';
+import { ROW, rowClasses } from './sidebarStyles';
 
 const NAV_LINKS = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -28,9 +29,6 @@ const NAV_LINKS = [
   { to: '/tickets', label: 'Issues', icon: Ticket },
 ];
 
-const ROW = 'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors';
-const IDLE = 'border-transparent text-slate-400 hover:bg-white/5 hover:text-white';
-const ACTIVE = 'border-sky-400 bg-white/10 text-white';
 const STORAGE_KEY = 'sidebar:collapsed';
 
 // Collapsed state reaches the nav rows without drilling it through every
@@ -41,10 +39,6 @@ const SidebarContext = createContext({
   expand: () => {},
   onNavigate: () => {},
 });
-
-function rowClasses(collapsed, isActive) {
-  return `${ROW} border-l-2 ${collapsed ? 'justify-center px-2' : ''} ${isActive ? ACTIVE : IDLE}`;
-}
 
 function NavItem({ to, label, icon: Icon, end }) {
   const { collapsed, expand, onNavigate } = useContext(SidebarContext);

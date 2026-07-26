@@ -1,1 +1,9 @@
 @import "tailwindcss";
+
+/* The app has two page backgrounds, and which one you see says where you are:
+   black for the public routes (marketing, login, register, not-found) and
+   `surface` for everything behind the auth gate. Registered as a theme token so
+   the value has one home — use `bg-surface`, not the raw hex. */
+@theme {
+  --color-surface: #141414;
+}
