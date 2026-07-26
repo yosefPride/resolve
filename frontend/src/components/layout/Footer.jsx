@@ -1,4 +1,5 @@
 import logo from '../../assets/logo.png';
+import Badge from '../ui/Badge';
 
 const FOOTER_LINKS = [];
 
@@ -23,9 +24,9 @@ export default function Footer() {
               {link.label}
             </a>
           ))}
-          <span className="rounded-full border border-white/10 px-2 py-0.5 text-xs text-slate-500">
+          <Badge variant="outline" size="sm">
             v0.1.0
-          </span>
+          </Badge>
         </div>
       </div>
     </footer>

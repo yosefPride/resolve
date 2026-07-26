@@ -106,6 +106,10 @@ state.
   `POST /auth/refresh` — and revoked on `POST /auth/logout`
 - Revocation is per-session (per refresh token), not per-user — logging out
   on one device does not invalidate other devices' sessions
+- The one deliberate per-user case is a password change (`POST /auth/me/password`):
+  it revokes every *other* refresh token for the user, sparing only the session
+  that made the change (identified by its own cookie). See
+  `AuthRepository::revoke_all_for_user_except`
 - See docs/database.md ("refresh_tokens") and docs/api.md for details
 
 ---

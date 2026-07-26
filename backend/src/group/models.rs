@@ -64,6 +64,7 @@ pub struct GroupSummaryResponse {
     pub name: String,
     pub role: Role,
     pub member_count: u64,
+    pub open_ticket_count: u64,
     pub created_at: DateTime<Utc>,
 }
 

@@ -98,14 +98,36 @@ Fields:
 
 - \_id
 - group_id
+- ticket_number (running number scoped to group_id — the first ticket in a
+  group is 1, independent of other groups' numbering; sourced from `counters`)
 - title
 - description
-- status (open | in_progress | closed)
-- priority (low | medium | high)
+- status (open | closed)
+- priority (low | high | critical)
 - created_by
-- assigned_to
 - created_at
 - updated_at
+
+No assignee field: tickets are not assigned to a user.
+
+Only a Group Admin may edit a ticket after creation (including status changes)
+— not even the creator, once a Contributor, may edit their own ticket. See
+docs/rbac.md and docs/api.md (`PATCH /groups/{id}/tickets/{ticket_id}`).
+
+---
+
+## counters
+
+Backs the per-group `ticket_number` sequence. One document per group.
+
+Fields:
+
+- \_id (== group_id)
+- ticket_seq (last-assigned ticket_number for this group)
+
+Incremented atomically via `find_one_and_update` + `$inc` on ticket creation —
+avoids a race between two tickets created in the same group at once. Deleted
+along with the group's tickets when the group is deleted.
 
 ---
 
@@ -165,10 +187,20 @@ Fields:
 - \_id
 - action (succession | group_auto_deleted)
 - group_id
+- group_name (snapshot — see note below)
 - deleted_user_id (the user being deleted, was sole Group Admin of group_id)
+- deleted_user_name (snapshot)
 - successor_user_id (nullable; set only when action = succession)
+- successor_user_name (nullable; snapshot, set only when action = succession)
 - performed_by (System Admin's user_id)
+- performed_by_name (snapshot)
 - created_at
+
+The `*_name` fields are denormalized snapshots captured at write time, not
+lookups. By the time the log is read the deleted user (always) and an
+auto-deleted group (when action = group_auto_deleted) no longer exist, so their
+ids can't be resolved to names after the fact — the name is stored alongside the
+id when the entry is written.
 
 Like refresh_tokens, this is system-level data tied to an admin action, not group-scoped tenant data — it is written by System Admin, not queried by group-scoped business logic.
 
@@ -288,7 +320,8 @@ informational only and never filtered on).
 
 - group_id (critical)
 - group_id + status
-- group_id + assigned_to
+- group_id + created_by
+- group_id + ticket_number (compound, unique)
 
 ## comments
 
@@ -302,9 +335,11 @@ informational only and never filtered on).
 
 ## admin_audit_log
 
-- group_id (deferred — add when an audit-log read endpoint ships; nothing
-  queries this collection yet and it only grows on rare succession events)
-- deleted_user_id (deferred, same reason)
+- group_id (serves `GET /admin/audit-log?group_id=`)
+- deleted_user_id (serves `GET /admin/audit-log?user_id=`)
+
+Separate single-field indexes: the two filters are independent and either may
+be used alone.
 
 ---
 

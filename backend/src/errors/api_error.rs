@@ -3,6 +3,7 @@ use serde::Serialize;
 
 use crate::admin::repository::AdminRepoError;
 use crate::group::repository::GroupRepoError;
+use crate::ticket::repository::TicketRepoError;
 use crate::user::repository::UserRepoError;
 
 #[derive(Debug)]
@@ -133,6 +134,12 @@ impl From<GroupRepoError> for ApiError {
 
 impl From<AdminRepoError> for ApiError {
     fn from(_: AdminRepoError) -> Self {
+        ApiError::Internal
+    }
+}
+
+impl From<TicketRepoError> for ApiError {
+    fn from(_: TicketRepoError) -> Self {
         ApiError::Internal
     }
 }

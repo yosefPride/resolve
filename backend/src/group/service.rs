@@ -8,10 +8,12 @@ use crate::group::models::{
 };
 use crate::group::repository::GroupRepository;
 use crate::rbac::service::RbacService;
+use crate::ticket::repository::TicketRepository;
 use crate::user::service::UserService;
 
 pub struct GroupService {
     repo: GroupRepository,
+    ticket_repo: TicketRepository,
     user_service: UserService,
     rbac: RbacService,
 }
@@ -20,6 +22,7 @@ impl GroupService {
     pub fn new(db: &Database) -> Self {
         Self {
             repo: GroupRepository::new(db),
+            ticket_repo: TicketRepository::new(db),
             user_service: UserService::new(db),
             rbac: RbacService::new(db),
         }
@@ -58,11 +61,16 @@ impl GroupService {
                 .await?
                 .ok_or(ApiError::Internal)?;
             let member_count = self.repo.count_members(membership.group_id).await?;
+            let open_ticket_count = self
+                .ticket_repo
+                .count_open_by_group(membership.group_id)
+                .await?;
             result.push(GroupSummaryResponse {
                 id: group.id.map(|id| id.to_hex()).unwrap_or_default(),
                 name: group.name,
                 role: membership.role,
                 member_count,
+                open_ticket_count,
                 created_at: DateTime::from_timestamp_millis(group.created_at.timestamp_millis())
                     .unwrap_or_default(),
             });

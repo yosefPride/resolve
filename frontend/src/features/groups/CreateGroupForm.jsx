@@ -1,5 +1,8 @@
 import { useState } from 'react';
 import { createGroup } from '../../services/groups.service';
+import { errorMessage } from '../../utils/errors';
+import Button from '../../components/ui/Button';
+import Input from '../../components/ui/Input';
 
 export default function CreateGroupForm({ onCreated }) {
   const [name, setName] = useState('');
@@ -15,7 +18,7 @@ export default function CreateGroupForm({ onCreated }) {
       setName('');
       onCreated(group);
     } catch (err) {
-      setError(err.response?.data?.error?.message || 'Failed to create group. Please try again.');
+      setError(errorMessage(err, 'Failed to create team. Please try again.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -24,26 +27,21 @@ export default function CreateGroupForm({ onCreated }) {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <label className="flex flex-col gap-1 text-sm text-slate-300">
-        Group name
-        <input
+        Team name
+        <Input
           type="text"
           name="name"
           value={name}
           onChange={(event) => setName(event.target.value)}
           required
-          className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50"
         />
       </label>
 
       {error && <p className="text-sm text-red-500">{error}</p>}
 
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="mt-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition-all duration-200 hover:bg-slate-200 disabled:opacity-50"
-      >
-        {isSubmitting ? 'Creating…' : 'Create group'}
-      </button>
+      <Button type="submit" disabled={isSubmitting} className="mt-2">
+        {isSubmitting ? 'Creating…' : 'Create team'}
+      </Button>
     </form>
   );
 }

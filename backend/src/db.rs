@@ -8,7 +8,15 @@ use mongodb::{
 use crate::config::Config;
 
 pub async fn connect(config: &Config) -> Result<Client, Error> {
-    Client::with_uri_str(&config.mongo_uri).await
+    let client = Client::with_uri_str(&config.mongo_uri).await?;
+    // with_uri_str doesn't open a connection (the driver connects lazily on
+    // first operation) â ping so "connected" below is actually proven.
+    client
+        .database("resolve")
+        .run_command(doc! { "ping": 1 })
+        .await?;
+    println!("\nSuccessfully connected to MongoDB database 'resolve'");
+    Ok(client)
 }
 
 pub fn database(client: &Client, _config: &Config) -> Database {
@@ -52,9 +60,21 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), Error> {
     // list_groups_for_user), which filter on user_id alone — the compound
     // (group_id, user_id) index above can't, since user_id isn't its prefix.
     db.collection::<Document>("group_members")
+        .create_index(IndexModel::builder().keys(doc! { "user_id": 1 }).build())
+        .await?;
+
+    // Serve the audit-log viewer's two filters (GET /admin/audit-log?group_id
+    // / ?user_id) — each query hits admin_audit_log on one of these fields.
+    // Separate single-field indexes, since the two filters are independent and
+    // either may be used alone.
+    db.collection::<Document>("admin_audit_log")
+        .create_index(IndexModel::builder().keys(doc! { "group_id": 1 }).build())
+        .await?;
+
+    db.collection::<Document>("admin_audit_log")
         .create_index(
             IndexModel::builder()
-                .keys(doc! { "user_id": 1 })
+                .keys(doc! { "deleted_user_id": 1 })
                 .build(),
         )
         .await?;
@@ -71,6 +91,39 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), Error> {
                         .expire_after(std::time::Duration::from_secs(0))
                         .build(),
                 )
+                .build(),
+        )
+        .await?;
+
+    // Serves every group-scoped ticket query (docs/database.md, "Multi-Tenancy
+    // Rule") — every ticket read/write filters on group_id.
+    db.collection::<Document>("tickets")
+        .create_index(IndexModel::builder().keys(doc! { "group_id": 1 }).build())
+        .await?;
+
+    db.collection::<Document>("tickets")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "status": 1 })
+                .build(),
+        )
+        .await?;
+
+    db.collection::<Document>("tickets")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "created_by": 1 })
+                .build(),
+        )
+        .await?;
+
+    // Enforces the per-group ticket_number sequence stays unique, in addition
+    // to the atomic counter that allocates it (TicketRepository::next_ticket_number).
+    db.collection::<Document>("tickets")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "ticket_number": 1 })
+                .options(IndexOptions::builder().unique(true).build())
                 .build(),
         )
         .await?;

@@ -1,7 +1,5 @@
+![Resolve Logo](frontend/src/assets/brand-logo.jpeg)
+
 # RESOLVE
 
----
-
-Ort final project
-
-![Resolve Logo](frontend/src/assets/logo.png)
+Ort end project

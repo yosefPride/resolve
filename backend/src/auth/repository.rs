@@ -60,6 +60,28 @@ impl AuthRepository {
         Ok(())
     }
 
+    // Revokes every outstanding refresh token for a user except the one whose
+    // hash is given — password change logs out all other devices while the
+    // session that made the change stays alive. `except_hash: None` (no
+    // refresh cookie on the request) revokes them all.
+    pub async fn revoke_all_for_user_except(
+        &self,
+        user_id: ObjectId,
+        except_hash: Option<&str>,
+    ) -> Result<(), mongodb::error::Error> {
+        let mut filter = doc! { "user_id": user_id, "revoked_at": null };
+        if let Some(hash) = except_hash {
+            filter.insert("token_hash", doc! { "$ne": hash });
+        }
+        self.collection
+            .update_many(
+                filter,
+                doc! { "$set": { "revoked_at": BsonDateTime::now() } },
+            )
+            .await?;
+        Ok(())
+    }
+
     pub async fn revoke_by_hash(&self, token_hash: &str) -> Result<(), mongodb::error::Error> {
         self.collection
             .update_one(

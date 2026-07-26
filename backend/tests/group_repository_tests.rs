@@ -418,7 +418,47 @@ fn test_list_all_groups() {
         .await
         .expect("create failed");
 
-        let groups = repo.list_all_groups().await.expect("list failed");
+        let groups = repo.list_all_groups(None).await.expect("list failed");
         assert_eq!(groups.len(), 3);
+    });
+}
+
+// 17. Search filters groups by name: case-insensitive substring, escaped so
+// regex metacharacters match literally, and a blank term returns everything.
+#[test]
+fn test_list_all_groups_search() {
+    support::runtime().block_on(async {
+        let repo = setup().await;
+        for name in ["Payments Team", "PAYROLL", "Infra", "a(b) squad"] {
+            repo.create_group(CreateGroupInput {
+                name: name.to_string(),
+                owner_id: oid(),
+            })
+            .await
+            .expect("create failed");
+        }
+
+        // Case-insensitive substring: "pay" hits "Payments Team" and "PAYROLL".
+        let hits = repo
+            .list_all_groups(Some("pay"))
+            .await
+            .expect("search failed");
+        let names: Vec<&str> = hits.iter().map(|g| g.name.as_str()).collect();
+        assert_eq!(hits.len(), 2);
+        assert!(names.contains(&"Payments Team"));
+        assert!(names.contains(&"PAYROLL"));
+        assert!(!names.contains(&"Infra"));
+
+        // Metacharacters are matched literally, not as a pattern.
+        let literal = repo
+            .list_all_groups(Some("a(b)"))
+            .await
+            .expect("search failed");
+        assert_eq!(literal.len(), 1);
+        assert_eq!(literal[0].name, "a(b) squad");
+
+        // A blank term is treated as no filter.
+        let all = repo.list_all_groups(Some("")).await.expect("search failed");
+        assert_eq!(all.len(), 4);
     });
 }

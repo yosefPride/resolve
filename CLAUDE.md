@@ -6,21 +6,6 @@ AI-powered multi-tenant bug tracking system with RBAC and AI augmentation.
 
 # Tech Stack
 
-Frontend:
-
-- React
-- JavaScript
-- Vite
-- TailwindCSS
-
-Backend:
-
-- Rust
-- Actix-web
-- MongoDB
-- JWT authentication
-- bcrypt password hashing
-
 AI:
 
 - Gemini API (core system feature)
