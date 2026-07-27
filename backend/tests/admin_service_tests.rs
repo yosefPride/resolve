@@ -8,6 +8,8 @@ use mongodb::{
 use resolve::admin::{repository::AdminRepository, service::AdminService};
 use resolve::errors::ApiError;
 use resolve::group::{models::Role, repository::GroupRepository, service::GroupService};
+use resolve::ticket::models::{CreateTicketInput, TicketPriority};
+use resolve::ticket::repository::TicketRepository;
 use resolve::user::models::{CreateUserInput, GlobalRole};
 use resolve::user::repository::UserRepository;
 
@@ -698,5 +700,102 @@ fn test_list_audit_log_filters() {
             .await
             .expect("list_audit_log failed");
         assert_eq!(all.len(), 2);
+    });
+}
+
+// Mirrors the seeding GroupService's cascade test does, for the two
+// admin-side deletion paths.
+async fn seed_ticket(group_id: ObjectId, created_by: ObjectId, title: &str) {
+    let db = support::shared_client().await.database("resolve_test");
+    let repo = TicketRepository::new(&db);
+    let ticket_number = repo
+        .next_ticket_number(group_id)
+        .await
+        .expect("counter allocation failed");
+    repo.insert_ticket(CreateTicketInput {
+        group_id,
+        ticket_number,
+        title: title.to_string(),
+        description: String::new(),
+        priority: TicketPriority::Low,
+        created_by,
+    })
+    .await
+    .expect("ticket insert failed");
+}
+
+async fn count_tickets(group_id: ObjectId) -> u64 {
+    let db = support::shared_client().await.database("resolve_test");
+    db.collection::<mongodb::bson::Document>("tickets")
+        .count_documents(doc! { "group_id": group_id })
+        .await
+        .expect("ticket count failed")
+}
+
+async fn count_counters(group_id: ObjectId) -> u64 {
+    let db = support::shared_client().await.database("resolve_test");
+    db.collection::<mongodb::bson::Document>("counters")
+        .count_documents(doc! { "_id": group_id })
+        .await
+        .expect("counter count failed")
+}
+
+// 21. System Admin deleting a group outright cascades its tickets and counter.
+#[test]
+fn test_admin_delete_group_cascades_tickets_and_counter() {
+    support::runtime().block_on(async {
+        let (db, admin, groups, users, _audit) = setup().await;
+        let caller_id = create_user(&users, "sysadmin").await;
+        make_system_admin(&db, caller_id).await;
+        let owner_id = create_user(&users, "group-admin").await;
+
+        let group = groups
+            .create_group(owner_id, "Doomed".to_string())
+            .await
+            .expect("create group failed");
+        let group_id = ObjectId::parse_str(&group.id).unwrap();
+
+        seed_ticket(group_id, owner_id, "one").await;
+        seed_ticket(group_id, owner_id, "two").await;
+        assert_eq!(count_tickets(group_id).await, 2);
+        assert_eq!(count_counters(group_id).await, 1);
+
+        admin
+            .delete_group(caller_id, group_id)
+            .await
+            .expect("delete_group failed");
+
+        assert_eq!(count_tickets(group_id).await, 0, "tickets were orphaned");
+        assert_eq!(count_counters(group_id).await, 0, "counter was orphaned");
+    });
+}
+
+// 22. The sole-admin auto-deletion path inside delete_user cascades too — the
+// group is destroyed as a side effect there, so it needs the same cleanup.
+#[test]
+fn test_delete_user_auto_delete_cascades_tickets_and_counter() {
+    support::runtime().block_on(async {
+        let (db, admin, groups, users, _audit) = setup().await;
+        let caller_id = create_user(&users, "sysadmin").await;
+        make_system_admin(&db, caller_id).await;
+        let target_id = create_user(&users, "lone-admin").await;
+
+        let group = groups
+            .create_group(target_id, "SoloTeam".to_string())
+            .await
+            .expect("create group failed");
+        let group_id = ObjectId::parse_str(&group.id).unwrap();
+
+        seed_ticket(group_id, target_id, "solo ticket").await;
+        assert_eq!(count_tickets(group_id).await, 1);
+        assert_eq!(count_counters(group_id).await, 1);
+
+        admin
+            .delete_user(caller_id, target_id, HashMap::new())
+            .await
+            .expect("delete_user failed");
+
+        assert_eq!(count_tickets(group_id).await, 0, "tickets were orphaned");
+        assert_eq!(count_counters(group_id).await, 0, "counter was orphaned");
     });
 }

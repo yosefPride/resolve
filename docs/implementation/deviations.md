@@ -10,7 +10,25 @@ Legend:
 
 ---
 
-## 1. Deleting a group orphans its tickets and counter — **Bug**
+## 1. Deleting a group orphans its tickets and counter — **Fixed**
+
+Resolved by centralizing the cascade in `purge_group_data` (`group/service.rs`), which all
+three deletion paths now call: `GroupService::delete_group`,
+`AdminService::delete_group`, and the auto-delete loop in `AdminService::delete_user`.
+`TicketRepository::delete_by_group` removes the group's tickets and its `counters`
+document; the group document itself is deleted last, so a mid-failure leaves the cascade
+re-runnable rather than orphaning what it was meant to remove. Covered by
+`test_delete_group_cascades_tickets_and_counter`,
+`test_admin_delete_group_cascades_tickets_and_counter`, and
+`test_delete_user_auto_delete_cascades_tickets_and_counter`.
+
+When comments are built, their per-group cascade belongs in the same function (a marker
+comment there names the spot); deleting a *single* ticket is a separate cascade that
+belongs in `TicketService::delete_ticket`.
+
+Original report follows.
+
+
 
 **Spec** — `docs/specification/api.md`, `DELETE /groups/:id`: *"the group and all its data
 cease to exist."* `docs/specification/database.md`, `counters`: *"Deleted along with the
@@ -244,7 +262,7 @@ an earlier design; safe to remove.
 
 | # | Issue | Type | Severity |
 |---|---|---|---|
-| 1 | Group deletion orphans tickets + counters | Bug | **High** |
+| 1 | ~~Group deletion orphans tickets + counters~~ | Bug | **Fixed** |
 | 2 | Admin can delete own account; UI comment claims otherwise | Bug | **High** |
 | 3 | No way to create a System Admin | Gap | **High** |
 | 4 | Comments unimplemented | Gap | Medium |
