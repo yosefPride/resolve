@@ -6,6 +6,7 @@ import { formatDateTime } from '../../utils/format';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
+import CommentList from '../comments/CommentList';
 import EditTicketForm from './EditTicketForm';
 
 const PRIORITY_VARIANT = {
@@ -89,13 +90,18 @@ export default function TicketDetail({ ticket, groupId, isAdmin }) {
         </div>
       )}
 
-      {/* comments/ and ai/ are separate, not-yet-built features (docs/frontend.md
-          lists both as part of this page) — placeholders hold their layout slot. */}
-      <div className="flex flex-col gap-2 border-t border-white/10 pt-6">
+      <div className="flex flex-col gap-4 border-t border-white/10 pt-6">
         <h2 className="text-sm font-semibold text-slate-400">Comments</h2>
-        <p className="text-sm text-slate-500">Coming soon.</p>
+        <CommentList
+          groupId={groupId}
+          ticketId={ticket.id}
+          isAdmin={isAdmin}
+          isClosed={isClosed}
+        />
       </div>
 
+      {/* ai/ is a separate, not-yet-built feature (docs/frontend.md lists it as
+          part of this page) — the placeholder holds its layout slot. */}
       <div className="flex flex-col gap-2 border-t border-white/10 pt-6">
         <h2 className="text-sm font-semibold text-slate-400">AI</h2>
         <p className="text-sm text-slate-500">Coming soon.</p>
