@@ -136,7 +136,7 @@ completely untouched — no partial deletion.
 
 **Phase 3 — execute, sequentially.**
 - Per blocked group: look up the successor's name → `update_member_role(group, successor, GroupAdmin)` → `delete_member(group, target)` → `insert_audit_entry(action: Succession, successor_user_id: Some, successor_user_name: Some)`.
-- Per auto-delete group: `delete_members_by_group` → `delete_group` → `insert_audit_entry(action: GroupAutoDeleted, successor fields: None)`.
+- Per auto-delete group: `purge_group_data` (members → tickets + `counters` → comments → the group document) → `insert_audit_entry(action: GroupAutoDeleted, successor fields: None)`.
 - Per plain removal: `delete_member`.
 
 **Phase 4 — `user_service.delete(target_user_id)` last.**
@@ -163,15 +163,20 @@ Metadata only — no membership, no counts, consistent with group isolation.
 `require_system_admin` → `admin_repo.list_audit_log` → map to response. Newest-first.
 
 ### `async fn delete_group(&self, caller_id, group_id) -> Result<(), ApiError>`
-`require_system_admin` → `delete_members_by_group` → `delete_group` → `if !deleted { NotFound }`.
+`require_system_admin` → `purge_group_data(...)` → `if !deleted { NotFound }`.
 
 The comment explains why there's **no membership or succession check** here, unlike
 `delete_user`: deleting the whole group removes the "at least one Group Admin" invariant
 along with it, so there's no continuity to preserve. Group Admins deleting their own group
 use `GroupService::delete_group` instead; this is the System-Admin-as-non-member path.
 
-Also note: this is **not audit-logged** (only succession and auto-deletion are), and like the
-group-module counterpart it leaves the group's tickets and `counters` row behind.
+The cascade is the shared free function in `group/service.rs` (see
+[`04-groups.md`](./04-groups.md)) — members, tickets, the `counters` row, comments, then the
+group document last. `AdminService` holds a `ticket_repo` and a `comment_repo` **solely** to
+pass them in; admin has no other ticket or comment concern, and the struct's field comments
+say exactly that.
+
+Also note: this is **not audit-logged** — only succession and auto-deletion are.
 
 ### `async fn enrich_members(&self, members: Vec<GroupMember>) -> Result<Vec<MemberResponse>, ApiError>` (private)
 Same name/email join as `GroupService::enrich_member`, **duplicated rather than shared** —

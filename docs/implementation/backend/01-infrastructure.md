@@ -31,10 +31,12 @@ Note: `PUT` is absent from the allowed methods — the API only ever uses `PATCH
 
 ## `src/lib.rs` (11 lines)
 
-Re-exports a **subset** of the module tree as a library crate: `admin, auth, config, errors,
-group, rbac, server, state, ticket, user, utils`.
+Re-exports a **subset** of the module tree as a library crate: `admin, auth, comment, config,
+errors, group, rbac, server, state, ticket, user, utils`.
 
-Deliberately missing: `ai`, `comment` (both empty), and `db` (tests build their own client).
+Deliberately missing: `ai` (still empty) and `db` (tests build their own client). `comment`
+was added here when the module was implemented — the integration tests in
+`tests/comment_*.rs` import it as `resolve::comment::...`.
 This is the crate the integration tests in `backend/tests/` import as `resolve::...`.
 
 ---
@@ -101,8 +103,10 @@ index already exists, so this runs safely on every boot. Full list with rational
 | `tickets` | `group_id: 1, status: 1` | — | Serves `count_open_by_group` and status filtering. |
 | `tickets` | `group_id: 1, created_by: 1` | — | Serves the `creator` filter. |
 | `tickets` | `group_id: 1, ticket_number: 1` | unique | Belt-and-braces on the per-group sequence, on top of the atomic counter. |
+| `comments` | `group_id: 1, ticket_id: 1` | — | Serves `list_by_ticket` (every comment fetch is scoped to both ids) and both cascades — `delete_by_ticket` filters on both, `delete_by_group` uses the `group_id` prefix. |
+| `comments` | `parent_comment_id: 1` | — | Serves `has_replies`, the hard-vs-soft-delete check run on every comment deletion. |
 
-No indexes for `comments` or `ai_*` — those collections don't exist in code.
+No indexes for `ai_*` — those collections don't exist in code.
 
 ---
 
@@ -140,10 +144,14 @@ GET    /groups/{id}/tickets
 GET    /groups/{id}/tickets/{ticket_id}
 PATCH  /groups/{id}/tickets/{ticket_id}
 DELETE /groups/{id}/tickets/{ticket_id}
+POST   /groups/{id}/tickets/{ticket_id}/comments
+GET    /groups/{id}/tickets/{ticket_id}/comments
+DELETE /groups/{id}/tickets/{ticket_id}/comments/{comment_id}
 ```
-Note the ticket routes are registered here, calling into `ticket_handlers` — they're nested
-under the group scope rather than living in their own scope, which is what makes `{id}`
-available to the `GroupScoped` extractor.
+Note the ticket **and comment** routes are registered here, calling into `ticket_handlers`
+and `comment_handlers` — they're nested under the group scope rather than living in their
+own scopes, which is what makes `{id}` available to the `GroupScoped` extractor. Comments
+nest one level deeper still, under `{ticket_id}`.
 
 Route-ordering detail: `/{id}/users/lookup` is registered **before** `/{id}/users/{user_id}`,
 so `lookup` isn't swallowed as a `user_id`.
