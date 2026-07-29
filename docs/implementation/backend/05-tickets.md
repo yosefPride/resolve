@@ -1,6 +1,6 @@
 # Backend — Tickets
 
-Covers `src/ticket/`: `models.rs` (152), `repository.rs` (173), `service.rs` (280),
+Covers `src/ticket/`: `models.rs` (152), `repository.rs` (182), `service.rs` (291),
 `handlers.rs` (140).
 
 Tickets are the core business entity and the module with the most interesting query logic:

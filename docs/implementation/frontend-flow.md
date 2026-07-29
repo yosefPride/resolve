@@ -13,6 +13,7 @@ Detail files in [`frontend/`](./frontend/):
 | [`frontend/04-account.md`](./frontend/04-account.md) | `features/account/`, `pages/AccountPage.jsx` |
 | [`frontend/05-layout-and-ui.md`](./frontend/05-layout-and-ui.md) | `components/layout/`, `components/ui/`, `components/marketing/`, `utils/` |
 | [`frontend/06-libraries.md`](./frontend/06-libraries.md) | Every external dependency, frontend and backend |
+| [`frontend/07-tickets-and-comments.md`](./frontend/07-tickets-and-comments.md) | `features/tickets/`, `features/comments/`, `hooks/useTickets.js`, `hooks/useComments.js`, both ticket pages, `DashboardStats` |
 
 ---
 
@@ -90,14 +91,20 @@ away from JS, so leaving the access token in a JS-readable store would undo that
 
 Two coexisting patterns, and knowing which is which saves confusion:
 
-**React Query** — used for anything shared or cached: `['groups']` (sidebar + group stats),
-`['group', id]` / `['group', id, 'members']`, `['admin', 'users', search]`,
-`['admin', 'groups', search]`, `['admin', 'auditLog']`, `['admin', 'deletionCheck', userId]`.
-Mutations invalidate the relevant key rather than manually refetching.
+**React Query** — used for anything shared or cached: `['groups']` (sidebar, group stats, and
+the dashboard), `['group', id]` / `['group', id, 'members']`, `['tickets', groupId, filters]`,
+`['ticket', groupId, ticketId]`, `['comments', groupId, ticketId]`,
+`['admin', 'users', search]`, `['admin', 'groups', search]`, `['admin', 'auditLog']`,
+`['admin', 'deletionCheck', userId]`. Mutations invalidate the relevant key rather than
+manually refetching.
+
+Note `['groups']` carries `open_ticket_count`, so every ticket mutation invalidates it as
+well as its own keys — comment mutations deliberately don't, since a comment can't change
+that number.
 
 **Plain `useState` + `async` handlers** — used for one-shot forms with no shared state:
-login, register, profile, password change, create/rename team, and the delete/leave
-confirmations on the group page.
+login, register, profile, password change, create/rename team, create/edit issue, the comment
+composer, and the delete/leave confirmations.
 
 The dividing line is roughly "does anything else on screen need this data?"
 
@@ -184,7 +191,8 @@ remove/leave. Every mutation invalidates `['group', id, 'members']`.
 ### Read and post comments
 
 `TicketDetail` renders `<CommentList groupId ticketId isAdmin isClosed />`, which is the
-whole feature's entry point.
+whole feature's entry point. Full breakdown in
+[`frontend/07-tickets-and-comments.md`](./frontend/07-tickets-and-comments.md).
 
 The API returns the thread **flat and oldest-first**; `buildCommentTree` assembles it
 client-side in one pass — a `Map` of id → node, then each node is pushed onto its parent's
@@ -254,5 +262,7 @@ group roles are snake_case (`'group_admin'`), the global role is PascalCase
 5. `services/*.js` — the complete API surface the frontend actually uses.
 6. `features/auth/` — the simplest full feature (form → context → service).
 7. `hooks/useGroup.js` + `pages/GroupManagementPage.jsx` + `features/groups/` — the first real React Query usage.
-8. `features/admin/DeleteUserModal.jsx` — the most complex component in the app.
-9. `components/layout/Sidebar.jsx` — the largest file (321 lines), and mostly presentational.
+8. `hooks/useTickets.js` + `pages/TicketsPage.jsx` + `features/tickets/` — filters, pagination, and the `?group=` convention.
+9. `features/comments/CommentList.jsx` — the only tree-building component, and the one place client-side structure is derived rather than rendered straight.
+10. `features/admin/DeleteUserModal.jsx` — the most complex component in the app.
+11. `components/layout/Sidebar.jsx` — the largest file (321 lines), and mostly presentational.

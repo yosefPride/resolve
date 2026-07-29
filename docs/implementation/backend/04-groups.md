@@ -1,6 +1,6 @@
 # Backend — Groups & Membership
 
-Covers `src/group/`: `models.rs` (107), `repository.rs` (218), `service.rs` (277),
+Covers `src/group/`: `models.rs` (107), `repository.rs` (218), `service.rs` (310),
 `handlers.rs` (165).
 
 The group is the tenant boundary. This module owns group metadata, membership, and

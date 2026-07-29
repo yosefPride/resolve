@@ -29,7 +29,7 @@ Note: `PUT` is absent from the allowed methods — the API only ever uses `PATCH
 
 ---
 
-## `src/lib.rs` (11 lines)
+## `src/lib.rs` (12 lines)
 
 Re-exports a **subset** of the module tree as a library crate: `admin, auth, comment, config,
 errors, group, rbac, server, state, ticket, user, utils`.
@@ -74,7 +74,7 @@ connection pool — cloning it (which every `Repository::new` effectively does v
 
 ---
 
-## `src/db.rs` (132 lines)
+## `src/db.rs` (153 lines)
 
 ### `async fn connect(config: &Config) -> Result<Client, Error>`
 `Client::with_uri_str` does **not** open a connection (the driver connects lazily), so this
@@ -110,7 +110,7 @@ No indexes for `ai_*` — those collections don't exist in code.
 
 ---
 
-## `src/server/routes.rs` (75 lines)
+## `src/server/routes.rs` (88 lines)
 
 ### `fn configure(config: &mut web::ServiceConfig)`
 The single source of truth for the API surface. Everything is already inside
@@ -171,7 +171,7 @@ The last two live in a nested `web::scope("/users/{id}")`.
 
 ---
 
-## `src/errors/api_error.rs` (146 lines)
+## `src/errors/api_error.rs` (153 lines)
 
 The error vocabulary shared by every layer.
 

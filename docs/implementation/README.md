@@ -15,7 +15,7 @@ reconciliation.
 | **[`backend-flow.md`](./backend-flow.md)** | What exists, the four core flows, the module dependency map, feature walkthroughs, and a reading order |
 | **[`data-model.md`](./data-model.md)** | Collections, relationships and cardinality, referential integrity, isolation model, atomicity |
 | **[`frontend-flow.md`](./frontend-flow.md)** | What exists, session/token handling, data-fetching patterns, feature walkthroughs, reading order |
-| **[`deviations.md`](./deviations.md)** | 8 open mismatches between code and spec, ranked by severity |
+| **[`deviations.md`](./deviations.md)** | 9 open mismatches between code and spec, ranked by severity |
 
 ## Detail files
 
@@ -39,6 +39,7 @@ reconciliation.
 4. [`04-account.md`](./frontend/04-account.md) — profile and password forms
 5. [`05-layout-and-ui.md`](./frontend/05-layout-and-ui.md) — layouts, sidebar, UI primitives, utils, styling
 6. [`06-libraries.md`](./frontend/06-libraries.md) — every dependency, frontend and backend, and notable absences
+7. [`07-tickets-and-comments.md`](./frontend/07-tickets-and-comments.md) — the `?group=` convention, ticket list/detail, the comment tree, dashboard tiles
 
 ---
 

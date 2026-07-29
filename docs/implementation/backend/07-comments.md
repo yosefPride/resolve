@@ -184,7 +184,7 @@ bytes.
 Worth noting because it differs from `ticket/handlers.rs`, which caps `title.len()` — bytes.
 The comment in the file spells out why characters are the right unit: a script that encodes
 at 2 bytes per character (Hebrew, in the test) would otherwise be cut off at half the nominal
-limit. The ticket title cap still measures bytes; see `deviations.md` §7c.
+limit. The ticket title cap still measures bytes; see `deviations.md` §8c.
 
 ### Helpers
 - `fn parse_id(raw)` — same as the group and ticket modules'.

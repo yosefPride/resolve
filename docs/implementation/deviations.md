@@ -91,13 +91,40 @@ filter. No exceptions."* `database.md` repeats it as the "Multi-Tenancy Rule (CR
 - `admin_audit_log` — filters are optional; unfiltered returns everything
 
 The actual rule the code follows is narrower and correct: **tenant data** (`tickets`,
-`group_members`, `counters`) is always group-filtered; **non-tenant data** (users, sessions,
-group metadata, system audit) is not. The spec's absolute phrasing would flag correct code as
-a violation.
+`comments`, `group_members`, `counters`) is always group-filtered; **non-tenant data** (users,
+sessions, group metadata, system audit) is not. The spec's absolute phrasing would flag
+correct code as a violation.
+
+One documented exception inside tenant data: `CommentRepository::has_replies` filters on
+`parent_comment_id` alone, and is only ever reached through a comment already fetched with a
+group-filtered query.
 
 ---
 
-## 6. `GET /groups/:id/users/lookup` is Group-Admin-only, spec is ambiguous — **Doc drift**
+## 6. `database.md` documents the pre-threading `comments` shape — **Doc drift**
+
+**Spec** — `docs/specification/database.md`, `comments`: `_id, group_id, ticket_id, user_id,
+content, created_at`, plus two single-field indexes (`ticket_id`, `group_id`).
+
+**Code** — `comment::models::Comment` stores two fields the spec doesn't mention, and both
+are load-bearing:
+
+- `parent_comment_id: Option<ObjectId>` — self-referential, nullable, no depth limit. The entire threading feature hangs off it.
+- `is_deleted: bool` — marks a tombstone, which is what a comment becomes when it's deleted while it still has replies.
+
+The indexes differ too. `db::ensure_indexes` creates one **compound** `(group_id, ticket_id)`
+— serving both the per-ticket read and, through its `group_id` prefix, the group-deletion
+cascade — plus `parent_comment_id`, which serves `has_replies`. Neither single-field index
+the spec lists is created.
+
+`docs/specification/api.md` was brought in line when the feature was built; `database.md`
+wasn't. The code is the sound half here — the fix is to update the spec. See
+[`db/collections.md`](./db/collections.md) and [`db/indexes.md`](./db/indexes.md) for the
+actual shape.
+
+---
+
+## 7. `GET /groups/:id/users/lookup` is Group-Admin-only, spec is ambiguous — **Doc drift**
 
 **Spec** — `docs/specification/api.md` says "(Group Admin only)" in the prose, but places the
 endpoint outside the ticket/member sections where role requirements are listed structurally.
@@ -108,7 +135,7 @@ kind of thing that reads as a discrepancy on a quick scan.
 
 ---
 
-## 7. Small behavioral rough edges — **Bug (minor)**
+## 8. Small behavioral rough edges — **Bug (minor)**
 
 Found in code, not contradicted by any spec, but worth knowing:
 
@@ -150,7 +177,7 @@ panel).
 
 ---
 
-## 8. Unused dependency — **Doc drift (trivial)**
+## 9. Unused dependency — **Doc drift (trivial)**
 
 `backend/Cargo.toml` declares `uuid = { version = "1", features = ["v4", "serde"] }`.
 No `use uuid` anywhere in `src/`. Every identifier is a Mongo `ObjectId`. Leftover from
@@ -167,9 +194,10 @@ an earlier design; safe to remove.
 | 3 | AI unimplemented (declared "core") | Gap | Medium |
 | 4 | `GET /admin/analytics` missing | Gap | Low |
 | 5 | "every query needs group_id" is overstated | Doc drift | Low |
-| 6 | Lookup endpoint role requirement placement | Doc drift | Trivial |
-| 7 | Assorted rough edges (a–g) | Bug (minor) | Low |
-| 8 | Unused `uuid` dependency | Doc drift | Trivial |
+| 6 | `database.md` missing `parent_comment_id` / `is_deleted`; wrong comment indexes | Doc drift | Low |
+| 7 | Lookup endpoint role requirement placement | Doc drift | Trivial |
+| 8 | Assorted rough edges (a–g) | Bug (minor) | Low |
+| 9 | Unused `uuid` dependency | Doc drift | Trivial |
 
 **The pattern worth noting:** where the code exists, it is careful, well-commented, and
 consistent with the spec — the backend's session model, isolation, and succession logic all

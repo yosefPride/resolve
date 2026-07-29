@@ -1,6 +1,6 @@
 # Backend — System Admin
 
-Covers `src/admin/`: `models.rs` (121), `repository.rs` (80), `service.rs` (308),
+Covers `src/admin/`: `models.rs` (121), `repository.rs` (80), `service.rs` (327),
 `handlers.rs` (92).
 
 This is the hardest module. It implements the **one narrow exception** to group
@@ -211,7 +211,7 @@ what makes `?search=` (blank) behave identically to omitting the parameter.
 The admin module is the most heavily tested part of the backend — three tiers:
 
 - `tests/admin_api_tests.rs` (1073 lines) — end-to-end HTTP
-- `tests/admin_service_tests.rs` (702 lines) — service logic, especially plan classification
+- `tests/admin_service_tests.rs` (801 lines) — service logic, especially plan classification
 - `tests/admin_repository_tests.rs` (206 lines) — audit-log persistence and filtering
 
 Reasonable, given this is the one place where a bug crosses tenant boundaries or destroys data.
