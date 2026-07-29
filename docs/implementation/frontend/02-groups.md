@@ -115,9 +115,11 @@ Seeded with `currentName`. Computes `trimmed` and `unchanged`, and disables subm
 `onRenamed()` (no argument; the parent invalidates and refetches). `autoFocus` on the input,
 since it always opens inside a modal.
 
-## `features/groups/GroupStats.jsx` (38 lines)
+## `features/groups/GroupStats.jsx` (27 lines)
 
-Three stat tiles: Members, Open Issues, Last Activity.
+Three stat tiles: Members, Open Issues, Last Activity — rendered with the shared
+`components/ui/StatTile` primitive. That tile was defined privately in this file until
+`DashboardStats` needed the same one; it now lives in `components/ui/` and both import it.
 
 The clever bit — and its comment explains it — is that **open-issue count comes from
 `GET /groups`, not a per-group endpoint**:
@@ -133,6 +135,9 @@ it — no extra network request at all.
 `memberCount` is passed in as a prop from the page (which already has the array).
 "Last Activity" is hardcoded `'—'` with a comment noting there's no activity tracking in the
 schema. Icons come from `lucide-react` (`User`, `Ticket`, `Clock`).
+
+`DashboardStats` runs the same trick across every team at once — see
+[`07-tickets-and-comments.md`](./07-tickets-and-comments.md).
 
 ---
 

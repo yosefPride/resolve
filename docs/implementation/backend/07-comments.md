@@ -153,14 +153,17 @@ bottom-up hard-deletes every comment, while deleting top-down leaves a chain of 
 `ticket_repo.find_by_id(group_id, ticket_id).ok_or(NotFound)`. Called by **every** comment
 read and write.
 
-This exists because of a real cross-tenant bug found during live testing, not a hypothetical
-one. `GroupScoped` proves the caller is a member of `{id}` — it says **nothing** about which
-group `{ticket_id}` belongs to. Without this check a legitimate member of their own group
-could pass another group's ticket id in the path and have a comment recorded under their own
-`group_id` against a ticket that isn't in it. The two-mechanism isolation model described in
-`backend-flow.md` §Flow D assumes the repository filter covers the resource id — here the
-resource id being filtered (`comment.group_id`) was the caller's own, so the filter proved
-nothing, and this check is what closes it.
+**This is the module's tenant boundary**, and it carries more weight here than the equivalent
+does anywhere else. `GroupScoped` proves the caller is a member of `{id}` — it says
+**nothing** about which group `{ticket_id}` belongs to. Without this check a legitimate
+member of their own group could pass another group's ticket id in the path and have a comment
+recorded under their own `group_id` against a ticket that isn't in it.
+
+The two-mechanism isolation model in `backend-flow.md` §Flow D assumes the repository filter
+covers the resource id. For tickets it does — `find_by_id(group_id, ticket_id)` constrains
+the very id that could be foreign. For comments it doesn't: the filtered `comment.group_id`
+is written from the caller's own scope, so it proves nothing about the ticket. That's the gap
+this check fills, and it's why the integration suite keeps a permanent test for it.
 
 Returning the `Ticket` (rather than `()`) is why `create_comment` gets its status check for
 free instead of querying twice.
@@ -178,10 +181,10 @@ yields `""` rather than an error. Mirrors `TicketService::enrich_ticket` and
 `MAX_CONTENT_LEN: usize = 2000`. Enforced on **`content.chars().count()`** — characters, not
 bytes.
 
-This is worth noting because it differs from `ticket/handlers.rs`, which caps
-`title.len()` (bytes). The comment in the file is explicit that the byte version is a bug of
-the same class: a 2-byte-per-character script (Hebrew, in the test) would be cut off at half
-the nominal limit. Comments got the fixed version; the ticket title cap did not.
+Worth noting because it differs from `ticket/handlers.rs`, which caps `title.len()` — bytes.
+The comment in the file spells out why characters are the right unit: a script that encodes
+at 2 bytes per character (Hebrew, in the test) would otherwise be cut off at half the nominal
+limit. The ticket title cap still measures bytes; see `deviations.md` §8c.
 
 ### Helpers
 - `fn parse_id(raw)` — same as the group and ticket modules'.
