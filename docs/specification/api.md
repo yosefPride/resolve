@@ -341,15 +341,91 @@ Group Admin only
 
 # Comment Endpoints
 
+Comment paths are nested under both the group and the ticket they belong to:
+`{id}` is the group id, `{ticket_id}` the ticket. Membership in `{id}` is
+required for every one of these (`GroupScoped`), and `{ticket_id}` must
+actually belong to `{id}` — a mismatched group/ticket pair returns 404, the
+same way `GET /groups/{id}/tickets/{ticket_id}` does. Membership in the
+caller's own group is not enough to reach another group's ticket through it.
+
+Comments are threaded: a comment may carry a `parent_comment_id` pointing at
+another comment on the same ticket, at any depth (a reply to a reply is fine).
+A comment with no parent is top-level on the ticket.
+
 ## POST /groups/{id}/tickets/{ticket_id}/comments
 
-Add comment (all roles)
+Add a comment (any group member — no role split on creating one).
+
+Request:
+
+- content (required, 1–2000 characters)
+- parent_comment_id (optional) — the comment being replied to, which must be a
+  comment on this same ticket; omit for a top-level comment
+
+Server-assigned, not accepted from the client: the author (the caller),
+`is_deleted` (false), and `created_at`.
+
+Response `201`: the created comment (shape below).
+
+Rejected `400` if `content` is blank or longer than 2000 characters (counted in
+characters, not bytes, so non-Latin content isn't wrongly rejected), or if
+`parent_comment_id` is not a comment on this ticket. `409` if the ticket's
+status is `closed`.
 
 ---
 
 ## GET /groups/{id}/tickets/{ticket_id}/comments
 
-Get comments (group-scoped)
+Get the ticket's comments (any group member).
+
+Returns the whole thread in one flat response, oldest-first — no pagination and
+no server-side nesting; the reply tree is built client-side from each comment's
+`parent_comment_id`. Readable regardless of the ticket's status. Tombstoned
+comments (see delete below) are included, so their surviving replies still have
+a parent to render against.
+
+Response `200`, per comment:
+
+- id
+- group_id
+- ticket_id
+- parent_comment_id (null for a top-level comment)
+- user_id, user_name — the author
+- content
+- is_deleted
+- created_at
+
+---
+
+## DELETE /groups/{id}/tickets/{ticket_id}/comments/{comment_id}
+
+Delete a comment — its author, or a Group Admin of `{id}`, only. Allowed even
+when the ticket is closed.
+
+Response `204`, no body. `403` if the caller is neither the author nor a Group
+Admin; `404` if the comment is not on that ticket in that group.
+
+What deletion does depends on whether the comment has replies:
+
+- has replies → tombstoned rather than removed: `content` becomes
+  `[comment deleted]` and `is_deleted` becomes true, so its replies keep a
+  valid parent to point at. It still appears in the list response.
+- no replies → removed outright
+
+Comments are also removed when their ticket is deleted, and when their group is
+deleted.
+
+---
+
+### Comment Rules:
+
+- Any group member may comment on any ticket in their group
+- Only the author or a Group Admin may delete a comment
+- Threading is unlimited-depth; a parent must be a comment on the same ticket
+- Comments cannot be edited — only added and deleted
+- A closed ticket accepts no new comments (409), but its existing thread stays
+  fully readable and its comments stay deletable; reopening the ticket allows
+  new comments again
 
 ---
 
@@ -523,11 +599,12 @@ All errors return:
 
 - 200 OK
 - 201 Created
+- 204 No Content
 - 400 Bad Request
 - 401 Unauthorized
 - 403 Forbidden
 - 404 Not Found
-- 409 Conflict (duplicate email, duplicate group member, sole-Group-Admin succession conflicts)
+- 409 Conflict (duplicate email, duplicate group member, sole-Group-Admin succession conflicts, commenting on a closed ticket)
 - 500 Internal Server Error
 
 ---

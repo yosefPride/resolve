@@ -108,6 +108,18 @@ Where two path segments exist (`/groups/{id}/users/{user_id}`, `/groups/{id}/tic
 the handler additionally takes `web::Path<(String, String)>` and **discards the first
 element** in favor of `scoped.group_id` — you'll see `let (_, ticket_id) = path.into_inner();`
 repeatedly. Same value, but taking it from the extractor keeps a single source of truth.
+Comment routes go one level deeper (`web::Path<(String, String, String)>`) and follow the
+same rule.
+
+**What `GroupScoped` does *not* do:** it proves the caller belongs to `{id}`, and nothing
+more. It never checks that the *other* ids in the path belong to that group. For tickets
+that's covered for free, because `TicketRepository::find_by_id(group_id, ticket_id)` filters
+on both. For comments it wasn't: `comments.group_id` is written from `scoped.group_id`, so
+filtering on it proves nothing about where `{ticket_id}` lives, and a member of one group
+could comment on another group's ticket. `CommentService::require_ticket_in_group` is the
+explicit check that closes it, and it runs on every comment read and write. Worth
+remembering as the general rule: the repository filter only protects an id it actually
+constrains.
 
 Used on: every `/groups/{id}/...` route.
 
@@ -173,10 +185,11 @@ A missing user maps to the same `Forbidden` as a non-admin, for the probe-resist
 already-resolved membership (so the caller does one `require_member` and reuses it) plus the
 resource's creator id. Passes if `member.role == GroupAdmin || member.user_id == resource_owner_id`.
 
-Important: **nothing currently calls this.** The comment describes it as the ticket/comment
-rule, but `TicketService` uses `require_group_admin` for update/delete (Group Admin only,
-regardless of creator), and the comment module is empty. It is written and ready for
-comments, and unused today. See [`../deviations.md`](../deviations.md).
+**`CommentService::delete_comment` is its only caller** — and the only place in the whole
+backend where authorship grants a permission. `TicketService` deliberately does *not* use it:
+ticket update/delete are `require_group_admin`, Group Admin only, regardless of who created
+the ticket. So the split is: your own comment is yours to delete, your own ticket is not
+yours to edit.
 
 ---
 
@@ -201,6 +214,9 @@ comments, and unused today. See [`../deviations.md`](../deviations.md).
 | `GET /groups/{id}/tickets/{ticket_id}` | `GroupScoped` | `require_member` |
 | `PATCH /groups/{id}/tickets/{ticket_id}` | `GroupScoped` | `require_group_admin` |
 | `DELETE /groups/{id}/tickets/{ticket_id}` | `GroupScoped` | `require_group_admin` |
+| `POST /groups/{id}/tickets/{ticket_id}/comments` | `GroupScoped` | `require_member` (+ ticket-in-group check, + `409` if the ticket is closed) |
+| `GET /groups/{id}/tickets/{ticket_id}/comments` | `GroupScoped` | `require_member` (+ ticket-in-group check) |
+| `DELETE /groups/{id}/tickets/{ticket_id}/comments/{comment_id}` | `GroupScoped` | `require_member`, then `require_owner_or_group_admin` |
 | all `/admin/*` | `SystemAdminUser` | `require_system_admin` |
 
 The one asymmetric row is `DELETE /groups/{id}/users/{user_id}`: a single endpoint serves

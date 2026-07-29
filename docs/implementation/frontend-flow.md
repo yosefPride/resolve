@@ -18,7 +18,10 @@ Detail files in [`frontend/`](./frontend/):
 
 ## 0. What actually exists
 
-The frontend is **behind the backend**. Tickets are fully built server-side and have no UI at all.
+The frontend is **behind the backend**. Tickets and comments are both fully built
+server-side and have no UI at all — including the threaded comment API, whose flat
+`parent_comment_id` list is deliberately shaped to be assembled into a reply tree by a
+client that doesn't exist yet.
 
 **Built:** landing page, register/login, session bootstrap + silent refresh, dashboard
 (a stub), account page (profile + password), team management (members, roles, rename,
