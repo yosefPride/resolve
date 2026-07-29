@@ -122,6 +122,14 @@ so the service decides which fields are in play.
 ### `async fn delete_ticket(&self, group_id, ticket_id) -> Result<bool, _>`
 `delete_one` on `{_id, group_id}`.
 
+### `async fn delete_by_group(&self, group_id) -> Result<u64, _>`
+Cascade target for group deletion: `delete_many({group_id})` on `tickets`, plus a single
+`delete_one({_id: group_id})` on `counters` — the counter's `_id` **is** the group id (see
+`next_ticket_number`), so the sequence document goes with it rather than being left behind
+to hand a recreated group's first ticket a stale number.
+
+Called only by `purge_group_data` (`group/service.rs`).
+
 ### `async fn count_open_by_group(&self, group_id) -> Result<u64, _>`
 `count_documents({group_id, status: "open"})`. Matches the **string literal** rather than
 round-tripping the enum — the comment notes status is stored as its snake_case
@@ -136,7 +144,8 @@ reaches across for.
 - `DEFAULT_PER_PAGE: u64 = 20`
 - `MAX_PER_PAGE: u64 = 100`
 
-### `struct TicketService { repo, user_service, rbac }`
+### `struct TicketService { repo, comment_repo, user_service, rbac }`
+The `comment_repo` exists for one reason: `delete_ticket` cascades the ticket's comments.
 
 ### `async fn create_ticket(&self, user_id, group_id, input) -> Result<TicketResponse, ApiError>`
 `require_member` (any member may create) → `next_ticket_number` → `insert_ticket` with
@@ -173,7 +182,14 @@ body, so that path isn't reachable.
 `update_ticket` → `ok_or(NotFound)` → `enrich_ticket`.
 
 ### `async fn delete_ticket(&self, user_id, group_id, ticket_id) -> Result<(), ApiError>`
-`require_group_admin` → `delete_ticket` → `if !deleted { NotFound }`.
+`require_group_admin` → `find_by_id` → `ok_or(NotFound)` → `comment_repo.delete_by_ticket`
+→ `repo.delete_ticket`.
+
+Note the **explicit existence check before the cascade**. It would be shorter to infer
+existence from `delete_ticket`'s boolean (as this method used to), but the comment cascade
+has to run first, and a bogus ticket id must still `404` before any write happens. Child
+before parent, same ordering as `purge_group_data`, so a mid-failure leaves the ticket still
+resolvable and the call re-runnable.
 
 ### `async fn enrich_ticket(&self, ticket: Ticket) -> Result<TicketResponse, ApiError>` (private)
 One `user_service.find_by_id(ticket.created_by)` to attach `created_by_name`. A deleted

@@ -1,6 +1,7 @@
 use chrono::DateTime;
 use mongodb::{Database, bson::oid::ObjectId};
 
+use crate::comment::repository::CommentRepository;
 use crate::errors::ApiError;
 use crate::group::models::{
     CreateGroupInput, GroupMember, GroupResponse, GroupSummaryResponse, MemberResponse, Role,
@@ -11,9 +12,41 @@ use crate::rbac::service::RbacService;
 use crate::ticket::repository::TicketRepository;
 use crate::user::service::UserService;
 
+// The one place that knows what "a group's data" consists of. Every path that
+// destroys a group goes through here — GroupService::delete_group (Group Admin
+// deleting their own), AdminService::delete_group (System Admin deleting any),
+// and AdminService::delete_user (sole-admin auto-deletion). Each of those keeps
+// its own authorization check; only the cascade is shared, so a newly added
+// per-group collection is wired in once here instead of three times.
+//
+// Deletion order is child-to-parent: the group document goes last, so a failure
+// partway through leaves the group still resolvable and the cascade re-runnable
+// rather than orphaning what it was supposed to remove. Sequential writes, not
+// a transaction — the same choice made in create_group and admin user-deletion.
+//
+// comment_repo.delete_by_group unconditionally hard-deletes every comment
+// (tombstones included) for the group — comments carry their own group_id, so
+// no per-ticket fan-out is needed, and there's nothing left for a reply to stay
+// valid against once the whole group is gone. Deleting a *single* ticket is a
+// separate, smaller concern and does NOT belong here — that cascade lives in
+// TicketService::delete_ticket via CommentRepository::delete_by_ticket, or it
+// would take the whole group down with one ticket.
+pub async fn purge_group_data(
+    repo: &GroupRepository,
+    ticket_repo: &TicketRepository,
+    comment_repo: &CommentRepository,
+    group_id: ObjectId,
+) -> Result<bool, ApiError> {
+    repo.delete_members_by_group(group_id).await?;
+    ticket_repo.delete_by_group(group_id).await?;
+    comment_repo.delete_by_group(group_id).await?;
+    Ok(repo.delete_group(group_id).await?)
+}
+
 pub struct GroupService {
     repo: GroupRepository,
     ticket_repo: TicketRepository,
+    comment_repo: CommentRepository,
     user_service: UserService,
     rbac: RbacService,
 }
@@ -23,6 +56,7 @@ impl GroupService {
         Self {
             repo: GroupRepository::new(db),
             ticket_repo: TicketRepository::new(db),
+            comment_repo: CommentRepository::new(db),
             user_service: UserService::new(db),
             rbac: RbacService::new(db),
         }
@@ -114,8 +148,7 @@ impl GroupService {
         group_id: ObjectId,
     ) -> Result<(), ApiError> {
         self.rbac.require_group_admin(group_id, user_id).await?;
-        self.repo.delete_members_by_group(group_id).await?;
-        self.repo.delete_group(group_id).await?;
+        purge_group_data(&self.repo, &self.ticket_repo, &self.comment_repo, group_id).await?;
         Ok(())
     }
 

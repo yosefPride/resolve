@@ -4,6 +4,7 @@ use mongodb::{
     bson::{self, DateTime as BsonDateTime, Document, oid::ObjectId},
 };
 
+use crate::comment::repository::CommentRepository;
 use crate::errors::ApiError;
 use crate::rbac::service::RbacService;
 use crate::ticket::models::{
@@ -19,6 +20,7 @@ const MAX_PER_PAGE: u64 = 100;
 
 pub struct TicketService {
     repo: TicketRepository,
+    comment_repo: CommentRepository,
     user_service: UserService,
     rbac: RbacService,
 }
@@ -27,6 +29,7 @@ impl TicketService {
     pub fn new(db: &Database) -> Self {
         Self {
             repo: TicketRepository::new(db),
+            comment_repo: CommentRepository::new(db),
             user_service: UserService::new(db),
             rbac: RbacService::new(db),
         }
@@ -157,10 +160,18 @@ impl TicketService {
         ticket_id: ObjectId,
     ) -> Result<(), ApiError> {
         self.rbac.require_group_admin(group_id, user_id).await?;
-        let deleted = self.repo.delete_ticket(group_id, ticket_id).await?;
-        if !deleted {
-            return Err(ApiError::NotFound);
-        }
+        // Existence check first (so a bogus ticket_id 404s before any write),
+        // then the comment cascade, then the ticket document last — same
+        // child-before-parent ordering as purge_group_data, so a mid-failure
+        // leaves the ticket still resolvable and this call re-runnable.
+        self.repo
+            .find_by_id(group_id, ticket_id)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+        self.comment_repo
+            .delete_by_ticket(group_id, ticket_id)
+            .await?;
+        self.repo.delete_ticket(group_id, ticket_id).await?;
         Ok(())
     }
 

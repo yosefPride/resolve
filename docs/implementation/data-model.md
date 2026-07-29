@@ -22,7 +22,7 @@ fails the query. Indexes are created at boot by `db::ensure_indexes()`.
 
 ## Collections that actually exist
 
-Seven, of which **five are written by application code**:
+Eight, of which **six are written by application code**:
 
 | Collection | Rust type | Written by | Purpose |
 |---|---|---|---|
@@ -32,11 +32,12 @@ Seven, of which **five are written by application code**:
 | `group_members` | `group::models::GroupMember` | `GroupRepository` | Membership + group role (the RBAC table) |
 | `tickets` | `ticket::models::Ticket` | `TicketRepository` | Core business entity |
 | `counters` | `ticket::models::TicketCounter` | `TicketRepository` | Per-group ticket-number sequence |
+| `comments` | `comment::models::Comment` | `CommentRepository` | Threaded ticket discussion |
 | `admin_audit_log` | `admin::models::AuditLogEntry` | `AdminRepository` | Succession / auto-deletion trail |
 
-**Do not exist in code:** `comments`, `ai_ticket_insights`, `ai_group_reports`. They are
-specified in `docs/specification/database.md`, but the `comment/` and `ai/` Rust modules are
-empty files — nothing creates, reads, or indexes them.
+**Do not exist in code:** `ai_ticket_insights`, `ai_group_reports`. They are specified in
+`docs/specification/database.md`, but the `ai/` Rust module is still empty files — nothing
+creates, reads, or indexes them.
 
 ---
 
@@ -75,6 +76,19 @@ empty files — nothing creates, reads, or indexes them.
                                       │ _id==group_id│
                                       │ ticket_seq   │
                                       └──────────────┘
+
+           tickets ──1──▶ N──┐
+                             ▼            ┌──── self-reference (any depth)
+                    ┌──────────────────┐  │
+                    │     comments     │◀─┘
+                    │  _id             │
+                    │  group_id  ──────┼──▶ groups   (denormalized, not via ticket)
+                    │  ticket_id ──────┼──▶ tickets
+                    │  parent_comment_id?  (null = top-level)
+                    │  user_id   ──────┼──▶ users
+                    │  content         │
+                    │  is_deleted      │
+                    └──────────────────┘
 ```
 
 ### Relationship table
@@ -90,9 +104,18 @@ empty files — nothing creates, reads, or indexes them.
 | `groups` | `counters` | **1-to-1** | `counters._id == group_id` |
 | `groups` | `admin_audit_log` | **1-to-many** | `admin_audit_log.group_id` |
 | `users` | `admin_audit_log` | **1-to-many**, three separate ways | `deleted_user_id`, `performed_by`, `successor_user_id` |
+| `tickets` | `comments` | **1-to-many** | `comments.ticket_id` |
+| `groups` | `comments` | **1-to-many** | `comments.group_id` — denormalized, *not* resolved through the ticket |
+| `users` | `comments` | **1-to-many** (as author) | `comments.user_id` |
+| `comments` | `comments` | **1-to-many, self-referential** | `comments.parent_comment_id`, nullable, **no depth limit** |
 
-**Not implemented** (would exist if comments/AI were built): `tickets → comments` (1-to-many),
-`tickets → ai_ticket_insights`, `groups → ai_group_reports`.
+**Not implemented** (would exist if AI were built): `tickets → ai_ticket_insights`,
+`groups → ai_group_reports`.
+
+`comments` is the schema's only self-reference, and the only place a child row duplicates its
+grandparent's id (`group_id`) rather than joining up through its parent. That duplication is
+deliberate: it keeps every comment query group-filterable on its own, and makes the
+group-deletion cascade a single `delete_many({group_id})` instead of a fan-out over tickets.
 
 ---
 
@@ -120,7 +143,10 @@ except where noted. What that means in practice:
 |---|---|
 | User deleted while they created tickets | Tickets keep the dangling `created_by`. `TicketService::enrich_ticket` renders `created_by_name` as `""`. |
 | User deleted while a member of groups | Handled — `AdminService::delete_user` removes every membership first. |
-| Group deleted | Memberships are removed; **its tickets and its `counters` row are left orphaned.** See [`deviations.md`](./deviations.md). |
+| User deleted while they authored comments | Comments keep the dangling `user_id`. `CommentService::enrich_comment` renders `user_name` as `""`. |
+| Group deleted | Handled — `purge_group_data` cascades memberships, tickets, the `counters` row, and comments, deleting the group document last. |
+| Ticket deleted | Handled — `TicketService::delete_ticket` cascades the ticket's comments first, then the ticket. |
+| Comment deleted while it has replies | Handled by **tombstoning** instead of deleting: the row survives with `is_deleted: true` so its replies' `parent_comment_id` still resolves. A leaf comment is hard-deleted. |
 | Membership added for a nonexistent `user_id` | Possible via a hand-crafted `POST /groups/{id}/users`; `enrich_member` renders empty name/email. |
 | Audit log references deleted entities | Handled by design — names are snapshotted at write time (`group_name`, `deleted_user_name`, ...) precisely because the ids won't resolve later. |
 
@@ -135,12 +161,22 @@ Everywhere else, joins are done at read time by a second query (`enrich_member`,
 Two tiers of data:
 
 **Tenant data — must always be queried with `group_id`:**
-`tickets`, `group_members`, `counters` (whose `_id` *is* the group id).
+`tickets`, `comments`, `group_members`, `counters` (whose `_id` *is* the group id).
 
 Every query in `TicketRepository` includes `group_id` in its filter document, including
 single-document reads: `find_by_id(group_id, ticket_id)` filters on both `_id` and
 `group_id`. That's what makes a ticket id from another group unresolvable rather than
-merely unauthorized.
+merely unauthorized. `CommentRepository` does the same one level deeper —
+`find_by_id(group_id, ticket_id, comment_id)` filters on all three.
+
+**One documented exception:** `CommentRepository::has_replies` filters on
+`parent_comment_id` alone. It's only ever called on a comment already fetched through a
+group-filtered `find_by_id`, so the boundary has been established before it runs.
+
+The comment module also shows the limit of the filter-shape mechanism. Filtering
+`comments.group_id` proves nothing when `group_id` is the *caller's own* — it's the
+`ticket_id` in the path that could belong elsewhere. `CommentService::require_ticket_in_group`
+is the explicit check that covers it, and it exists because a live test found the gap.
 
 **Non-tenant data — legitimately queried without `group_id`:**
 `users` (by `_id`/`email`, or listed system-wide by admin), `refresh_tokens` (by
@@ -169,6 +205,7 @@ the real rule is the tenant/non-tenant split above.
 
 1. `GroupService::create_group` — insert group, then insert the creator's membership. A failure between them leaves a group with no members.
 2. `AdminService::delete_user` — many writes across groups, ordered so the user document is deleted **last**, making a retry after partial failure safe and convergent.
+3. The two cascades — `purge_group_data` and `TicketService::delete_ticket` — use the same ordering trick: children first, the parent document last, so a mid-failure leaves the parent still resolvable and the cascade re-runnable.
 
 Where atomicity actually matters, it's pushed into single-document operations:
 

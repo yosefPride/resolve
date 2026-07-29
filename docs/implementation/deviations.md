@@ -7,10 +7,32 @@ Legend:
 - **Bug** — the code is wrong or does something harmful.
 - **Gap** — specified, simply not built yet.
 - **Doc drift** — the code is fine; the spec describes something else.
+- **Fixed** — resolved since this document was written; the entry is kept for the history.
+
+Three of the twelve (#1, #4, #9) are now fixed. The numbering is stable, so entries are
+never renumbered or removed.
 
 ---
 
-## 1. Deleting a group orphans its tickets and counter — **Bug**
+## 1. Deleting a group orphans its tickets and counter — **Fixed**
+
+Resolved by centralizing the cascade in `purge_group_data` (`group/service.rs`), which all
+three deletion paths now call: `GroupService::delete_group`,
+`AdminService::delete_group`, and the auto-delete loop in `AdminService::delete_user`.
+`TicketRepository::delete_by_group` removes the group's tickets and its `counters`
+document; the group document itself is deleted last, so a mid-failure leaves the cascade
+re-runnable rather than orphaning what it was meant to remove. Covered by
+`test_delete_group_cascades_tickets_and_counter`,
+`test_admin_delete_group_cascades_tickets_and_counter`, and
+`test_delete_user_auto_delete_cascades_tickets_and_counter`.
+
+Comments were built immediately after, and their per-group cascade
+(`CommentRepository::delete_by_group`) went into the same function. The separate
+single-ticket cascade lives in `TicketService::delete_ticket` via `delete_by_ticket`.
+
+Original report follows.
+
+
 
 **Spec** — `docs/specification/api.md`, `DELETE /groups/:id`: *"the group and all its data
 cease to exist."* `docs/specification/database.md`, `counters`: *"Deleted along with the
@@ -78,20 +100,29 @@ explaining the project — it's a bootstrap gap, not an oversight in the admin m
 
 ---
 
-## 4. Comments are entirely unimplemented — **Gap**
+## 4. Comments are entirely unimplemented — **Fixed (backend); frontend still open**
 
-**Spec** — `docs/specification/api.md` defines `POST` and `GET
-/groups/{id}/tickets/{ticket_id}/comments`; `database.md` defines the `comments` collection
-and its indexes; `CLAUDE.md` lists comments as build step 5 of 7.
+The backend is built: `comment/` is a full module (models, repository, service, handlers),
+three routes are registered, the collection carries two indexes, and both cascades (ticket
+deletion, group deletion) are wired in. See
+[`backend/07-comments.md`](./backend/07-comments.md). `RbacService::require_owner_or_group_admin`
+now has its intended caller (see #9).
 
-**Code** — all five files in `backend/src/comment/` are **0 bytes**. `main.rs` declares
-`mod comment;` (which compiles, since an empty module is valid), `lib.rs` doesn't export it,
-no routes are registered, the collection is never created or indexed. Frontend
-`features/comments/CommentForm.jsx` and `CommentList.jsx` and `hooks/useComments.js` are also
-empty.
+The implementation went **beyond** the spec in three ways, all of which have since been
+written back into `docs/specification/api.md`:
 
-Related: `RbacService::require_owner_or_group_admin` — described in `docs/specification/rbac.md`
-as "the comment rule" — is fully written and **called by nothing**. It's waiting for this feature.
+- **Threading.** The spec's `comments` shape has no parent field; the code adds `parent_comment_id`, self-referential with no depth limit.
+- **Deletion.** The spec defines no delete endpoint at all. The code has one (author or Group Admin), plus `is_deleted` and a tombstone rule for comments that have replies — neither field is in the spec's schema.
+- **The closed-ticket lock.** Not specified anywhere; a closed ticket rejects new comments with `409` while staying readable.
+
+`docs/specification/database.md` still lists the pre-threading `comments` shape
+(`_id, group_id, ticket_id, user_id, content, created_at`) and two single-key indexes. The
+code stores `parent_comment_id` and `is_deleted` as well, and creates one compound
+`(group_id, ticket_id)` index plus a `parent_comment_id` index. **That schema doc has not
+been updated** — see `db/collections.md` and `db/indexes.md` for what actually exists.
+
+**Still open:** the frontend. `features/comments/CommentForm.jsx`, `CommentList.jsx`, and
+`hooks/useComments.js` remain empty files — there is no comment UI, which is part of #6.
 
 ---
 
@@ -118,16 +149,23 @@ overstates what exists.
 belongs to, and selecting one loads that group's tickets"*, plus a Ticket Detail page with
 comments and an AI panel.
 
-**Code** — backend tickets are **fully implemented** (CRUD, search, filters, pagination), but
-the frontend has nothing:
+**Code** — backend tickets **and comments** are now fully implemented, but the frontend has
+nothing for either:
 
 ```
 pages/TicketsPage.jsx           0 bytes
 pages/TicketDetailPage.jsx      0 bytes
 features/tickets/*  (5 files)   0 bytes
+features/comments/* (2 files)   0 bytes
 hooks/useTickets.js             0 bytes
+hooks/useComments.js            0 bytes
 services/tickets.service.js     0 bytes
+services/comments.service.js    0 bytes
 ```
+
+The gap widened with the comments backend: the Ticket Detail page the spec describes now has
+a complete API behind it (including the reply tree, which the client is expected to assemble
+from the flat `parent_comment_id` list) and still no page to render it.
 
 **The bug on top of the gap:** both `components/layout/Header.jsx` and
 `components/layout/Sidebar.jsx` include a nav link to `/tickets`, but `App.jsx` registers no
@@ -166,16 +204,14 @@ a violation.
 
 ---
 
-## 9. `require_owner_or_group_admin` is documented as active but is dead code — **Doc drift**
+## 9. `require_owner_or_group_admin` is documented as active but is dead code — **Fixed**
 
-**Spec** — `docs/specification/rbac.md` lists it among the service-level helpers that
-"always run".
+**Was** — written, called by nothing. Tickets deliberately use `require_group_admin`
+instead, and the only other intended consumer — comments — didn't exist.
 
-**Code** — written, tested by nothing, called by nothing. Tickets deliberately use
-`require_group_admin` instead (which `rbac.md` does state correctly further down), and the
-only other intended consumer — comments — doesn't exist.
-
-Harmless, but "both layers always run" doesn't apply to this particular helper today.
+**Now** — `CommentService::delete_comment` calls it, which is exactly the "comment rule"
+`docs/specification/rbac.md` describes. It remains the **only** caller: authorship grants a
+permission nowhere else in the system, and tickets still give their creator nothing.
 
 ---
 
@@ -244,15 +280,15 @@ an earlier design; safe to remove.
 
 | # | Issue | Type | Severity |
 |---|---|---|---|
-| 1 | Group deletion orphans tickets + counters | Bug | **High** |
+| 1 | ~~Group deletion orphans tickets + counters~~ | Bug | **Fixed** |
 | 2 | Admin can delete own account; UI comment claims otherwise | Bug | **High** |
 | 3 | No way to create a System Admin | Gap | **High** |
-| 4 | Comments unimplemented | Gap | Medium |
+| 4 | ~~Comments unimplemented~~ (backend done; no UI, see #6) | Gap | **Fixed** |
 | 5 | AI unimplemented (declared "core") | Gap | Medium |
 | 6 | No ticket UI; `/tickets` nav link 404s | Gap + Bug | Medium |
 | 7 | `GET /admin/analytics` missing | Gap | Low |
 | 8 | "every query needs group_id" is overstated | Doc drift | Low |
-| 9 | `require_owner_or_group_admin` is dead code | Doc drift | Low |
+| 9 | ~~`require_owner_or_group_admin` is dead code~~ | Doc drift | **Fixed** |
 | 10 | Lookup endpoint role requirement placement | Doc drift | Trivial |
 | 11 | Assorted rough edges (a–g) | Bug (minor) | Low |
 | 12 | Unused `uuid` dependency | Doc drift | Trivial |

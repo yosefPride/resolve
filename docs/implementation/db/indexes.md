@@ -4,7 +4,7 @@ All indexes are created by `db::ensure_indexes()` in `backend/src/db.rs`, called
 startup from `main()`. `createIndex` is idempotent in MongoDB, so this runs safely on every
 boot and there is no migration step.
 
-**Eleven indexes across five collections** (plus the implicit `_id` index Mongo creates for
+**Thirteen indexes across six collections** (plus the implicit `_id` index Mongo creates for
 every collection).
 
 ---
@@ -24,6 +24,8 @@ every collection).
 | 9 | `tickets` | `group_id: 1, status: 1` | — | Status filter; `count_open_by_group` |
 | 10 | `tickets` | `group_id: 1, created_by: 1` | — | `creator` filter |
 | 11 | `tickets` | `group_id: 1, ticket_number: 1` | **unique** | Guards the per-group sequence |
+| 12 | `comments` | `group_id: 1, ticket_id: 1` | — | `list_by_ticket`; `delete_by_ticket` (both keys); `delete_by_group` (`group_id` prefix) |
+| 13 | `comments` | `parent_comment_id: 1` | — | `has_replies` — the hard-vs-soft-delete check |
 
 ---
 
@@ -31,7 +33,7 @@ every collection).
 
 ### Unique indexes doing double duty
 
-Four of the eleven are `unique`, and in three cases uniqueness isn't just a constraint —
+Four of the thirteen are `unique`, and in three cases uniqueness isn't just a constraint —
 it's the **concurrency-control mechanism**. Rather than "check whether it exists, then
 insert" (racy), the repository inserts optimistically and translates Mongo error code
 `11000` into a domain error:
@@ -126,6 +128,11 @@ None of these are bugs at the current scale, and each has a clear fix (a text in
 
 ## Indexes specified but not created
 
-`docs/specification/database.md` lists indexes for `comments` (`ticket_id`, `group_id`) and
-`ai_ticket_insights` (`ticket_id`, `group_id`). Neither collection exists in code, so neither
-index is created.
+`docs/specification/database.md` lists indexes for `ai_ticket_insights` (`ticket_id`,
+`group_id`). That collection doesn't exist in code, so neither index is created.
+
+The spec also lists `comments` (`ticket_id`, `group_id`) as two separate single-key indexes.
+The code creates **one compound** `(group_id, ticket_id)` instead, which serves both the
+per-ticket read and the per-group cascade (via its prefix) with one index — plus a
+`parent_comment_id` index the spec doesn't mention, since the spec's `comments` shape has no
+threading field.

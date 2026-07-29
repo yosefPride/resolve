@@ -1,4 +1,4 @@
-import logo from '../../assets/logo.png';
+import logo from '../../assets/brand-logo.svg';
 import Badge from '../ui/Badge';
 
 const FOOTER_LINKS = [];

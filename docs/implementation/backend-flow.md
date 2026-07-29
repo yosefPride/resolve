@@ -14,6 +14,7 @@ Detailed per-file breakdowns live in [`backend/`](./backend/):
 | [`backend/04-groups.md`](./backend/04-groups.md) | `group/` |
 | [`backend/05-tickets.md`](./backend/05-tickets.md) | `ticket/` |
 | [`backend/06-admin.md`](./backend/06-admin.md) | `admin/` |
+| [`backend/07-comments.md`](./backend/07-comments.md) | `comment/`, and the two cascades it added |
 
 ---
 
@@ -23,18 +24,17 @@ Read this first — it saves you from explaining features that aren't there.
 
 **Built and working:** auth (register/login/refresh/logout/profile/password), users,
 groups + membership + roles, RBAC enforcement, tickets (full CRUD + search + filters +
-pagination), system-admin panel (user list, group list, user deletion with succession,
-audit log).
+pagination), comments (threaded, owner-or-admin delete, cascades), system-admin panel (user
+list, group list, user deletion with succession, audit log).
 
-**Scaffolded but empty (0 bytes):** `src/comment/*.rs` and `src/ai/*.rs` — every file in
-those two modules is an empty file. `main.rs` declares `mod comment;` and `mod ai;`, and
-`routes.rs` registers `web::scope("/ai")` with **no routes inside it**. So comments and
-AI are declared in the module tree and reachable in the docs, but there is zero
-implementation. The Gemini integration that `CLAUDE.md` calls "the core system feature"
-does not exist in code.
+**Scaffolded but empty (0 bytes):** `src/ai/*.rs` — every file in that module is an empty
+file. `main.rs` declares `mod ai;` and `routes.rs` registers `web::scope("/ai")` with **no
+routes inside it**. So AI is declared in the module tree and described in the specification
+docs, but there is zero implementation. The Gemini integration that `CLAUDE.md` calls "the
+core system feature" does not exist in code.
 
-This matches the build order in `CLAUDE.md`: steps 1–5 done except comments, step 6
-(frontend) partial, step 7 (AI) not started.
+This matches the build order in `CLAUDE.md`: steps 1–5 done, step 6 (frontend) partial —
+comments are backend-only so far, with no UI — and step 7 (AI) not started.
 
 ---
 
@@ -99,34 +99,44 @@ These are separate mechanisms: #1 stops the wrong *person*, #2 stops the wrong *
 Arrows mean "calls into". Nothing here is circular.
 
 ```
-                      config.rs ── db.rs ── state.rs (AppState { db, config })
-                                                │
-                              server/routes.rs ─┴─ server/middleware.rs
-                                    │                     │
-        ┌───────────┬───────────────┼──────────┐          │
-        │           │               │          │          │
-   auth/handlers group/handlers ticket/handlers admin/handlers
-        │           │               │          │          │
-   auth/service  group/service  ticket/service admin/service
-        │           │  │  │          │  │  │      │  │  │
-        │           │  │  └──────────┼──┼──┼──────┘  │  │
-        │           │  │             │  │  │         │  │
-        │           │  └── ticket/repository         │  │
-        │           │                   │            │  │
-        │           └───────────────────┴────────────┘  │
-        │                    group/repository            │
-        │                          ▲                     │
-        │                          │                     │
-        └── user/service ──────────┴──── rbac/service ────┘
-                 │                              │
-           user/repository              admin/repository
-                                        (audit log only)
+              config.rs ── db.rs ── state.rs (AppState { db, config })
+                                       │
+                     server/routes.rs ─┴─ server/middleware.rs
+                             │
+   ┌──────────┬──────────────┼───────────────┬────────────────┐
+   │          │              │               │                │
+auth/       group/        ticket/        comment/          admin/
+handlers    handlers      handlers       handlers          handlers
+   │          │              │               │                │
+auth/       group/        ticket/        comment/          admin/
+service     service       service        service           service
+   │          │              │               │                │
+   │          └── group/repository ◀─────────┼────────────────┘
+   │          └── ticket/repository ◀─────────┤   (admin/service reaches
+   │          └── comment/repository ◀────────┤    group + ticket + comment
+   │                     ▲       ▲            │    repositories directly)
+   │                     │       └────────────┘
+   │       ticket/service ┘  (comment cascade)
+   │
+   └── user/service ──── rbac/service ──── admin/repository
+            │                 │             (audit log only)
+      user/repository   (owns group/repository + user/service)
 ```
+
+Read the cross-links as: every feature service owns an `RbacService`, and a handful of
+services reach into *another* feature's repository — always for a cascade or a count, listed
+below.
 
 Things worth knowing about this graph:
 
 - **`rbac/service.rs` is the shared hub.** It owns `GroupRepository` + `UserService` and answers only one kind of question: "what is this user's relationship to this group / to the system?" Every feature service holds an `RbacService`.
-- **`group/service.rs` depends on `ticket/repository.rs`** — the only cross-feature dependency in the whole backend. It exists solely so `GET /groups` can report `open_ticket_count` per group.
+- **The cross-feature edges all point at cascades or counts**, and they're the only place the strict per-feature layering bends:
+  - `group/service.rs` → `ticket/repository.rs` (for `open_ticket_count`, and for the group cascade)
+  - `group/service.rs` → `comment/repository.rs` (group cascade)
+  - `ticket/service.rs` → `comment/repository.rs` (ticket cascade)
+  - `comment/service.rs` → `ticket/repository.rs` (verifying the path's ticket belongs to the path's group)
+  - `admin/service.rs` → both repositories, held **only** to pass into `purge_group_data`
+- **`purge_group_data` is a free function in `group/service.rs`**, not a method — that's what lets all three group-deleting paths (group service, admin group delete, admin sole-admin auto-delete) share one cascade instead of three copies.
 - **`admin/service.rs` bypasses `GroupService`** and talks to `GroupRepository` directly. Deliberate: the admin succession flow must do things `GroupService` forbids (reassigning roles it doesn't own), so it can't route through the group business rules.
 - **`errors/api_error.rs` depends on every repository's error enum** via `From` impls. That's what makes `?` work uniformly across all layers.
 - **Services are constructed per-request**, e.g. `GroupService::new(&state.db)` inside the handler. They're cheap (just `Collection` handles, which are themselves cheap clones over the shared connection pool). There's no DI container.
@@ -135,9 +145,12 @@ Things worth knowing about this graph:
 
 The crate builds twice. `main.rs` is the binary and declares `mod ai; mod comment; mod db;`
 plus the rest. `lib.rs` is the library used by the integration tests in `backend/tests/`,
-and exports a **subset**: `admin, auth, config, errors, group, rbac, server, state, ticket,
-user, utils` — no `ai`, no `comment`, no `db`. Tests build their own Mongo client via
+and exports a **subset**: `admin, auth, comment, config, errors, group, rbac, server, state,
+ticket, user, utils` — no `ai`, no `db`. Tests build their own Mongo client via
 `tests/support/mod.rs` instead of using `db::connect`.
+
+`comment` joined that export list when the module was implemented; `ai` is still excluded
+because it's still empty.
 
 ---
 
@@ -195,6 +208,45 @@ Split between Mongo and the process:
 Note the cost model: the whole filtered set is pulled into memory before paging. Fine at
 current scale, but it's the one place the backend doesn't push work down to the database.
 
+### Post a comment (and the isolation bug it exposed)
+
+`POST /groups/{id}/tickets/{ticket_id}/comments` → `GroupScoped` (must be a member) →
+`validate_create` (content non-blank, ≤ 2000 **characters**) → `CommentService::create_comment`:
+1. `require_member` again (defense in depth).
+2. **`require_ticket_in_group`** — `TicketRepository::find_by_id(group_id, ticket_id)`, else `404`.
+3. If the ticket's status is `closed` → `409`. New comments only; reading and deleting existing ones is unaffected.
+4. If replying, the parent must be a comment on **this same ticket** (looked up with both ids in the filter), else `400`.
+5. Insert, then one `users` lookup to attach `user_name`.
+
+Step 2 is the interesting one. It exists because `GroupScoped` proves only that the caller
+belongs to `{id}` — it says nothing about which group `{ticket_id}` belongs to. Filtering
+`comments.group_id` doesn't help either, because that value is the caller's *own* group. So
+a member of one group could attach a comment to another group's ticket, which live testing
+found. This is the exception that sharpens Flow D's two-mechanism rule: the repository
+filter only closes the gap when the id being filtered is the one that could be foreign.
+
+### Delete a comment (tombstone vs. hard delete)
+
+`DELETE .../comments/{comment_id}` → `require_member` → fetch (filtered on group + ticket +
+id) → `require_owner_or_group_admin` (**the one place authorship grants a permission** —
+tickets deliberately give their creator nothing) → then `has_replies` decides:
+
+- **has replies** → tombstone: keep the row, set `is_deleted: true`, overwrite `content` with `"[comment deleted]"`. Its replies keep a parent that resolves.
+- **no replies** → hard delete.
+
+Deleting a thread bottom-up therefore removes it entirely; top-down leaves a chain of
+tombstones. `GET .../comments` returns tombstones like any other comment.
+
+### Cascading deletes
+
+Two cascades, both added with comments, both ordered child-before-parent so a mid-failure
+leaves the parent resolvable and the whole thing re-runnable:
+
+- **Delete a ticket** — `TicketService::delete_ticket`: `require_group_admin` → existence check (so a bogus id `404`s before any write) → `CommentRepository::delete_by_ticket` → delete the ticket.
+- **Delete a group** — `purge_group_data`, a free function in `group/service.rs`: memberships → tickets + the `counters` row → comments → the group document. All three group-destroying paths call it (`GroupService::delete_group`, `AdminService::delete_group`, and the auto-delete loop in `AdminService::delete_user`), so the definition of "a group's data" lives in exactly one place.
+
+Neither uses a transaction, consistent with everything else here.
+
 ### Delete a user as System Admin (the most complex flow)
 
 Two endpoints, one plan-and-commit shape:
@@ -229,4 +281,5 @@ If you're studying this to explain it, read in this order — each file only dep
 7. `user/` then `auth/` — the simplest full vertical slice (handler → service → repo).
 8. `group/` — the first module with real business rules (sole-admin guard).
 9. `ticket/` — the first module with real query complexity (search, filters, paging, counters).
-10. `admin/` — the hardest, and it assumes you know groups already.
+10. `comment/` — small, and best read straight after `ticket/`: it's the same layering one level deeper, plus the self-referential entity and both cascades.
+11. `admin/` — the hardest, and it assumes you know groups already.
