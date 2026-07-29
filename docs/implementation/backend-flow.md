@@ -208,7 +208,7 @@ Split between Mongo and the process:
 Note the cost model: the whole filtered set is pulled into memory before paging. Fine at
 current scale, but it's the one place the backend doesn't push work down to the database.
 
-### Post a comment (and the isolation bug it exposed)
+### Post a comment (and the extra isolation check it needs)
 
 `POST /groups/{id}/tickets/{ticket_id}/comments` → `GroupScoped` (must be a member) →
 `validate_create` (content non-blank, ≤ 2000 **characters**) → `CommentService::create_comment`:
@@ -218,12 +218,15 @@ current scale, but it's the one place the backend doesn't push work down to the 
 4. If replying, the parent must be a comment on **this same ticket** (looked up with both ids in the filter), else `400`.
 5. Insert, then one `users` lookup to attach `user_name`.
 
-Step 2 is the interesting one. It exists because `GroupScoped` proves only that the caller
-belongs to `{id}` — it says nothing about which group `{ticket_id}` belongs to. Filtering
-`comments.group_id` doesn't help either, because that value is the caller's *own* group. So
-a member of one group could attach a comment to another group's ticket, which live testing
-found. This is the exception that sharpens Flow D's two-mechanism rule: the repository
-filter only closes the gap when the id being filtered is the one that could be foreign.
+Step 2 is the interesting one, and it's why comments carry a check tickets don't need.
+`GroupScoped` proves only that the caller belongs to `{id}` — it says nothing about which
+group `{ticket_id}` belongs to. Filtering `comments.group_id` proves nothing either, since
+that value is written from the caller's own scope. Without step 2, a member of one group
+could attach a comment to another group's ticket.
+
+This is the case that sharpens Flow D's two-mechanism rule: the repository filter closes the
+gap only when the id being filtered is the one that could be foreign. For tickets it is
+(`find_by_id(group_id, ticket_id)`); for comments it isn't, so the check is explicit.
 
 ### Delete a comment (tombstone vs. hard delete)
 

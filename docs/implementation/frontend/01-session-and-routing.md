@@ -181,7 +181,7 @@ clear message.
 
 ---
 
-## `App.jsx` (53 lines)
+## `App.jsx` (57 lines)
 
 The full route table. Two **layout routes** (parent routes with an `element` and no `path`,
 rendering an `<Outlet />`):
@@ -196,25 +196,28 @@ rendering an `<Outlet />`):
   </Route>
 
   <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
-    <Route path='/dashboard'  element={<DashboardPage />} />
-    <Route path='/account'    element={<AccountPage />} />
-    <Route path='/groups/:id' element={<GroupManagementPage />} />
-    <Route path='/admin'      element={<AdminRoute><AdminPage /></AdminRoute>} />
+    <Route path='/dashboard'         element={<DashboardPage />} />
+    <Route path='/tickets'           element={<TicketsPage />} />
+    <Route path='/tickets/:ticketId' element={<TicketDetailPage />} />
+    <Route path='/account'           element={<AccountPage />} />
+    <Route path='/groups/:id'        element={<GroupManagementPage />} />
+    <Route path='/admin'             element={<AdminRoute><AdminPage /></AdminRoute>} />
   </Route>
 </Routes>
 ```
 
 Three decisions, all explained in the file's comment:
 
-1. **The auth gate wraps the layout, not each page.** One `ProtectedRoute` covers all four authenticated routes.
+1. **The auth gate wraps the layout, not each page.** One `ProtectedRoute` covers all six authenticated routes.
 2. **`AppLayout` is one instance across all authenticated routes**, so the sidebar never remounts when navigating between them — preserving its collapsed/expanded state and its `['groups']` query.
 3. **The `*` catch-all sits in the marketing group**, so an unmatched path gets marketing chrome and renders whether or not you're signed in.
 
 `AdminRoute` stays on the `/admin` leaf because it's an *extra* role check layered on top of
 the auth gate.
 
-**Missing:** no `/tickets` route, despite `Header.jsx` and `Sidebar.jsx` both linking to it.
-Clicking "Issues" hits the catch-all. See [`../deviations.md`](../deviations.md).
+`/tickets/:ticketId` is the only parameterised route besides `/groups/:id`, and it is a
+**sibling** of `/tickets`, not a child — the detail page re-fetches rather than reading
+anything from the list page, so the two share no state.
 
 ---
 

@@ -15,7 +15,7 @@ reconciliation.
 | **[`backend-flow.md`](./backend-flow.md)** | What exists, the four core flows, the module dependency map, feature walkthroughs, and a reading order |
 | **[`data-model.md`](./data-model.md)** | Collections, relationships and cardinality, referential integrity, isolation model, atomicity |
 | **[`frontend-flow.md`](./frontend-flow.md)** | What exists, session/token handling, data-fetching patterns, feature walkthroughs, reading order |
-| **[`deviations.md`](./deviations.md)** | 12 mismatches between code and spec, ranked by severity (3 now fixed) |
+| **[`deviations.md`](./deviations.md)** | 8 open mismatches between code and spec, ranked by severity |
 
 ## Detail files
 
@@ -63,5 +63,6 @@ single-use refresh token in an httpOnly `SameSite=Strict` cookie, stored server-
 a SHA-256 hash. All revocation lives at the refresh layer.
 
 **Build status.** Auth, groups, RBAC, tickets, comments, and admin are complete on the
-backend. **AI is empty files** — scaffolded, never written. The frontend has no ticket or
-comment UI at all, and its "Issues" nav link 404s.
+backend, and all of them now have a frontend. **AI is the one unbuilt feature** — empty files
+on both sides, scaffolded and never written, with a "Coming soon." placeholder holding its
+slot on the Ticket Detail page.

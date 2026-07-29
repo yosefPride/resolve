@@ -167,7 +167,9 @@ Two scoping notes:
 - `ticket_repo.delete_by_group` removes the group's tickets **and** its `counters` document (the counter's `_id` *is* the `group_id`).
 - `comment_repo.delete_by_group` filters on `group_id` alone — comments carry their own `group_id`, so no per-ticket fan-out is needed. Deleting a *single* ticket is a separate, smaller cascade that lives in `TicketService::delete_ticket`; putting it here would take the whole group down with one ticket.
 
-This function is what closed deviation #1 (group deletion orphaning tickets and counters).
+Centralizing the cascade here is what keeps a deleted group from orphaning its tickets and
+counter — each of the three paths previously removed only the memberships and the group
+document.
 
 ### `async fn list_members(&self, user_id, group_id) -> Result<Vec<MemberResponse>, ApiError>`
 `require_member` → `list_members` → `enrich_member` per row.

@@ -168,8 +168,6 @@ render the thread its replies hang off.
 `user_id` is a dangling reference after that user is deleted; `enrich_comment` renders
 `user_name` as `""` rather than failing, same as `enrich_ticket`.
 
-Never deleted — a group's counter survives the group. See [`../deviations.md`](../deviations.md).
-
 ---
 
 ## `admin_audit_log`

@@ -90,9 +90,11 @@ Contains a deliberately **inert Notifications row** — `aria-disabled="true"`,
 `cursor-not-allowed`, muted colors, and a "soon" badge. The comment: no notifications backend
 yet, so the row reads as planned rather than broken.
 
-`NAV_LINKS` = Dashboard (`/dashboard`) and Issues (`/tickets`). **`/tickets` has no route** —
-its comment says "the route stays /tickets to match the backend", but `App.jsx` never
-registers it, so it 404s. See [`../deviations.md`](../deviations.md).
+`NAV_LINKS` = Dashboard (`/dashboard`) and Issues (`/tickets`). The comment explains the
+label/route split — the route stays `/tickets` to match the backend while the visible label
+says "Issues", per the tickets→Issues convention in
+[`../frontend-flow.md`](../frontend-flow.md) §4. `App.jsx` registers both `/tickets` and
+`/tickets/:ticketId`.
 
 ---
 
@@ -105,7 +107,7 @@ The marketing header. Sticky, `backdrop-blur`, `z-50`.
 - Authenticated → desktop nav + `<UserMenu />` + a mobile hamburger. Unauthenticated → "Log in" / "Sign up" buttons.
 - Mobile nav is a separate stacked block below the bar, toggled by `isMobileNavOpen`.
 
-Uses the same `NAV_LINKS` (Dashboard, Issues → `/tickets`), so the broken link appears in both chromes.
+Uses the same `NAV_LINKS` (Dashboard, Issues → `/tickets`), so both chromes stay in sync.
 
 ## `components/layout/UserMenu.jsx` (67 lines)
 
