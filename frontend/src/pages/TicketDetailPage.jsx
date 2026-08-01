@@ -60,14 +60,18 @@ export default function TicketDetailPage() {
   const myRole = members.find((member) => member.user_id === user.id)?.role;
 
   // TicketDetail owns the whole layout from here (top bar, cards, right rail).
+  // The outer frame matches the mockup: all page content sits in one bordered,
+  // rounded panel on the page background.
   return (
-    <section className="mx-auto max-w-6xl px-4 py-20 sm:px-6 lg:px-8">
-      <TicketDetail
-        ticket={ticket}
-        teamName={group?.name}
-        groupId={groupId}
-        isAdmin={isGroupAdmin(myRole)}
-      />
+    <section className="flex grow flex-col p-4 sm:p-6">
+      <div className="grow rounded-2xl border border-white/10 bg-white/2 p-6 sm:p-8">
+        <TicketDetail
+          ticket={ticket}
+          teamName={group?.name}
+          groupId={groupId}
+          isAdmin={isGroupAdmin(myRole)}
+        />
+      </div>
     </section>
   );
 }

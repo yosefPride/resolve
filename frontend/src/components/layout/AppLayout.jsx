@@ -51,7 +51,9 @@ export default function AppLayout() {
           </Link>
         </header>
 
-        <main className="grow">
+        {/* flex-col so a page can stretch to full height with `grow`; pages
+            that don't opt in lay out exactly as before. */}
+        <main className="flex grow flex-col">
           <Outlet />
         </main>
       </div>
