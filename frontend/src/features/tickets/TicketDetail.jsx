@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { FileText, MessageSquare } from 'lucide-react';
 import { useDeleteTicket, useUpdateTicket } from '../../hooks/useTickets';
+import { useComments } from '../../hooks/useComments';
 import { errorMessage } from '../../utils/errors';
 import { formatDateTime, formatRelativeTime } from '../../utils/format';
 import Badge from '../../components/ui/Badge';
@@ -9,6 +11,25 @@ import Modal from '../../components/ui/Modal';
 import CommentList from '../comments/CommentList';
 import EditTicketForm from './EditTicketForm';
 import { PRIORITY_VARIANT, STATUS_VARIANT, capitalize } from './badgeVariants';
+
+function TabButton({ isActive, onClick, icon: Icon, children }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={isActive}
+      onClick={onClick}
+      className={`-mb-px inline-flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium transition-colors ${
+        isActive
+          ? 'border-sky-400 text-white'
+          : 'border-transparent text-slate-400 hover:text-slate-200'
+      }`}
+    >
+      <Icon className="h-4 w-4" />
+      {children}
+    </button>
+  );
+}
 
 function initials(name) {
   return name
@@ -23,9 +44,17 @@ function initials(name) {
 // rejects a non-Group-Admin PATCH/DELETE regardless (docs/rbac.md).
 export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
   const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState('details');
   const [isEditing, setIsEditing] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+
+  // Same query CommentList runs — React Query dedupes, so the tab count costs
+  // no extra request. Tombstones stay in the thread but don't count.
+  const { data: comments } = useComments(groupId, ticket.id);
+  const commentCount = comments
+    ? comments.filter((comment) => !comment.is_deleted).length
+    : null;
 
   const toggleStatusMutation = useUpdateTicket(groupId, ticket.id);
   const deleteMutation = useDeleteTicket(groupId);
@@ -109,13 +138,35 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
       </div>
 
       <div className="rounded-xl border border-white/10 bg-white/5 p-6">
-        <h2 className="text-sm font-semibold text-slate-400">Description</h2>
-        <p className="mt-3 whitespace-pre-wrap text-sm text-slate-200">{ticket.description}</p>
-      </div>
+        {/* The Links tab joins this row once ticket relations exist. */}
+        <div role="tablist" className="flex gap-6 border-b border-white/10">
+          <TabButton
+            icon={FileText}
+            isActive={activeTab === 'details'}
+            onClick={() => setActiveTab('details')}
+          >
+            Details
+          </TabButton>
+          <TabButton
+            icon={MessageSquare}
+            isActive={activeTab === 'comments'}
+            onClick={() => setActiveTab('comments')}
+          >
+            Comments
+            {commentCount !== null && (
+              <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-xs text-slate-300">
+                {commentCount}
+              </span>
+            )}
+          </TabButton>
+        </div>
 
-      <div className="rounded-xl border border-white/10 bg-white/5 p-6">
-        <h2 className="text-sm font-semibold text-slate-400">Comments</h2>
-        <div className="mt-4">
+        {/* Inactive panel is hidden, not unmounted — a half-written comment or
+            open reply box survives a switch to Details and back. */}
+        <div className={activeTab === 'details' ? 'mt-4' : 'hidden'}>
+          <p className="whitespace-pre-wrap text-sm text-slate-200">{ticket.description}</p>
+        </div>
+        <div className={activeTab === 'comments' ? 'mt-4' : 'hidden'}>
           <CommentList
             groupId={groupId}
             ticketId={ticket.id}
