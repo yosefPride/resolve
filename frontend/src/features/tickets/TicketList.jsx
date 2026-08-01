@@ -4,9 +4,9 @@ import { useGroup } from '../../hooks/useGroup';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import TicketFilters from './TicketFilters';
 import TicketCard from './TicketCard';
-import Button from '../../components/ui/Button';
+import Pagination from '../../components/ui/Pagination';
 
-const PER_PAGE = 20;
+const PER_PAGE = 10;
 
 export default function TicketList({ groupId }) {
   const [search, setSearch] = useState('');
@@ -68,31 +68,9 @@ export default function TicketList({ groupId }) {
         </div>
       )}
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm text-slate-400">
-          <span>
-            Page {page} of {totalPages}
-          </span>
-          <div className="flex gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
-      )}
+      <div className="flex justify-center">
+        <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+      </div>
     </div>
   );
 }
