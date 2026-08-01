@@ -1,6 +1,15 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { FileText, MessageSquare } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  Check,
+  ChevronDown,
+  FileText,
+  MessageSquare,
+  MoreVertical,
+  Pencil,
+  Users,
+} from 'lucide-react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useDeleteTicket, useUpdateTicket } from '../../hooks/useTickets';
 import { useComments } from '../../hooks/useComments';
 import { errorMessage } from '../../utils/errors';
@@ -11,6 +20,46 @@ import Modal from '../../components/ui/Modal';
 import CommentList from '../comments/CommentList';
 import EditTicketForm from './EditTicketForm';
 import { PRIORITY_VARIANT, STATUS_VARIANT, capitalize } from './badgeVariants';
+
+const STATUS_OPTIONS = ['open', 'closed'];
+const PRIORITY_OPTIONS = ['low', 'high', 'critical'];
+
+// The field-row badge as a value picker: the badge itself is the trigger, the
+// menu lists the enum values with a check on the current one. Selecting the
+// current value is a no-op rather than a wasted PATCH.
+function BadgeDropdown({ ariaLabel, value, variant, options, disabled, onSelect }) {
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger
+        disabled={disabled}
+        aria-label={ariaLabel}
+        className="group inline-flex items-center gap-1 rounded-full outline-none focus-visible:ring-1 focus-visible:ring-white disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <Badge variant={variant}>{capitalize(value)}</Badge>
+        <ChevronDown className="h-3.5 w-3.5 text-slate-500 transition-colors group-hover:text-slate-300" />
+      </DropdownMenu.Trigger>
+
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="start"
+          sideOffset={6}
+          className="z-50 w-36 rounded-lg border border-white/10 bg-neutral-950 py-1 shadow-2xl shadow-black/50"
+        >
+          {options.map((option) => (
+            <DropdownMenu.Item
+              key={option}
+              onSelect={() => option !== value && onSelect(option)}
+              className="flex cursor-pointer items-center justify-between px-4 py-2 text-sm text-slate-300 outline-none transition-colors data-highlighted:bg-white/10"
+            >
+              {capitalize(option)}
+              {option === value && <Check className="h-4 w-4 text-sky-400" />}
+            </DropdownMenu.Item>
+          ))}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
 
 function TabButton({ isActive, onClick, icon: Icon, children }) {
   return (
@@ -56,14 +105,10 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
     ? comments.filter((comment) => !comment.is_deleted).length
     : null;
 
-  const toggleStatusMutation = useUpdateTicket(groupId, ticket.id);
+  const updateMutation = useUpdateTicket(groupId, ticket.id);
   const deleteMutation = useDeleteTicket(groupId);
 
   const isClosed = ticket.status === 'closed';
-
-  function handleToggleStatus() {
-    toggleStatusMutation.mutate({ status: isClosed ? 'open' : 'closed' });
-  }
 
   async function handleDelete() {
     setDeleteError('');
@@ -78,13 +123,49 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
   return (
     <div className="flex flex-col gap-6">
       <div className="rounded-xl border border-white/10 bg-white/5 p-6">
-        <p className="text-sm text-slate-500">
-          <span className="font-medium">#{ticket.ticket_number}</span>
-          <span aria-hidden> · </span>
-          <span title={formatDateTime(ticket.created_at)}>
-            Created {formatRelativeTime(ticket.created_at)}
-          </span>
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <p className="text-sm text-slate-500">
+            <span className="font-medium">#{ticket.ticket_number}</span>
+            <span aria-hidden> · </span>
+            <span title={formatDateTime(ticket.created_at)}>
+              Created {formatRelativeTime(ticket.created_at)}
+            </span>
+          </p>
+          {isAdmin && (
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 border border-white/10"
+                onClick={() => setIsEditing(true)}
+              >
+                <Pencil className="h-3.5 w-3.5" /> Edit Issue
+              </Button>
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger
+                  aria-label="Issue actions"
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content
+                    align="end"
+                    sideOffset={8}
+                    className="z-50 w-40 rounded-lg border border-white/10 bg-neutral-950 py-1 shadow-2xl shadow-black/50"
+                  >
+                    <DropdownMenu.Item
+                      onSelect={() => setIsConfirmingDelete(true)}
+                      className="cursor-pointer px-4 py-2 text-sm text-red-400 outline-none transition-colors data-highlighted:bg-white/10"
+                    >
+                      Delete issue
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
+            </div>
+          )}
+        </div>
         <h1 className="mt-2 text-2xl font-bold text-white">{ticket.title}</h1>
         {/* Preview only — the full description has its own section below. */}
         <p className="mt-2 line-clamp-2 text-sm text-slate-400">{ticket.description}</p>
@@ -93,13 +174,35 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
           <div>
             <dt className="text-xs font-medium text-slate-500">Status</dt>
             <dd className="mt-1.5">
-              <Badge variant={STATUS_VARIANT[ticket.status]}>{capitalize(ticket.status)}</Badge>
+              {isAdmin ? (
+                <BadgeDropdown
+                  ariaLabel="Change status"
+                  value={ticket.status}
+                  variant={STATUS_VARIANT[ticket.status]}
+                  options={STATUS_OPTIONS}
+                  disabled={updateMutation.isPending}
+                  onSelect={(status) => updateMutation.mutate({ status })}
+                />
+              ) : (
+                <Badge variant={STATUS_VARIANT[ticket.status]}>{capitalize(ticket.status)}</Badge>
+              )}
             </dd>
           </div>
           <div>
             <dt className="text-xs font-medium text-slate-500">Priority</dt>
             <dd className="mt-1.5">
-              <Badge variant={PRIORITY_VARIANT[ticket.priority]}>{capitalize(ticket.priority)}</Badge>
+              {isAdmin ? (
+                <BadgeDropdown
+                  ariaLabel="Change priority"
+                  value={ticket.priority}
+                  variant={PRIORITY_VARIANT[ticket.priority]}
+                  options={PRIORITY_OPTIONS}
+                  disabled={updateMutation.isPending}
+                  onSelect={(priority) => updateMutation.mutate({ priority })}
+                />
+              ) : (
+                <Badge variant={PRIORITY_VARIANT[ticket.priority]}>{capitalize(ticket.priority)}</Badge>
+              )}
             </dd>
           </div>
           <div>
@@ -113,27 +216,23 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
           </div>
           <div>
             <dt className="text-xs font-medium text-slate-500">Team</dt>
-            <dd className="mt-1.5 text-sm text-slate-200">{teamName || '—'}</dd>
+            <dd className="mt-1.5 flex items-center gap-2 text-sm text-slate-200">
+              <Users className="h-4 w-4 text-slate-400" />
+              {teamName ? (
+                <Link to={`/groups/${groupId}`} className="hover:text-white hover:underline">
+                  {teamName}
+                </Link>
+              ) : (
+                '—'
+              )}
+            </dd>
           </div>
         </dl>
 
-        {isAdmin && (
-          <div className="mt-6 flex flex-wrap gap-2 border-t border-white/10 pt-4">
-            <Button
-              variant="ghost"
-              className="border border-white/10"
-              disabled={toggleStatusMutation.isPending}
-              onClick={handleToggleStatus}
-            >
-              {isClosed ? 'Reopen issue' : 'Close issue'}
-            </Button>
-            <Button variant="ghost" className="border border-white/10" onClick={() => setIsEditing(true)}>
-              Edit
-            </Button>
-            <Button variant="dangerOutline" onClick={() => setIsConfirmingDelete(true)}>
-              Delete
-            </Button>
-          </div>
+        {updateMutation.isError && (
+          <p className="mt-4 text-sm text-red-500">
+            {errorMessage(updateMutation.error, 'Failed to update issue.')}
+          </p>
         )}
       </div>
 
