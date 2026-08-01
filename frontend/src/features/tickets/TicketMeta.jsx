@@ -30,7 +30,7 @@ function BadgeDropdown({ ariaLabel, value, variant, options, disabled, onSelect 
         <DropdownMenu.Content
           align="end"
           sideOffset={6}
-          className="z-50 w-36 rounded-lg border border-white/10 bg-neutral-950 py-1 shadow-2xl shadow-black/50"
+          className="z-50 w-36 rounded-lg border border-white/10 bg-neutral-800 py-1 shadow-2xl shadow-black/50"
         >
           {options.map((option) => (
             <DropdownMenu.Item

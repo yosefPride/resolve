@@ -1,6 +1,14 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileText, MessageSquare, MoreVertical, Pencil } from 'lucide-react';
+import {
+  Activity,
+  ArrowLeft,
+  FileText,
+  Link2,
+  MessageSquare,
+  MoreVertical,
+  Pencil,
+} from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useDeleteTicket } from '../../hooks/useTickets';
 import { useComments } from '../../hooks/useComments';
@@ -13,14 +21,15 @@ import CommentList from '../comments/CommentList';
 import EditTicketForm from './EditTicketForm';
 import TicketMeta from './TicketMeta';
 
-function TabButton({ isActive, onClick, icon: Icon, children }) {
+function TabButton({ isActive, onClick, icon: Icon, disabled, children }) {
   return (
     <button
       type="button"
       role="tab"
       aria-selected={isActive}
+      disabled={disabled}
       onClick={onClick}
-      className={`-mb-px inline-flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium transition-colors ${
+      className={`-mb-px inline-flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-slate-400 ${
         isActive
           ? 'border-sky-400 text-white'
           : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -109,7 +118,10 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
         )}
       </div>
 
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+      {/* items-stretch (the grid default) so the rail matches the main
+          column's height — AiPanel below grows to fill what TicketMeta
+          leaves over. */}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="flex flex-col gap-6">
           <div className="rounded-xl border border-white/10 bg-white/5 p-6">
             <div className="flex items-center justify-between gap-4 text-sm text-slate-500">
@@ -130,7 +142,6 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
           </div>
 
           <div className="flex flex-col gap-4">
-            {/* The Links tab joins this row once ticket relations exist. */}
             <div role="tablist" className="flex gap-6 border-b border-white/10">
               <TabButton
                 icon={FileText}
@@ -150,6 +161,15 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
                     {commentCount}
                   </span>
                 )}
+              </TabButton>
+              {/* No ticket-relation or per-ticket event-log data yet —
+                  placeholders hold these tabs' spots until backend support
+                  exists. */}
+              <TabButton icon={Link2} isActive={false} disabled>
+                Links
+              </TabButton>
+              <TabButton icon={Activity} isActive={false} disabled>
+                Activity
               </TabButton>
             </div>
 
@@ -184,7 +204,7 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
           </div>
         </div>
 
-        <aside className="flex flex-col gap-6">
+        <aside className="flex min-h-0 flex-col gap-6">
           <TicketMeta ticket={ticket} teamName={teamName} groupId={groupId} isAdmin={isAdmin} />
           <AiPanel ticket={ticket} />
         </aside>
