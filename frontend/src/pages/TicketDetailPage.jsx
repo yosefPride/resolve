@@ -15,7 +15,7 @@ export default function TicketDetailPage() {
   const { user } = useAuth();
 
   const { data: ticket, status: ticketStatus } = useTicket(groupId, ticketId);
-  const { members, status: groupStatus } = useGroup(groupId);
+  const { group, members, status: groupStatus } = useGroup(groupId);
 
   if (!groupId) {
     return (
@@ -60,14 +60,29 @@ export default function TicketDetailPage() {
   const myRole = members.find((member) => member.user_id === user.id)?.role;
 
   return (
-    <section className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-20 sm:px-6 lg:px-8">
+    <section className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-20 sm:px-6 lg:px-8">
       <Link
         to={`/tickets?group=${groupId}`}
         className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white"
       >
         <ArrowLeft className="h-4 w-4" /> Back to Issues
       </Link>
-      <TicketDetail ticket={ticket} groupId={groupId} isAdmin={isGroupAdmin(myRole)} />
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <TicketDetail
+          ticket={ticket}
+          teamName={group?.name}
+          groupId={groupId}
+          isAdmin={isGroupAdmin(myRole)}
+        />
+        <aside className="flex flex-col gap-6">
+          {/* ai/ is a separate, not-yet-built feature (docs/frontend.md lists it
+              as part of this page) — the placeholder holds its rail slot. */}
+          <div className="rounded-xl border border-white/10 bg-white/5 p-6">
+            <h2 className="text-sm font-semibold text-slate-400">AI</h2>
+            <p className="mt-2 text-sm text-slate-500">Coming soon.</p>
+          </div>
+        </aside>
+      </div>
     </section>
   );
 }

@@ -24,9 +24,18 @@ function capitalize(value) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function initials(name) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0].toUpperCase())
+    .join('');
+}
+
 // isAdmin gates Edit/Delete/status-toggle — RBAC is UX-only here, the backend
 // rejects a non-Group-Admin PATCH/DELETE regardless (docs/rbac.md).
-export default function TicketDetail({ ticket, groupId, isAdmin }) {
+export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
   const navigate = useNavigate();
   const [isEditing, setIsEditing] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
@@ -53,58 +62,79 @@ export default function TicketDetail({ ticket, groupId, isAdmin }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-sm font-medium text-slate-500">#{ticket.ticket_number}</p>
-          <h1 className="text-2xl font-bold text-white">{ticket.title}</h1>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Badge variant={STATUS_VARIANT[ticket.status]}>{capitalize(ticket.status)}</Badge>
-          <Badge variant={PRIORITY_VARIANT[ticket.priority]}>{capitalize(ticket.priority)}</Badge>
-        </div>
+      <div className="rounded-xl border border-white/10 bg-white/5 p-6">
+        <p className="text-sm text-slate-500">
+          <span className="font-medium">#{ticket.ticket_number}</span>
+          <span aria-hidden> · </span>
+          Created {formatDateTime(ticket.created_at)}
+        </p>
+        <h1 className="mt-2 text-2xl font-bold text-white">{ticket.title}</h1>
+        {/* Preview only — the full description has its own section below. */}
+        <p className="mt-2 line-clamp-2 text-sm text-slate-400">{ticket.description}</p>
+
+        <dl className="mt-6 flex flex-wrap items-start gap-x-10 gap-y-4">
+          <div>
+            <dt className="text-xs font-medium text-slate-500">Status</dt>
+            <dd className="mt-1.5">
+              <Badge variant={STATUS_VARIANT[ticket.status]}>{capitalize(ticket.status)}</Badge>
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium text-slate-500">Priority</dt>
+            <dd className="mt-1.5">
+              <Badge variant={PRIORITY_VARIANT[ticket.priority]}>{capitalize(ticket.priority)}</Badge>
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium text-slate-500">Reporter</dt>
+            <dd className="mt-1.5 flex items-center gap-2">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-[10px] font-semibold text-slate-300">
+                {initials(ticket.created_by_name)}
+              </span>
+              <span className="text-sm text-slate-200">{ticket.created_by_name}</span>
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium text-slate-500">Team</dt>
+            <dd className="mt-1.5 text-sm text-slate-200">{teamName || '—'}</dd>
+          </div>
+        </dl>
+
+        {isAdmin && (
+          <div className="mt-6 flex flex-wrap gap-2 border-t border-white/10 pt-4">
+            <Button
+              variant="ghost"
+              className="border border-white/10"
+              disabled={toggleStatusMutation.isPending}
+              onClick={handleToggleStatus}
+            >
+              {isClosed ? 'Reopen issue' : 'Close issue'}
+            </Button>
+            <Button variant="ghost" className="border border-white/10" onClick={() => setIsEditing(true)}>
+              Edit
+            </Button>
+            <Button variant="dangerOutline" onClick={() => setIsConfirmingDelete(true)}>
+              Delete
+            </Button>
+          </div>
+        )}
       </div>
 
-      <p className="text-sm text-slate-400">
-        Opened by {ticket.created_by_name} · {formatDateTime(ticket.created_at)}
-        {ticket.updated_at !== ticket.created_at && <> · Updated {formatDateTime(ticket.updated_at)}</>}
-      </p>
+      <div className="rounded-xl border border-white/10 bg-white/5 p-6">
+        <h2 className="text-sm font-semibold text-slate-400">Description</h2>
+        <p className="mt-3 whitespace-pre-wrap text-sm text-slate-200">{ticket.description}</p>
+      </div>
 
-      <p className="whitespace-pre-wrap text-sm text-slate-200">{ticket.description}</p>
-
-      {isAdmin && (
-        <div className="flex flex-wrap gap-2 border-t border-white/10 pt-4">
-          <Button
-            variant="ghost"
-            className="border border-white/10"
-            disabled={toggleStatusMutation.isPending}
-            onClick={handleToggleStatus}
-          >
-            {isClosed ? 'Reopen issue' : 'Close issue'}
-          </Button>
-          <Button variant="ghost" className="border border-white/10" onClick={() => setIsEditing(true)}>
-            Edit
-          </Button>
-          <Button variant="dangerOutline" onClick={() => setIsConfirmingDelete(true)}>
-            Delete
-          </Button>
-        </div>
-      )}
-
-      <div className="flex flex-col gap-4 border-t border-white/10 pt-6">
+      <div className="rounded-xl border border-white/10 bg-white/5 p-6">
         <h2 className="text-sm font-semibold text-slate-400">Comments</h2>
-        <CommentList
-          groupId={groupId}
-          ticketId={ticket.id}
-          isAdmin={isAdmin}
-          isClosed={isClosed}
-        />
-      </div>
-
-      {/* ai/ is a separate, not-yet-built feature (docs/frontend.md lists it as
-          part of this page) — the placeholder holds its layout slot. */}
-      <div className="flex flex-col gap-2 border-t border-white/10 pt-6">
-        <h2 className="text-sm font-semibold text-slate-400">AI</h2>
-        <p className="text-sm text-slate-500">Coming soon.</p>
+        <div className="mt-4">
+          <CommentList
+            groupId={groupId}
+            ticketId={ticket.id}
+            isAdmin={isAdmin}
+            isClosed={isClosed}
+          />
+        </div>
       </div>
 
       <Modal isOpen={isEditing} onClose={() => setIsEditing(false)} title="Edit issue">
