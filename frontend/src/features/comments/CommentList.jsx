@@ -221,29 +221,34 @@ export default function CommentList({ groupId, ticketId, isAdmin, isClosed }) {
   const activeReplyingTo = isClosed ? null : replyingTo;
 
   return (
-    <div className="flex flex-col gap-4">
-      {tree.length === 0 ? (
-        <p className="text-sm text-slate-500">No comments yet.</p>
-      ) : (
-        <ul>
-          {tree.map((comment) => (
-            <CommentItem
-              key={comment.id}
-              comment={comment}
-              depth={0}
-              groupId={groupId}
-              ticketId={ticketId}
-              currentUserId={user.id}
-              isAdmin={isAdmin}
-              isClosed={isClosed}
-              replyingTo={activeReplyingTo}
-              onReply={setReplyingTo}
-              onCancelReply={() => setReplyingTo(null)}
-              onRequestDelete={setPendingDelete}
-            />
-          ))}
-        </ul>
-      )}
+    // h-full + the scrollable flex-1 wrapper let a fixed-height parent (the
+    // comments tab panel) keep the composer pinned while only the thread
+    // scrolls; in an unconstrained parent it lays out exactly as before.
+    <div className="flex h-full min-h-0 flex-col gap-4">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {tree.length === 0 ? (
+          <p className="text-sm text-slate-500">No comments yet.</p>
+        ) : (
+          <ul>
+            {tree.map((comment) => (
+              <CommentItem
+                key={comment.id}
+                comment={comment}
+                depth={0}
+                groupId={groupId}
+                ticketId={ticketId}
+                currentUserId={user.id}
+                isAdmin={isAdmin}
+                isClosed={isClosed}
+                replyingTo={activeReplyingTo}
+                onReply={setReplyingTo}
+                onCancelReply={() => setReplyingTo(null)}
+                onRequestDelete={setPendingDelete}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
 
       {/* A closed ticket is read-only for new comments (the backend answers
           POST with 409), so the composer is removed outright rather than

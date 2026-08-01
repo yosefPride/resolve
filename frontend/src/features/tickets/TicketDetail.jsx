@@ -269,10 +269,12 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
 
             {/* Inactive panel is hidden, not unmounted — a half-written comment
                 or open reply box survives a switch to Details and back. */}
+            {/* Fixed-height panels: long descriptions/threads scroll inside the
+                card instead of growing the page. */}
             <div
               className={
                 activeTab === 'details'
-                  ? 'rounded-xl border border-white/10 bg-white/5 p-6'
+                  ? 'h-128 overflow-y-auto rounded-xl border border-white/10 bg-white/5 p-6'
                   : 'hidden'
               }
             >
@@ -281,7 +283,7 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
             <div
               className={
                 activeTab === 'comments'
-                  ? 'rounded-xl border border-white/10 bg-white/5 p-6'
+                  ? 'flex h-128 flex-col rounded-xl border border-white/10 bg-white/5 p-6'
                   : 'hidden'
               }
             >
