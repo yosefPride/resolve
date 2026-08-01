@@ -8,6 +8,7 @@ import { errorMessage } from '../../utils/errors';
 import { formatDateTime, formatRelativeTime } from '../../utils/format';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
+import AiPanel from '../ai/AiPanel';
 import CommentList from '../comments/CommentList';
 import EditTicketForm from './EditTicketForm';
 import TicketMeta from './TicketMeta';
@@ -185,12 +186,7 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
 
         <aside className="flex flex-col gap-6">
           <TicketMeta ticket={ticket} teamName={teamName} groupId={groupId} isAdmin={isAdmin} />
-          {/* ai/ is a separate, not-yet-built feature (docs/frontend.md lists it
-              as part of this page) — the placeholder holds its rail slot. */}
-          <div className="rounded-xl border border-white/10 bg-white/5 p-6">
-            <h2 className="text-sm font-semibold text-slate-400">AI</h2>
-            <p className="mt-2 text-sm text-slate-500">Coming soon.</p>
-          </div>
+          <AiPanel ticket={ticket} />
         </aside>
       </div>
 
