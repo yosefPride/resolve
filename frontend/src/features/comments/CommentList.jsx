@@ -3,6 +3,7 @@ import { useComments, useDeleteComment } from '../../hooks/useComments';
 import { useAuth } from '../../hooks/useAuth';
 import { errorMessage } from '../../utils/errors';
 import { formatDateTime, formatRelativeTime } from '../../utils/format';
+import Avatar from '../../components/ui/Avatar';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
 import CommentForm from './CommentForm';
@@ -103,10 +104,13 @@ function CommentItem({
       <article className="flex flex-col gap-1 py-2">
         {comment.parentSummary && <QuotedParent summary={comment.parentSummary} />}
 
-        <p className="text-xs text-slate-500">
-          {comment.user_name} ·{' '}
-          <span title={formatDateTime(comment.created_at)}>
-            {formatRelativeTime(comment.created_at)}
+        <p className="flex items-center gap-2 text-xs text-slate-500">
+          <Avatar name={comment.user_name} seed={comment.user_id} size="sm" />
+          <span>
+            {comment.user_name} ·{' '}
+            <span title={formatDateTime(comment.created_at)}>
+              {formatRelativeTime(comment.created_at)}
+            </span>
           </span>
         </p>
 
