@@ -2,27 +2,13 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDeleteTicket, useUpdateTicket } from '../../hooks/useTickets';
 import { errorMessage } from '../../utils/errors';
-import { formatDateTime } from '../../utils/format';
+import { formatDateTime, formatRelativeTime } from '../../utils/format';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
 import CommentList from '../comments/CommentList';
 import EditTicketForm from './EditTicketForm';
-
-const PRIORITY_VARIANT = {
-  low: 'neutral',
-  high: 'accent',
-  critical: 'danger',
-};
-
-const STATUS_VARIANT = {
-  open: 'accent',
-  closed: 'outline',
-};
-
-function capitalize(value) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
+import { PRIORITY_VARIANT, STATUS_VARIANT, capitalize } from './badgeVariants';
 
 function initials(name) {
   return name
@@ -66,7 +52,9 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
         <p className="text-sm text-slate-500">
           <span className="font-medium">#{ticket.ticket_number}</span>
           <span aria-hidden> · </span>
-          Created {formatDateTime(ticket.created_at)}
+          <span title={formatDateTime(ticket.created_at)}>
+            Created {formatRelativeTime(ticket.created_at)}
+          </span>
         </p>
         <h1 className="mt-2 text-2xl font-bold text-white">{ticket.title}</h1>
         {/* Preview only — the full description has its own section below. */}

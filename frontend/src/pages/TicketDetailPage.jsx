@@ -5,6 +5,7 @@ import { useGroup } from '../hooks/useGroup';
 import { useAuth } from '../hooks/useAuth';
 import { isGroupAdmin } from '../utils/roles';
 import TicketDetail from '../features/tickets/TicketDetail';
+import TicketMeta from '../features/tickets/TicketMeta';
 
 // The group is carried as ?group=<id> (see TicketsPage), not a route param —
 // same "no active group in state" rule, just read from the URL here too.
@@ -75,6 +76,7 @@ export default function TicketDetailPage() {
           isAdmin={isGroupAdmin(myRole)}
         />
         <aside className="flex flex-col gap-6">
+          <TicketMeta ticket={ticket} />
           {/* ai/ is a separate, not-yet-built feature (docs/frontend.md lists it
               as part of this page) — the placeholder holds its rail slot. */}
           <div className="rounded-xl border border-white/10 bg-white/5 p-6">

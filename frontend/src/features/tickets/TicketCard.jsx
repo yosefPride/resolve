@@ -1,20 +1,6 @@
 import { Link } from 'react-router-dom';
 import Badge from '../../components/ui/Badge';
-
-const PRIORITY_VARIANT = {
-  low: 'neutral',
-  high: 'accent',
-  critical: 'danger',
-};
-
-const STATUS_VARIANT = {
-  open: 'accent',
-  closed: 'outline',
-};
-
-function capitalize(value) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
+import { PRIORITY_VARIANT, STATUS_VARIANT, capitalize } from './badgeVariants';
 
 export default function TicketCard({ ticket, groupId }) {
   return (
