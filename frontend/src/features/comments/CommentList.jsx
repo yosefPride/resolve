@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useComments, useDeleteComment } from '../../hooks/useComments';
 import { useAuth } from '../../hooks/useAuth';
 import { errorMessage } from '../../utils/errors';
-import { formatDateTime } from '../../utils/format';
+import { formatDateTime, formatRelativeTime } from '../../utils/format';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
 import CommentForm from './CommentForm';
@@ -104,7 +104,10 @@ function CommentItem({
         {comment.parentSummary && <QuotedParent summary={comment.parentSummary} />}
 
         <p className="text-xs text-slate-500">
-          {comment.user_name} · {formatDateTime(comment.created_at)}
+          {comment.user_name} ·{' '}
+          <span title={formatDateTime(comment.created_at)}>
+            {formatRelativeTime(comment.created_at)}
+          </span>
         </p>
 
         {/* Plain text, never HTML: the backend stores comment content verbatim
