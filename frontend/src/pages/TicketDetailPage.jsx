@@ -19,7 +19,7 @@ export default function TicketDetailPage() {
 
   if (!groupId) {
     return (
-      <section className="mx-auto max-w-2xl px-4 py-20 sm:px-6 lg:px-8">
+      <section>
         <p className="text-sm text-red-500">
           Missing team context. Open this issue from the Issues list instead.
         </p>
@@ -35,7 +35,7 @@ export default function TicketDetailPage() {
 
   if (ticketStatus === 'pending' || groupStatus === 'pending') {
     return (
-      <section className="mx-auto max-w-2xl px-4 py-20 sm:px-6 lg:px-8">
+      <section>
         <p className="text-sm text-slate-400">Loading…</p>
       </section>
     );
@@ -43,7 +43,7 @@ export default function TicketDetailPage() {
 
   if (ticketStatus === 'error' || groupStatus === 'error') {
     return (
-      <section className="mx-auto max-w-2xl px-4 py-20 sm:px-6 lg:px-8">
+      <section>
         <p className="text-sm text-red-500">
           Couldn't load this issue. It may not exist, or you may not have access.
         </p>
@@ -62,16 +62,13 @@ export default function TicketDetailPage() {
   // TicketDetail owns the whole layout from here (top bar, cards, right rail).
   // The outer frame matches the mockup: all page content sits in one bordered,
   // rounded panel on the page background.
+  // AppLayout provides the framed panel; this page renders content only.
   return (
-    <section className="flex grow flex-col p-4 sm:p-6">
-      <div className="grow rounded-2xl border border-white/10 bg-white/2 p-6 sm:p-8">
-        <TicketDetail
-          ticket={ticket}
-          teamName={group?.name}
-          groupId={groupId}
-          isAdmin={isGroupAdmin(myRole)}
-        />
-      </div>
-    </section>
+    <TicketDetail
+      ticket={ticket}
+      teamName={group?.name}
+      groupId={groupId}
+      isAdmin={isGroupAdmin(myRole)}
+    />
   );
 }

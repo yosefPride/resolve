@@ -36,7 +36,7 @@ export default function TicketsPage() {
 
   if (status === 'pending') {
     return (
-      <section className="mx-auto max-w-4xl px-4 py-20 sm:px-6 lg:px-8">
+      <section>
         <p className="text-sm text-slate-400">Loading…</p>
       </section>
     );
@@ -44,7 +44,7 @@ export default function TicketsPage() {
 
   if (status === 'error') {
     return (
-      <section className="mx-auto max-w-4xl px-4 py-20 sm:px-6 lg:px-8">
+      <section>
         <p className="text-sm text-red-500">Couldn't load your teams.</p>
       </section>
     );
@@ -52,7 +52,7 @@ export default function TicketsPage() {
 
   if (groups.length === 0) {
     return (
-      <section className="mx-auto max-w-4xl px-4 py-20 sm:px-6 lg:px-8">
+      <section>
         <p className="text-sm text-slate-400">
           You're not in any team yet. Create one from the sidebar to start opening issues.
         </p>
@@ -61,7 +61,7 @@ export default function TicketsPage() {
   }
 
   return (
-    <section className="mx-auto flex max-w-4xl flex-col gap-6 px-4 py-20 sm:px-6 lg:px-8">
+    <section className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div className="relative">
           <button

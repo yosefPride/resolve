@@ -51,10 +51,13 @@ export default function AppLayout() {
           </Link>
         </header>
 
-        {/* flex-col so a page can stretch to full height with `grow`; pages
-            that don't opt in lay out exactly as before. */}
-        <main className="flex grow flex-col">
-          <Outlet />
+        {/* Every app page renders inside one full-height framed panel with
+            small padding around it — pages supply content only, no outer
+            container of their own. */}
+        <main className="flex grow flex-col p-4 sm:p-6">
+          <div className="flex grow flex-col rounded-2xl border border-white/10 bg-white/2 p-6 sm:p-8">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>

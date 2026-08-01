@@ -13,7 +13,7 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState('users');
 
   return (
-    <section className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-20 sm:px-6 lg:px-8">
+    <section className="flex flex-col gap-6">
       <h1 className="text-2xl font-bold text-white">Admin</h1>
 
       <div role="tablist" aria-label="Admin sections" className="flex gap-2 border-b border-white/10">

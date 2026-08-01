@@ -29,7 +29,7 @@ export default function GroupManagementPage() {
 
   if (status === 'pending') {
     return (
-      <section className="mx-auto max-w-2xl px-4 py-20 sm:px-6 lg:px-8">
+      <section>
         <p className="text-sm text-slate-400">Loading…</p>
       </section>
     );
@@ -37,7 +37,7 @@ export default function GroupManagementPage() {
 
   if (status === 'error') {
     return (
-      <section className="mx-auto max-w-2xl px-4 py-20 sm:px-6 lg:px-8">
+      <section>
         <p className="text-sm text-red-500">
           Couldn't load this team. You may not be a member, or it may not exist.
         </p>
@@ -82,7 +82,7 @@ export default function GroupManagementPage() {
   }
 
   return (
-    <section className="mx-auto flex max-w-2xl flex-col gap-8 px-4 py-20 sm:px-6 lg:px-8">
+    <section className="flex flex-col gap-8">
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">{group.name}</h1>
@@ -114,7 +114,23 @@ export default function GroupManagementPage() {
         )}
       </div>
 
-      <GroupStats groupId={id} memberCount={members.length} />
+      {/* Stats rail on the left, members (with add-member below the list,
+          inside MemberManager) on the right. Stacks below lg. */}
+      <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+        <div className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold text-white">Stats</h2>
+          <GroupStats groupId={id} memberCount={members.length} />
+        </div>
+        <div className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold text-white">Members</h2>
+          <MemberManager
+            groupId={id}
+            members={members}
+            myUserId={user.id}
+            myRole={myRole}
+          />
+        </div>
+      </div>
 
       <Modal
         isOpen={isRenaming}
@@ -186,15 +202,6 @@ export default function GroupManagementPage() {
         </div>
       </Modal>
 
-      <div className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold text-white">Members</h2>
-        <MemberManager
-          groupId={id}
-          members={members}
-          myUserId={user.id}
-          myRole={myRole}
-        />
-      </div>
     </section>
   );
 }
