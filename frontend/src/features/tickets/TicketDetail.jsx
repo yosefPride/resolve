@@ -292,6 +292,7 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
                 ticketId={ticket.id}
                 isAdmin={isAdmin}
                 isClosed={isClosed}
+                isVisible={activeTab === 'comments'}
               />
             </div>
           </div>

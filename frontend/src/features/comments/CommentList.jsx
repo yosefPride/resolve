@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useComments, useDeleteComment } from '../../hooks/useComments';
 import { useAuth } from '../../hooks/useAuth';
 import { errorMessage } from '../../utils/errors';
@@ -184,13 +184,24 @@ function CommentItem({
   );
 }
 
-export default function CommentList({ groupId, ticketId, isAdmin, isClosed }) {
+export default function CommentList({ groupId, ticketId, isAdmin, isClosed, isVisible = true }) {
   const { user } = useAuth();
   const { data: comments, status, error } = useComments(groupId, ticketId);
   const [replyingTo, setReplyingTo] = useState(null);
   const [pendingDelete, setPendingDelete] = useState(null);
   const [deleteError, setDeleteError] = useState('');
   const deleteComment = useDeleteComment(groupId, ticketId);
+  const threadRef = useRef(null);
+
+  // Comments are oldest-first, so the latest is at the bottom — jump there
+  // whenever the thread (re)loads or gains a comment. isVisible matters
+  // because the tab panel hides via display:none: scrollHeight is 0 while
+  // hidden, so the scroll must re-run when the tab actually shows.
+  useEffect(() => {
+    if (!isVisible) return;
+    const node = threadRef.current;
+    if (node) node.scrollTop = node.scrollHeight;
+  }, [comments, isVisible]);
 
   async function handleDelete() {
     setDeleteError('');
@@ -225,7 +236,7 @@ export default function CommentList({ groupId, ticketId, isAdmin, isClosed }) {
     // comments tab panel) keep the composer pinned while only the thread
     // scrolls; in an unconstrained parent it lays out exactly as before.
     <div className="flex h-full min-h-0 flex-col gap-4">
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={threadRef} className="min-h-0 flex-1 overflow-y-auto">
         {tree.length === 0 ? (
           <p className="text-sm text-slate-500">No comments yet.</p>
         ) : (
