@@ -162,6 +162,15 @@ impl TicketRepository {
         Ok(result.deleted_count > 0)
     }
 
+    // Cascade target for group deletion: every ticket of the group plus the
+    // counter that backs its ticket_number sequence. The counter's _id *is* the
+    // group_id (see next_ticket_number), so it is a single delete_one.
+    pub async fn delete_by_group(&self, group_id: ObjectId) -> Result<u64, TicketRepoError> {
+        let result = self.tickets.delete_many(doc! { "group_id": group_id }).await?;
+        self.counters.delete_one(doc! { "_id": group_id }).await?;
+        Ok(result.deleted_count)
+    }
+
     // status is stored as its snake_case serialization ("open"/"closed"), so we
     // match the string directly rather than round-tripping through the enum.
     pub async fn count_open_by_group(&self, group_id: ObjectId) -> Result<u64, TicketRepoError> {

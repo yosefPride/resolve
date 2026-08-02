@@ -13,34 +13,40 @@ Detail files in [`frontend/`](./frontend/):
 | [`frontend/04-account.md`](./frontend/04-account.md) | `features/account/`, `pages/AccountPage.jsx` |
 | [`frontend/05-layout-and-ui.md`](./frontend/05-layout-and-ui.md) | `components/layout/`, `components/ui/`, `components/marketing/`, `utils/` |
 | [`frontend/06-libraries.md`](./frontend/06-libraries.md) | Every external dependency, frontend and backend |
+| [`frontend/07-tickets-and-comments.md`](./frontend/07-tickets-and-comments.md) | `features/tickets/`, `features/comments/`, `hooks/useTickets.js`, `hooks/useComments.js`, both ticket pages, `DashboardStats` |
 
 ---
 
 ## 0. What actually exists
 
-The frontend is **behind the backend**. Tickets are fully built server-side and have no UI at all.
+**AI is the only feature still missing a UI.** Everything else the backend serves has a
+frontend now.
 
 **Built:** landing page, register/login, session bootstrap + silent refresh, dashboard
-(a stub), account page (profile + password), team management (members, roles, rename,
-delete, leave), admin panel (users, teams, audit log, user deletion with succession),
-sidebar/app shell.
+(greeting + cross-team stats), account page (profile + password), team management (members,
+roles, rename, delete, leave), admin panel (users, teams, audit log, user deletion with
+succession), sidebar/app shell, tickets (list, filters, create, edit, detail), and comments
+(threaded replies, delete, closed-ticket handling).
 
-**Empty files (0 bytes) — scaffolded, never written:**
+**Empty files (0 bytes) — scaffolded, never written.** All eight, verified against the
+tree — the AI feature plus three unrelated leftovers:
 ```
-pages/TicketsPage.jsx          features/tickets/*  (5 files)
-pages/TicketDetailPage.jsx     features/comments/* (2 files)
-hooks/useTickets.js            features/ai/*       (3 files)
-hooks/useComments.js           features/dashboard/DashboardStats.jsx
-hooks/useAI.js                 components/layout/PageWrapper.jsx
-services/tickets.service.js    services/comments.service.js
-services/ai.service.js         services/users.service.js
-lib/auth.js                    utils/validators.js
+features/ai/AiInsightCard.jsx    hooks/useAI.js
+features/ai/AiPanel.jsx          services/ai.service.js
+features/ai/GroupReportView.jsx
+
+components/layout/PageWrapper.jsx    services/users.service.js
+utils/validators.js
 ```
 
-Two consequences you'll notice immediately when running the app:
+`PageWrapper.jsx` was a layout abstraction that never got extracted; `users.service.js` is
+superseded by `admin.service.js`; `validators.js` lost out to inline per-form validation.
+None of the three is on anyone's path.
 
-1. **The "Issues" nav link is broken.** Both `Header.jsx` and `Sidebar.jsx` link to `/tickets`, but `App.jsx` registers no such route — clicking it hits the `*` catch-all and renders `NotFoundPage`.
-2. **`DashboardPage` is a placeholder** — a greeting and a logout button, nothing else.
+One thing you'll notice running the app: the **Ticket Detail page's "AI" section renders a
+"Coming soon." placeholder**, holding the layout slot `docs/specification/frontend.md`
+describes. The Comments section directly above it used to say the same thing and no longer
+does.
 
 ---
 
@@ -85,14 +91,20 @@ away from JS, so leaving the access token in a JS-readable store would undo that
 
 Two coexisting patterns, and knowing which is which saves confusion:
 
-**React Query** — used for anything shared or cached: `['groups']` (sidebar + group stats),
-`['group', id]` / `['group', id, 'members']`, `['admin', 'users', search]`,
-`['admin', 'groups', search]`, `['admin', 'auditLog']`, `['admin', 'deletionCheck', userId]`.
-Mutations invalidate the relevant key rather than manually refetching.
+**React Query** — used for anything shared or cached: `['groups']` (sidebar, group stats, and
+the dashboard), `['group', id]` / `['group', id, 'members']`, `['tickets', groupId, filters]`,
+`['ticket', groupId, ticketId]`, `['comments', groupId, ticketId]`,
+`['admin', 'users', search]`, `['admin', 'groups', search]`, `['admin', 'auditLog']`,
+`['admin', 'deletionCheck', userId]`. Mutations invalidate the relevant key rather than
+manually refetching.
+
+Note `['groups']` carries `open_ticket_count`, so every ticket mutation invalidates it as
+well as its own keys — comment mutations deliberately don't, since a comment can't change
+that number.
 
 **Plain `useState` + `async` handlers** — used for one-shot forms with no shared state:
-login, register, profile, password change, create/rename team, and the delete/leave
-confirmations on the group page.
+login, register, profile, password change, create/rename team, create/edit issue, the comment
+composer, and the delete/leave confirmations.
 
 The dividing line is roughly "does anything else on screen need this data?"
 
@@ -176,6 +188,33 @@ non-admins get "Leave team".
 `MemberManager` handles add (email lookup → confirm → add with a role), promote/demote, and
 remove/leave. Every mutation invalidates `['group', id, 'members']`.
 
+### Read and post comments
+
+`TicketDetail` renders `<CommentList groupId ticketId isAdmin isClosed />`, which is the
+whole feature's entry point. Full breakdown in
+[`frontend/07-tickets-and-comments.md`](./frontend/07-tickets-and-comments.md).
+
+The API returns the thread **flat and oldest-first**; `buildCommentTree` assembles it
+client-side in one pass — a `Map` of id → node, then each node is pushed onto its parent's
+`replies`. `Map` preserves insertion order, so roots and replies both come out oldest-first
+with no sorting.
+
+Three details that are easy to miss and all deliberate:
+
+- **Visual nesting stops at `MAX_INDENT_DEPTH = 4`.** Deeper replies keep their real depth in the tree but stop indenting, so a long back-and-forth can't squeeze the text column to nothing on a phone. Past the cap, a **quoted-parent block** (author + first line of the comment being answered, WhatsApp-style) carries the structure instead — though it renders at *every* depth, not just past the cap.
+- **A reply whose parent isn't in the payload is promoted to a root** rather than dropped. Normally impossible, since a comment with replies gets tombstoned instead of deleted — but the backend's `has_replies` check and the delete that follows aren't atomic, so a reply created in that window can point at an id that's already gone.
+- **A closed ticket removes the composer entirely** rather than disabling it, because `POST` would 409. If the ticket is closed by someone else while a reply box is open, the refetch drops the open box too. `CommentForm` still handles a 409 on submit, for the window between render and submit.
+
+`useComments` deliberately **does not invalidate `['groups']`** on mutation — a comment
+doesn't change `open_ticket_count`, so the sidebar and `GroupStats` numbers can't go stale
+from one. Delete invalidates and refetches rather than removing the comment from the cache,
+since only the server knows whether a given delete produced a tombstone or a real removal.
+
+`CommentForm` counts content length with `[...value].length` (code points), matching the
+backend's `.chars().count()`. Plain `.length` counts UTF-16 units, which disagree outside the
+BMP — `'😀'.length` is 2 where the backend counts 1. Same reason the textarea carries no
+`maxLength`.
+
 ### Admin: delete a user
 `UsersPanel` → `DeleteUserModal`, which mirrors the backend's plan-then-commit shape:
 `GET /admin/users/:id/deletion-check` → render a `<select>` per blocked group and a warning
@@ -223,5 +262,7 @@ group roles are snake_case (`'group_admin'`), the global role is PascalCase
 5. `services/*.js` — the complete API surface the frontend actually uses.
 6. `features/auth/` — the simplest full feature (form → context → service).
 7. `hooks/useGroup.js` + `pages/GroupManagementPage.jsx` + `features/groups/` — the first real React Query usage.
-8. `features/admin/DeleteUserModal.jsx` — the most complex component in the app.
-9. `components/layout/Sidebar.jsx` — the largest file (321 lines), and mostly presentational.
+8. `hooks/useTickets.js` + `pages/TicketsPage.jsx` + `features/tickets/` — filters, pagination, and the `?group=` convention.
+9. `features/comments/CommentList.jsx` — the only tree-building component, and the one place client-side structure is derived rather than rendered straight.
+10. `features/admin/DeleteUserModal.jsx` — the most complex component in the app.
+11. `components/layout/Sidebar.jsx` — the largest file (321 lines), and mostly presentational.

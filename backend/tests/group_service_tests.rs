@@ -1,6 +1,8 @@
 use mongodb::{IndexModel, bson::doc, bson::oid::ObjectId, options::IndexOptions};
 use resolve::errors::ApiError;
 use resolve::group::{models::Role, service::GroupService};
+use resolve::ticket::models::{CreateTicketInput, TicketPriority};
+use resolve::ticket::repository::TicketRepository;
 use resolve::user::{models::CreateUserInput, repository::UserRepository};
 
 mod support;
@@ -535,5 +537,83 @@ fn test_lookup_user_by_email_no_match_not_found() {
             .lookup_user_by_email(owner_id, group_id, &unique_email("lookup-missing"))
             .await;
         assert_not_found(result);
+    });
+}
+
+// Allocates a ticket_number the same way TicketService does, so the counter
+// document exists and the cascade has something to clean up.
+async fn seed_ticket(group_id: ObjectId, created_by: ObjectId, title: &str) {
+    let db = support::shared_client().await.database("resolve_test");
+    let repo = TicketRepository::new(&db);
+    let ticket_number = repo
+        .next_ticket_number(group_id)
+        .await
+        .expect("counter allocation failed");
+    repo.insert_ticket(CreateTicketInput {
+        group_id,
+        ticket_number,
+        title: title.to_string(),
+        description: String::new(),
+        priority: TicketPriority::Low,
+        created_by,
+    })
+    .await
+    .expect("ticket insert failed");
+}
+
+async fn count_tickets(group_id: ObjectId) -> u64 {
+    let db = support::shared_client().await.database("resolve_test");
+    db.collection::<mongodb::bson::Document>("tickets")
+        .count_documents(doc! { "group_id": group_id })
+        .await
+        .expect("ticket count failed")
+}
+
+async fn count_counters(group_id: ObjectId) -> u64 {
+    let db = support::shared_client().await.database("resolve_test");
+    db.collection::<mongodb::bson::Document>("counters")
+        .count_documents(doc! { "_id": group_id })
+        .await
+        .expect("counter count failed")
+}
+
+// 22. Deleting a group cascades its tickets and its ticket_number counter, and
+// leaves other groups' tickets untouched.
+#[test]
+fn test_delete_group_cascades_tickets_and_counter() {
+    support::runtime().block_on(async {
+        let service = setup().await;
+        let owner_id = oid();
+
+        let doomed = service
+            .create_group(owner_id, "Doomed".to_string())
+            .await
+            .expect("create failed");
+        let doomed_id = ObjectId::parse_str(&doomed.id).unwrap();
+
+        let survivor = service
+            .create_group(owner_id, "Survivor".to_string())
+            .await
+            .expect("create failed");
+        let survivor_id = ObjectId::parse_str(&survivor.id).unwrap();
+
+        seed_ticket(doomed_id, owner_id, "doomed one").await;
+        seed_ticket(doomed_id, owner_id, "doomed two").await;
+        seed_ticket(survivor_id, owner_id, "survivor one").await;
+
+        assert_eq!(count_tickets(doomed_id).await, 2);
+        assert_eq!(count_counters(doomed_id).await, 1);
+
+        service
+            .delete_group(owner_id, doomed_id)
+            .await
+            .expect("delete failed");
+
+        assert_eq!(count_tickets(doomed_id).await, 0, "tickets were orphaned");
+        assert_eq!(count_counters(doomed_id).await, 0, "counter was orphaned");
+
+        // Isolation: the cascade is scoped to the deleted group only.
+        assert_eq!(count_tickets(survivor_id).await, 1);
+        assert_eq!(count_counters(survivor_id).await, 1);
     });
 }

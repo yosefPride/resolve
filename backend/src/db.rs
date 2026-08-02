@@ -128,5 +128,26 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), Error> {
         )
         .await?;
 
+    // Serves list_by_ticket (every comment fetch is scoped to group_id +
+    // ticket_id) and both bulk cascade deletes (delete_by_ticket on ticket_id
+    // alone, delete_by_group on group_id alone — both are index prefixes here).
+    db.collection::<Document>("comments")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "ticket_id": 1 })
+                .build(),
+        )
+        .await?;
+
+    // Serves has_replies (CommentService::delete_comment's hard-vs-soft-delete
+    // check).
+    db.collection::<Document>("comments")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "parent_comment_id": 1 })
+                .build(),
+        )
+        .await?;
+
     Ok(())
 }

@@ -15,11 +15,11 @@ export default function TicketDetailPage() {
   const { user } = useAuth();
 
   const { data: ticket, status: ticketStatus } = useTicket(groupId, ticketId);
-  const { members, status: groupStatus } = useGroup(groupId);
+  const { group, members, status: groupStatus } = useGroup(groupId);
 
   if (!groupId) {
     return (
-      <section className="mx-auto max-w-2xl px-4 py-20 sm:px-6 lg:px-8">
+      <section>
         <p className="text-sm text-red-500">
           Missing team context. Open this issue from the Issues list instead.
         </p>
@@ -35,7 +35,7 @@ export default function TicketDetailPage() {
 
   if (ticketStatus === 'pending' || groupStatus === 'pending') {
     return (
-      <section className="mx-auto max-w-2xl px-4 py-20 sm:px-6 lg:px-8">
+      <section>
         <p className="text-sm text-slate-400">Loading…</p>
       </section>
     );
@@ -43,7 +43,7 @@ export default function TicketDetailPage() {
 
   if (ticketStatus === 'error' || groupStatus === 'error') {
     return (
-      <section className="mx-auto max-w-2xl px-4 py-20 sm:px-6 lg:px-8">
+      <section>
         <p className="text-sm text-red-500">
           Couldn't load this issue. It may not exist, or you may not have access.
         </p>
@@ -59,15 +59,16 @@ export default function TicketDetailPage() {
 
   const myRole = members.find((member) => member.user_id === user.id)?.role;
 
+  // TicketDetail owns the whole layout from here (top bar, cards, right rail).
+  // The outer frame matches the mockup: all page content sits in one bordered,
+  // rounded panel on the page background.
+  // AppLayout provides the framed panel; this page renders content only.
   return (
-    <section className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-20 sm:px-6 lg:px-8">
-      <Link
-        to={`/tickets?group=${groupId}`}
-        className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white"
-      >
-        <ArrowLeft className="h-4 w-4" /> Back to Issues
-      </Link>
-      <TicketDetail ticket={ticket} groupId={groupId} isAdmin={isGroupAdmin(myRole)} />
-    </section>
+    <TicketDetail
+      ticket={ticket}
+      teamName={group?.name}
+      groupId={groupId}
+      isAdmin={isGroupAdmin(myRole)}
+    />
   );
 }

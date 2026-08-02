@@ -1,18 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Clock, Ticket, User } from 'lucide-react';
 import { listGroups } from '../../services/groups.service';
-
-function Stat({ icon: Icon, label, value }) {
-  return (
-    <div className="flex flex-col gap-1 rounded-lg border border-white/10 bg-white/5 px-4 py-3">
-      <span className="flex items-center gap-2 text-xs font-medium tracking-wide text-slate-400 uppercase">
-        <Icon className="h-4 w-4" />
-        {label}
-      </span>
-      <span className="text-lg font-semibold text-white">{value}</span>
-    </div>
-  );
-}
+import StatTile from '../../components/ui/StatTile';
 
 // Open issues come from GET /groups, which reports the count for every team the
 // caller belongs to — and viewing a team requires membership, so this team is
@@ -28,11 +17,11 @@ export default function GroupStats({ groupId, memberCount }) {
   const openTickets = status === 'success' && summary ? summary.open_ticket_count : '—';
 
   return (
-    <div className="grid gap-3 sm:grid-cols-3">
-      <Stat icon={User} label="Members" value={memberCount} />
-      <Stat icon={Ticket} label="Open Issues" value={openTickets} />
+    <div className="flex flex-col gap-3">
+      <StatTile icon={User} label="Members" value={memberCount} />
+      <StatTile icon={Ticket} label="Open Issues" value={openTickets} />
       {/* No activity tracking in the schema yet — real once it exists. */}
-      <Stat icon={Clock} label="Last Activity" value="—" />
+      <StatTile icon={Clock} label="Last Activity" value="—" />
     </div>
   );
 }

@@ -11,10 +11,13 @@ use crate::admin::models::{
     DeletionCheckResponse,
 };
 use crate::admin::repository::AdminRepository;
+use crate::comment::repository::CommentRepository;
 use crate::errors::ApiError;
 use crate::group::models::{GroupMember, GroupResponse, MemberResponse, Role};
 use crate::group::repository::GroupRepository;
+use crate::group::service::purge_group_data;
 use crate::rbac::service::RbacService;
+use crate::ticket::repository::TicketRepository;
 use crate::user::models::UserResponse;
 use crate::user::service::UserService;
 
@@ -30,6 +33,10 @@ struct DeletionPlan {
 
 pub struct AdminService {
     group_repo: GroupRepository,
+    // Held only to feed purge_group_data; admin has no other ticket concern.
+    ticket_repo: TicketRepository,
+    // Held only to feed purge_group_data; admin has no other comment concern.
+    comment_repo: CommentRepository,
     user_service: UserService,
     admin_repo: AdminRepository,
     rbac: RbacService,
@@ -39,6 +46,8 @@ impl AdminService {
     pub fn new(db: &Database) -> Self {
         Self {
             group_repo: GroupRepository::new(db),
+            ticket_repo: TicketRepository::new(db),
+            comment_repo: CommentRepository::new(db),
             user_service: UserService::new(db),
             admin_repo: AdminRepository::new(db),
             rbac: RbacService::new(db),
@@ -156,8 +165,13 @@ impl AdminService {
         }
 
         for (group_id, group_name) in &plan.auto_delete {
-            self.group_repo.delete_members_by_group(*group_id).await?;
-            self.group_repo.delete_group(*group_id).await?;
+            purge_group_data(
+                &self.group_repo,
+                &self.ticket_repo,
+                &self.comment_repo,
+                *group_id,
+            )
+            .await?;
             self.admin_repo
                 .insert_audit_entry(AuditLogEntry {
                     id: None,
@@ -235,8 +249,13 @@ impl AdminService {
     // instead; this is the System-Admin-as-non-member path.
     pub async fn delete_group(&self, caller_id: ObjectId, group_id: ObjectId) -> Result<(), ApiError> {
         self.rbac.require_system_admin(caller_id).await?;
-        self.group_repo.delete_members_by_group(group_id).await?;
-        let deleted = self.group_repo.delete_group(group_id).await?;
+        let deleted = purge_group_data(
+            &self.group_repo,
+            &self.ticket_repo,
+            &self.comment_repo,
+            group_id,
+        )
+        .await?;
         if !deleted {
             return Err(ApiError::NotFound);
         }

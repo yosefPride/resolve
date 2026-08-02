@@ -8,41 +8,16 @@ Legend:
 - **Gap** — specified, simply not built yet.
 - **Doc drift** — the code is fine; the spec describes something else.
 
----
+This file lists **open** mismatches only. Once something is built or corrected it stops being
+a deviation — it's described as a normal part of the system in the relevant implementation
+doc instead, its entry is removed here, and the remainder are renumbered.
 
-## 1. Deleting a group orphans its tickets and counter — **Bug**
-
-**Spec** — `docs/specification/api.md`, `DELETE /groups/:id`: *"the group and all its data
-cease to exist."* `docs/specification/database.md`, `counters`: *"Deleted along with the
-group's tickets when the group is deleted."*
-
-**Code** — neither deletion path touches tickets or counters:
-
-```rust
-// group/service.rs — delete_group
-self.repo.delete_members_by_group(group_id).await?;
-self.repo.delete_group(group_id).await?;
-
-// admin/service.rs — delete_group
-self.group_repo.delete_members_by_group(group_id).await?;
-let deleted = self.group_repo.delete_group(group_id).await?;
-```
-
-`TicketRepository` has no `delete_by_group` method at all, and nothing deletes from
-`counters` anywhere in the codebase.
-
-**Consequences**
-- Every ticket of a deleted group stays in the `tickets` collection forever, unreachable (no group means no `GroupScoped` extractor can resolve, so no endpoint can read them) but still stored. Unbounded growth.
-- The `counters` document survives. If a group id were ever reused, numbering would resume mid-sequence — not currently possible with `ObjectId`, but the row is still garbage.
-- The same gap applies to `AdminService::delete_user`'s auto-delete path, which deletes groups the same way.
-
-This is the most significant deviation in the project. Two obvious fixes: add
-`TicketRepository::delete_by_group` + a counter delete and call both from each path, or
-accept soft-orphaning and document it.
+Re-check an entry against the tree before relying on it; the code moves faster than this
+document does.
 
 ---
 
-## 2. System Admin can delete their own account — **Bug**
+## 1. System Admin can delete their own account — **Bug**
 
 **Spec** — `docs/specification/frontend.md` implies the admin's own row is special-cased,
 and the frontend comment in `features/users/UserTable.jsx` states it outright:
@@ -56,14 +31,14 @@ is no self-deletion guard anywhere in the backend, and no test covers it.
 
 **Consequence** — the UI hides the button, but `POST /admin/users/{own_id}/delete` succeeds.
 If that admin is the only System Admin, the system is left with no admin at all and no way
-to create one (nothing sets `global_role`; see #3).
+to create one (nothing sets `global_role`; see #2).
 
 The inline comment asserting the backend rejects this is factually wrong and should be
 corrected either way.
 
 ---
 
-## 3. No way to create a System Admin — **Gap**
+## 2. No way to create a System Admin — **Gap**
 
 **Spec** — `docs/specification/database.md` documents `users.global_role` and a full System
 Admin capability set.
@@ -78,24 +53,7 @@ explaining the project — it's a bootstrap gap, not an oversight in the admin m
 
 ---
 
-## 4. Comments are entirely unimplemented — **Gap**
-
-**Spec** — `docs/specification/api.md` defines `POST` and `GET
-/groups/{id}/tickets/{ticket_id}/comments`; `database.md` defines the `comments` collection
-and its indexes; `CLAUDE.md` lists comments as build step 5 of 7.
-
-**Code** — all five files in `backend/src/comment/` are **0 bytes**. `main.rs` declares
-`mod comment;` (which compiles, since an empty module is valid), `lib.rs` doesn't export it,
-no routes are registered, the collection is never created or indexed. Frontend
-`features/comments/CommentForm.jsx` and `CommentList.jsx` and `hooks/useComments.js` are also
-empty.
-
-Related: `RbacService::require_owner_or_group_admin` — described in `docs/specification/rbac.md`
-as "the comment rule" — is fully written and **called by nothing**. It's waiting for this feature.
-
----
-
-## 5. AI is entirely unimplemented — **Gap**
+## 3. AI is entirely unimplemented — **Gap**
 
 **Spec** — `CLAUDE.md` calls the Gemini API *"a core system feature"*.
 `docs/specification/api.md` defines three AI endpoints; `database.md` defines
@@ -112,34 +70,7 @@ overstates what exists.
 
 ---
 
-## 6. The frontend has no ticket UI, and the nav link 404s — **Gap + Bug**
-
-**Spec** — `docs/specification/frontend.md`: *"the Tickets page lists all the groups the user
-belongs to, and selecting one loads that group's tickets"*, plus a Ticket Detail page with
-comments and an AI panel.
-
-**Code** — backend tickets are **fully implemented** (CRUD, search, filters, pagination), but
-the frontend has nothing:
-
-```
-pages/TicketsPage.jsx           0 bytes
-pages/TicketDetailPage.jsx      0 bytes
-features/tickets/*  (5 files)   0 bytes
-hooks/useTickets.js             0 bytes
-services/tickets.service.js     0 bytes
-```
-
-**The bug on top of the gap:** both `components/layout/Header.jsx` and
-`components/layout/Sidebar.jsx` include a nav link to `/tickets`, but `App.jsx` registers no
-such route. Clicking "Issues" — visible in both chromes, on every authenticated page — falls
-through to the `*` catch-all and renders `NotFoundPage`.
-
-Either the route should be added or the link should be made inert (the way the Notifications
-row already is, with a "soon" badge — that pattern is right there in `Sidebar.jsx`).
-
----
-
-## 7. `GET /admin/analytics` doesn't exist — **Gap**
+## 4. `GET /admin/analytics` doesn't exist — **Gap**
 
 **Spec** — `docs/specification/api.md` lists it under System Admin Endpoints; `backend.md`
 lists "view system analytics (aggregated only)" as a capability.
@@ -148,7 +79,7 @@ lists "view system analytics (aggregated only)" as a capability.
 
 ---
 
-## 8. "EVERY database query MUST include group_id" is not literally true — **Doc drift**
+## 5. "EVERY database query MUST include group_id" is not literally true — **Doc drift**
 
 **Spec** — `docs/specification/backend.md`: *"EVERY database query MUST include group_id
 filter. No exceptions."* `database.md` repeats it as the "Multi-Tenancy Rule (CRITICAL)".
@@ -160,26 +91,40 @@ filter. No exceptions."* `database.md` repeats it as the "Multi-Tenancy Rule (CR
 - `admin_audit_log` — filters are optional; unfiltered returns everything
 
 The actual rule the code follows is narrower and correct: **tenant data** (`tickets`,
-`group_members`, `counters`) is always group-filtered; **non-tenant data** (users, sessions,
-group metadata, system audit) is not. The spec's absolute phrasing would flag correct code as
-a violation.
+`comments`, `group_members`, `counters`) is always group-filtered; **non-tenant data** (users,
+sessions, group metadata, system audit) is not. The spec's absolute phrasing would flag
+correct code as a violation.
+
+One documented exception inside tenant data: `CommentRepository::has_replies` filters on
+`parent_comment_id` alone, and is only ever reached through a comment already fetched with a
+group-filtered query.
 
 ---
 
-## 9. `require_owner_or_group_admin` is documented as active but is dead code — **Doc drift**
+## 6. `database.md` documents the pre-threading `comments` shape — **Doc drift**
 
-**Spec** — `docs/specification/rbac.md` lists it among the service-level helpers that
-"always run".
+**Spec** — `docs/specification/database.md`, `comments`: `_id, group_id, ticket_id, user_id,
+content, created_at`, plus two single-field indexes (`ticket_id`, `group_id`).
 
-**Code** — written, tested by nothing, called by nothing. Tickets deliberately use
-`require_group_admin` instead (which `rbac.md` does state correctly further down), and the
-only other intended consumer — comments — doesn't exist.
+**Code** — `comment::models::Comment` stores two fields the spec doesn't mention, and both
+are load-bearing:
 
-Harmless, but "both layers always run" doesn't apply to this particular helper today.
+- `parent_comment_id: Option<ObjectId>` — self-referential, nullable, no depth limit. The entire threading feature hangs off it.
+- `is_deleted: bool` — marks a tombstone, which is what a comment becomes when it's deleted while it still has replies.
+
+The indexes differ too. `db::ensure_indexes` creates one **compound** `(group_id, ticket_id)`
+— serving both the per-ticket read and, through its `group_id` prefix, the group-deletion
+cascade — plus `parent_comment_id`, which serves `has_replies`. Neither single-field index
+the spec lists is created.
+
+`docs/specification/api.md` was brought in line when the feature was built; `database.md`
+wasn't. The code is the sound half here — the fix is to update the spec. See
+[`db/collections.md`](./db/collections.md) and [`db/indexes.md`](./db/indexes.md) for the
+actual shape.
 
 ---
 
-## 10. `GET /groups/:id/users/lookup` is Group-Admin-only, spec is ambiguous — **Doc drift**
+## 7. `GET /groups/:id/users/lookup` is Group-Admin-only, spec is ambiguous — **Doc drift**
 
 **Spec** — `docs/specification/api.md` says "(Group Admin only)" in the prose, but places the
 endpoint outside the ticket/member sections where role requirements are listed structurally.
@@ -190,7 +135,7 @@ kind of thing that reads as a discrepancy on a quick scan.
 
 ---
 
-## 11. Small behavioral rough edges — **Bug (minor)**
+## 8. Small behavioral rough edges — **Bug (minor)**
 
 Found in code, not contradicted by any spec, but worth knowing:
 
@@ -232,7 +177,7 @@ panel).
 
 ---
 
-## 12. Unused dependency — **Doc drift (trivial)**
+## 9. Unused dependency — **Doc drift (trivial)**
 
 `backend/Cargo.toml` declares `uuid = { version = "1", features = ["v4", "serde"] }`.
 No `use uuid` anywhere in `src/`. Every identifier is a Mongo `ObjectId`. Leftover from
@@ -244,22 +189,19 @@ an earlier design; safe to remove.
 
 | # | Issue | Type | Severity |
 |---|---|---|---|
-| 1 | Group deletion orphans tickets + counters | Bug | **High** |
-| 2 | Admin can delete own account; UI comment claims otherwise | Bug | **High** |
-| 3 | No way to create a System Admin | Gap | **High** |
-| 4 | Comments unimplemented | Gap | Medium |
-| 5 | AI unimplemented (declared "core") | Gap | Medium |
-| 6 | No ticket UI; `/tickets` nav link 404s | Gap + Bug | Medium |
-| 7 | `GET /admin/analytics` missing | Gap | Low |
-| 8 | "every query needs group_id" is overstated | Doc drift | Low |
-| 9 | `require_owner_or_group_admin` is dead code | Doc drift | Low |
-| 10 | Lookup endpoint role requirement placement | Doc drift | Trivial |
-| 11 | Assorted rough edges (a–g) | Bug (minor) | Low |
-| 12 | Unused `uuid` dependency | Doc drift | Trivial |
+| 1 | Admin can delete own account; UI comment claims otherwise | Bug | **High** |
+| 2 | No way to create a System Admin | Gap | **High** |
+| 3 | AI unimplemented (declared "core") | Gap | Medium |
+| 4 | `GET /admin/analytics` missing | Gap | Low |
+| 5 | "every query needs group_id" is overstated | Doc drift | Low |
+| 6 | `database.md` missing `parent_comment_id` / `is_deleted`; wrong comment indexes | Doc drift | Low |
+| 7 | Lookup endpoint role requirement placement | Doc drift | Trivial |
+| 8 | Assorted rough edges (a–g) | Bug (minor) | Low |
+| 9 | Unused `uuid` dependency | Doc drift | Trivial |
 
 **The pattern worth noting:** where the code exists, it is careful, well-commented, and
 consistent with the spec — the backend's session model, isolation, and succession logic all
-do exactly what's documented. The deviations cluster in two places: **cleanup on delete**
-(#1, and the reason #2 matters), and **features that were specified before they were built**
-(#4–#7). Those are different kinds of problem and are worth separating when explaining the
-project.
+do exactly what's documented. What's left divides into **bootstrap and admin-lifecycle holes**
+(#1 and #2, which compound: an admin can delete the last admin account, and nothing can
+create a replacement) and **AI, specified in detail and not started** (#3 and #4). Those are
+different kinds of problem and are worth separating when explaining the project.

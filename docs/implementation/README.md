@@ -15,7 +15,7 @@ reconciliation.
 | **[`backend-flow.md`](./backend-flow.md)** | What exists, the four core flows, the module dependency map, feature walkthroughs, and a reading order |
 | **[`data-model.md`](./data-model.md)** | Collections, relationships and cardinality, referential integrity, isolation model, atomicity |
 | **[`frontend-flow.md`](./frontend-flow.md)** | What exists, session/token handling, data-fetching patterns, feature walkthroughs, reading order |
-| **[`deviations.md`](./deviations.md)** | 12 mismatches between code and spec, ranked by severity |
+| **[`deviations.md`](./deviations.md)** | 9 open mismatches between code and spec, ranked by severity |
 
 ## Detail files
 
@@ -26,6 +26,7 @@ reconciliation.
 4. [`04-groups.md`](./backend/04-groups.md) — `group/`, including the sole-Group-Admin invariant
 5. [`05-tickets.md`](./backend/05-tickets.md) — `ticket/`, the atomic counter, and the hybrid search
 6. [`06-admin.md`](./backend/06-admin.md) — `admin/` and the user-deletion succession flow
+7. [`07-comments.md`](./backend/07-comments.md) — `comment/`, threading, tombstones, and the two cascades
 
 **Database** — [`db/`](./db/)
 - [`collections.md`](./db/collections.md) — field-by-field reference
@@ -38,6 +39,7 @@ reconciliation.
 4. [`04-account.md`](./frontend/04-account.md) — profile and password forms
 5. [`05-layout-and-ui.md`](./frontend/05-layout-and-ui.md) — layouts, sidebar, UI primitives, utils, styling
 6. [`06-libraries.md`](./frontend/06-libraries.md) — every dependency, frontend and backend, and notable absences
+7. [`07-tickets-and-comments.md`](./frontend/07-tickets-and-comments.md) — the `?group=` convention, ticket list/detail, the comment tree, dashboard tiles
 
 ---
 
@@ -61,6 +63,7 @@ a demoted user loses access immediately.
 single-use refresh token in an httpOnly `SameSite=Strict` cookie, stored server-side only as
 a SHA-256 hash. All revocation lives at the refresh layer.
 
-**Build status.** Auth, groups, RBAC, tickets, and admin are complete on the backend.
-**Comments and AI are empty files** — scaffolded, never written. The frontend has no ticket
-UI at all, and its "Issues" nav link 404s.
+**Build status.** Auth, groups, RBAC, tickets, comments, and admin are complete on the
+backend, and all of them now have a frontend. **AI is the one unbuilt feature** — empty files
+on both sides, scaffolded and never written, with a "Coming soon." placeholder holding its
+slot on the Ticket Detail page.

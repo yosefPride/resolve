@@ -1,6 +1,6 @@
 # Frontend — Layout, UI Primitives & Utils
 
-Covers: `components/layout/` (6 files + 1 empty), `components/ui/` (5), `components/marketing/`
+Covers: `components/layout/` (6 files + 1 empty), `components/ui/` (6), `components/marketing/`
 (4), `utils/` (3 + 1 empty), `pages/` (the remaining thin ones), `main.css`, `index.html`.
 
 ---
@@ -90,9 +90,11 @@ Contains a deliberately **inert Notifications row** — `aria-disabled="true"`,
 `cursor-not-allowed`, muted colors, and a "soon" badge. The comment: no notifications backend
 yet, so the row reads as planned rather than broken.
 
-`NAV_LINKS` = Dashboard (`/dashboard`) and Issues (`/tickets`). **`/tickets` has no route** —
-its comment says "the route stays /tickets to match the backend", but `App.jsx` never
-registers it, so it 404s. See [`../deviations.md`](../deviations.md).
+`NAV_LINKS` = Dashboard (`/dashboard`) and Issues (`/tickets`). The comment explains the
+label/route split — the route stays `/tickets` to match the backend while the visible label
+says "Issues", per the tickets→Issues convention in
+[`../frontend-flow.md`](../frontend-flow.md) §4. `App.jsx` registers both `/tickets` and
+`/tickets/:ticketId`.
 
 ---
 
@@ -105,7 +107,7 @@ The marketing header. Sticky, `backdrop-blur`, `z-50`.
 - Authenticated → desktop nav + `<UserMenu />` + a mobile hamburger. Unauthenticated → "Log in" / "Sign up" buttons.
 - Mobile nav is a separate stacked block below the bar, toggled by `isMobileNavOpen`.
 
-Uses the same `NAV_LINKS` (Dashboard, Issues → `/tickets`), so the broken link appears in both chromes.
+Uses the same `NAV_LINKS` (Dashboard, Issues → `/tickets`), so both chromes stay in sync.
 
 ## `components/layout/UserMenu.jsx` (67 lines)
 
@@ -139,7 +141,7 @@ Two behaviors worth knowing, both from the comment:
 ### `Input.jsx` (10 lines)
 One `BASE` string plus `{...props}` passthrough. All variation comes through `className`.
 
-### `Badge.jsx` (21 lines)
+### `Badge.jsx` (22 lines)
 Variants `neutral` (default gray), `accent` (sky-tinted, e.g. the System Admin chip),
 `outline` (muted border, e.g. the footer version tag). Sizes `sm` / `md`.
 
@@ -151,6 +153,15 @@ focus trapping, scroll lock, and `aria-modal`.
 Two details: `<Dialog.Title>` is **always** rendered (visually hidden via `sr-only` when no
 `title` is given) because Radix requires one for accessibility; and
 `aria-describedby={undefined}` suppresses Radix's warning about a missing description.
+
+### `StatTile.jsx` (14 lines)
+Icon + uppercase label + large value, in a bordered card. Takes `{icon, label, value}`, where
+`icon` is a lucide component rendered as `<Icon className="h-4 w-4" />`.
+
+Extracted from `GroupStats`, which had defined it privately, when `DashboardStats` needed the
+same tile — the two now share one copy. It's the only `components/ui/` primitive that exists
+purely for deduplication rather than as a design-system building block, and the only one with
+no variants or sizes. See [`07-tickets-and-comments.md`](./07-tickets-and-comments.md).
 
 ### `Spinner.jsx` (7 lines)
 A full-screen centered spinning ring. Used only by `AuthProvider` during boot — everything

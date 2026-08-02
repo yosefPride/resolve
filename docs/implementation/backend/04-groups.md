@@ -1,6 +1,6 @@
 # Backend — Groups & Membership
 
-Covers `src/group/`: `models.rs` (107), `repository.rs` (218), `service.rs` (277),
+Covers `src/group/`: `models.rs` (107), `repository.rs` (218), `service.rs` (310),
 `handlers.rs` (165).
 
 The group is the tenant boundary. This module owns group metadata, membership, and
@@ -82,7 +82,7 @@ single `GroupRepository` and reach membership data.
 | `create_group(input)` | Inserts with `created_at: now`, returns the struct with the generated `_id`. |
 | `find_group_by_id(id)` | By `_id`. |
 | `list_all_groups(search)` | Admin-only. Blank/absent search → empty filter (all groups); otherwise `{name: substring_regex(term)}`. No pagination. |
-| `delete_group(id)` | `delete_one`, returns `deleted_count > 0`. **Deletes only the group document.** |
+| `delete_group(id)` | `delete_one`, returns `deleted_count > 0`. **Deletes only the group document** — the surrounding cascade is `purge_group_data`'s job, not the repository's. |
 | `rename_group(id, name)` | `update_one` + `$set`. Returns `modified_count > 0` — note this is `false` when renaming to the *same* name, since nothing was modified. |
 | `insert_member(group_id, user_id, role)` | Inserts with `joined_at: now`. Relies on the unique index for duplicate rejection. |
 | `find_member(group_id, user_id)` | The lookup behind every RBAC check. Filters on both fields. |
@@ -101,9 +101,11 @@ Every membership query filters on `group_id`, `user_id`, or both — never a bar
 
 ## `group/service.rs`
 
-### `struct GroupService { repo, ticket_repo, user_service, rbac }`
-Note the **`ticket_repo` field** — this is the only cross-feature dependency in the backend,
-and it exists for exactly one reason: `list_my_groups` reports `open_ticket_count`.
+### `struct GroupService { repo, ticket_repo, comment_repo, user_service, rbac }`
+Note the **`ticket_repo` and `comment_repo` fields** — the backend's cross-feature
+dependencies, both here. `ticket_repo` has two jobs: `list_my_groups` reports
+`open_ticket_count`, and group deletion cascades tickets. `comment_repo` has only the
+second. Both cascades run through `purge_group_data` below.
 
 ### `async fn create_group(&self, user_id, name) -> Result<GroupResponse, ApiError>`
 No RBAC check — any authenticated user may create a group.
@@ -133,11 +135,41 @@ Because the boolean is ignored, renaming to the identical name still returns `20
 group rather than a spurious error.
 
 ### `async fn delete_group(&self, user_id, group_id) -> Result<(), ApiError>`
-`require_group_admin` → `delete_members_by_group` → `delete_group`.
+`require_group_admin` → `purge_group_data(...)` (below). The authorization check stays here;
+the cascade itself is shared.
 
-**This deletes memberships and the group document only.** It does not delete the group's
-tickets or its `counters` row. See [`../deviations.md`](../deviations.md) — this is the most
-significant behavioral gap in the backend.
+### `pub async fn purge_group_data(repo, ticket_repo, comment_repo, group_id) -> Result<bool, ApiError>`
+A **free function, not a method** — that's the whole point. It is the one place that knows
+what "a group's data" consists of, and all three paths that destroy a group call it:
+
+| Caller | Who's deleting |
+|---|---|
+| `GroupService::delete_group` | a Group Admin deleting their own group |
+| `AdminService::delete_group` | a System Admin deleting any group |
+| `AdminService::delete_user` (auto-delete loop) | sole-admin-and-only-member cleanup |
+
+Each caller keeps its own authorization check; only the cascade is shared, so a newly added
+per-group collection gets wired in once instead of three times.
+
+```
+delete_members_by_group → ticket_repo.delete_by_group → comment_repo.delete_by_group → delete_group
+```
+
+Order is **child-to-parent**: the group document goes last, so a failure partway through
+leaves the group still resolvable and the cascade re-runnable, rather than orphaning what it
+was supposed to remove. Sequential writes, not a transaction — the same choice made in
+`create_group` and admin user deletion.
+
+Returns `delete_group`'s boolean, which is how `AdminService::delete_group` still turns a
+missing group into `404`.
+
+Two scoping notes:
+- `ticket_repo.delete_by_group` removes the group's tickets **and** its `counters` document (the counter's `_id` *is* the `group_id`).
+- `comment_repo.delete_by_group` filters on `group_id` alone — comments carry their own `group_id`, so no per-ticket fan-out is needed. Deleting a *single* ticket is a separate, smaller cascade that lives in `TicketService::delete_ticket`; putting it here would take the whole group down with one ticket.
+
+Centralizing the cascade here is what keeps a deleted group from orphaning its tickets and
+counter — each of the three paths previously removed only the memberships and the group
+document.
 
 ### `async fn list_members(&self, user_id, group_id) -> Result<Vec<MemberResponse>, ApiError>`
 `require_member` → `list_members` → `enrich_member` per row.

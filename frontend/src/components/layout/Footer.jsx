@@ -1,4 +1,4 @@
-import logo from '../../assets/logo.png';
+import logo from '../../assets/brand-logo.svg';
 import Badge from '../ui/Badge';
 
 const FOOTER_LINKS = [];
@@ -10,8 +10,8 @@ export default function Footer() {
     <footer className="border-t border-white/10 bg-black">
       <div className="mx-auto flex max-w-7xl flex-col items-center gap-3 px-4 py-6 sm:flex-row sm:justify-between sm:px-6 lg:px-8">
         <div className="flex items-center gap-2">
-          <img src={logo} alt="" className="h-10 w-auto object-contain opacity-50" />
-          <span className="text-xs text-slate-500">© {year} Resolve</span>
+          <img src={logo} alt="" className="h-3 w-auto object-contain opacity-50" />
+          <span className="text-xs text-slate-500">© {year} </span>
         </div>
 
         <div className="flex items-center gap-3">
