@@ -18,6 +18,7 @@ import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
 import AiPanel from '../ai/AiPanel';
 import CommentList from '../comments/CommentList';
+import DescriptionMarkdown from './DescriptionMarkdown';
 import EditTicketForm from './EditTicketForm';
 import TicketMeta from './TicketMeta';
 
@@ -184,7 +185,7 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
                   : 'hidden'
               }
             >
-              <p className="whitespace-pre-wrap text-sm text-slate-200">{ticket.description}</p>
+              <DescriptionMarkdown>{ticket.description}</DescriptionMarkdown>
             </div>
             <div
               className={
