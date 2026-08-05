@@ -36,5 +36,12 @@ fn summarize_and_analyze_hit_the_real_gemini_api() {
         assert!(!analysis.severity_prediction.trim().is_empty());
         assert!(!analysis.suggested_fix.trim().is_empty());
         assert!(!analysis.classification.trim().is_empty());
+
+        let narrative = client
+            .narrate_report("Total tickets: 12. Open: 5. Closed: 7. Priority breakdown — low: 4, high: 6, critical: 2. Created in the last 7 days: 3.")
+            .await
+            .expect("narrate_report call failed");
+        println!("narrative: {narrative}");
+        assert!(!narrative.trim().is_empty());
     });
 }

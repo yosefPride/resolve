@@ -1,6 +1,6 @@
 use actix_web::{App, test as actix_test, web};
 use mongodb::{Database, IndexModel, bson::doc, bson::oid::ObjectId, options::IndexOptions};
-use resolve::ai::models::{TicketAnalysisResponse, TicketSummaryResponse};
+use resolve::ai::models::{GroupReportResponse, TicketAnalysisResponse, TicketSummaryResponse};
 use resolve::auth::models::{AuthResponse, RegisterRequest};
 use resolve::config::Config;
 use resolve::group::models::{AddMemberRequest, CreateGroupRequest, GroupResponse, Role};
@@ -391,6 +391,86 @@ fn test_summarize_invalid_ticket_id_is_bad_request() {
         )
         .await;
         assert_eq!(resp.status(), 400);
+
+        cleanup(
+            &group_repo,
+            &user_repo,
+            ObjectId::parse_str(&group_id).unwrap(),
+            &[&owner, &contributor],
+        )
+        .await;
+    });
+}
+
+// 7. A Group Admin can generate a group report; the real Gemini call
+// succeeds and a second call within the TTL is served from cache.
+#[test]
+fn test_report_group_admin_succeeds_then_caches() {
+    support::runtime().block_on(async {
+        let (db, uri) = setup_db().await;
+        let group_repo = GroupRepository::new(&db);
+        let user_repo = UserRepository::new(&db);
+        let app = test_app!(build_app_state(db, uri));
+
+        let (group_id, _ticket_id, owner, contributor) = seed!(app);
+
+        let resp = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!("/api/v1/ai/groups/{group_id}/report"))
+                .insert_header(auth_header(&owner.jwt))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 200);
+        let body: GroupReportResponse = actix_test::read_body_json(resp).await;
+        assert_eq!(body.data.total_tickets, 1);
+        assert!(!body.data.narrative.trim().is_empty());
+        assert!(!body.cached);
+
+        let second = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!("/api/v1/ai/groups/{group_id}/report"))
+                .insert_header(auth_header(&owner.jwt))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(second.status(), 200);
+        let second_body: GroupReportResponse = actix_test::read_body_json(second).await;
+        assert!(second_body.cached);
+        assert_eq!(second_body.data, body.data);
+
+        cleanup(
+            &group_repo,
+            &user_repo,
+            ObjectId::parse_str(&group_id).unwrap(),
+            &[&owner, &contributor],
+        )
+        .await;
+    });
+}
+
+// 8. A Contributor is forbidden from generating a group report.
+#[test]
+fn test_report_contributor_forbidden() {
+    support::runtime().block_on(async {
+        let (db, uri) = setup_db().await;
+        let group_repo = GroupRepository::new(&db);
+        let user_repo = UserRepository::new(&db);
+        let app = test_app!(build_app_state(db, uri));
+
+        let (group_id, _ticket_id, owner, contributor) = seed!(app);
+
+        let resp = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!("/api/v1/ai/groups/{group_id}/report"))
+                .insert_header(auth_header(&contributor.jwt))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 403);
 
         cleanup(
             &group_repo,

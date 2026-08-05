@@ -42,3 +42,14 @@ pub async fn analyze_ticket(
         .await?;
     Ok(HttpResponse::Ok().json(analysis))
 }
+
+pub async fn generate_group_report(
+    scoped: GroupScoped,
+    state: web::Data<AppState>,
+) -> Result<HttpResponse, ApiError> {
+    let service = AiService::new(&state.db, &state.config);
+    let report = service
+        .generate_group_report(scoped.user_id, scoped.group_id)
+        .await?;
+    Ok(HttpResponse::Ok().json(report))
+}

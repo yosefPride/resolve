@@ -21,8 +21,10 @@ mod support;
 struct FakeProvider {
     summarize_calls: Arc<AtomicUsize>,
     analyze_calls: Arc<AtomicUsize>,
+    narrate_calls: Arc<AtomicUsize>,
     summary: Arc<Mutex<String>>,
     analysis: Arc<Mutex<AnalysisResult>>,
+    narrative: Arc<Mutex<String>>,
 }
 
 impl FakeProvider {
@@ -30,8 +32,10 @@ impl FakeProvider {
         Self {
             summarize_calls: Arc::new(AtomicUsize::new(0)),
             analyze_calls: Arc::new(AtomicUsize::new(0)),
+            narrate_calls: Arc::new(AtomicUsize::new(0)),
             summary: Arc::new(Mutex::new(summary.to_string())),
             analysis: Arc::new(Mutex::new(analysis)),
+            narrative: Arc::new(Mutex::new("a narrative".to_string())),
         }
     }
 }
@@ -55,6 +59,15 @@ impl AiProvider for FakeProvider {
         self.analyze_calls.fetch_add(1, Ordering::SeqCst);
         let analysis = self.analysis.lock().unwrap().clone();
         async move { Ok(analysis) }
+    }
+
+    fn narrate_report(
+        &self,
+        _stats_summary: &str,
+    ) -> impl Future<Output = Result<String, ApiError>> + Send {
+        self.narrate_calls.fetch_add(1, Ordering::SeqCst);
+        let narrative = self.narrative.lock().unwrap().clone();
+        async move { Ok(narrative) }
     }
 }
 
@@ -123,6 +136,92 @@ async fn setup() -> (mongodb::Database, ObjectId, ObjectId, ObjectId) {
     let ticket_id = ticket.id.expect("created ticket has an id");
 
     (db, group_id, member_id, ticket_id)
+}
+
+// Returns (db, owner_id, member_id, group_id): a group with one Group Admin
+// (owner_id) and one Contributor (member_id), seeded with three tickets —
+// open/low, open/high, closed/critical — so report tests can assert exact
+// counts.
+async fn setup_for_report() -> (mongodb::Database, ObjectId, ObjectId, ObjectId) {
+    let db = support::shared_client().await.database("resolve_test");
+
+    for collection in [
+        "ai_ticket_insights",
+        "ai_group_reports",
+        "groups",
+        "group_members",
+        "tickets",
+        "counters",
+    ] {
+        db.collection::<Document>(collection)
+            .drop()
+            .await
+            .unwrap_or_else(|_| panic!("failed to drop {collection} collection"));
+    }
+
+    let group_repo = GroupRepository::new(&db);
+    let ticket_repo = TicketRepository::new(&db);
+
+    let owner_id = ObjectId::new();
+    let group = group_repo
+        .create_group(CreateGroupInput {
+            name: "Report Test Group".to_string(),
+            owner_id,
+        })
+        .await
+        .expect("create_group failed");
+    let group_id = group.id.expect("created group has an id");
+
+    // GroupRepository::create_group only inserts the group document — the
+    // creator's own membership row is a separate insert_member call that
+    // GroupService::create_group normally does alongside it (see its doc
+    // comment). Going through the repo directly here means that has to be
+    // done explicitly, or owner_id has no membership at all and
+    // require_group_admin rejects it.
+    group_repo
+        .insert_member(group_id, owner_id, Role::GroupAdmin)
+        .await
+        .expect("insert_member (owner) failed");
+
+    let member_id = ObjectId::new();
+    group_repo
+        .insert_member(group_id, member_id, Role::Contributor)
+        .await
+        .expect("insert_member failed");
+
+    for (priority, close) in [
+        (TicketPriority::Low, false),
+        (TicketPriority::High, false),
+        (TicketPriority::Critical, true),
+    ] {
+        let ticket_number = ticket_repo
+            .next_ticket_number(group_id)
+            .await
+            .expect("next_ticket_number failed");
+        let ticket = ticket_repo
+            .insert_ticket(CreateTicketInput {
+                group_id,
+                ticket_number,
+                title: "a ticket".to_string(),
+                description: "a description".to_string(),
+                priority,
+                created_by: owner_id,
+            })
+            .await
+            .expect("insert_ticket failed");
+        if close {
+            ticket_repo
+                .update_ticket(
+                    group_id,
+                    ticket.id.unwrap(),
+                    doc! { "status": "closed", "updated_at": BsonDateTime::now() },
+                )
+                .await
+                .expect("update_ticket failed");
+        }
+    }
+
+    (db, owner_id, member_id, group_id)
 }
 
 // 1. First summarize call has nothing cached, so it calls the provider.
@@ -325,5 +424,71 @@ fn test_summarize_ticket_404s_on_unknown_ticket() {
             .await;
 
         assert!(matches!(result, Err(ApiError::NotFound)), "{result:?}");
+    });
+}
+
+// 8. First report call has nothing cached, so it computes real stats from
+// the seeded tickets and calls the provider for the narrative.
+#[test]
+fn test_generate_group_report_computes_stats_and_calls_provider() {
+    support::runtime().block_on(async {
+        let (db, owner_id, _member_id, group_id) = setup_for_report().await;
+        let provider = FakeProvider::new("summary", default_analysis());
+        let service = AiService::with_provider(&db, provider.clone());
+
+        let report = service
+            .generate_group_report(owner_id, group_id)
+            .await
+            .expect("generate_group_report failed");
+
+        assert!(!report.cached);
+        assert_eq!(report.data.total_tickets, 3);
+        assert_eq!(report.data.open_tickets, 2);
+        assert_eq!(report.data.closed_tickets, 1);
+        assert_eq!(report.data.priority_breakdown.low, 1);
+        assert_eq!(report.data.priority_breakdown.high, 1);
+        assert_eq!(report.data.priority_breakdown.critical, 1);
+        assert_eq!(report.data.narrative, "a narrative");
+        assert_eq!(provider.narrate_calls.load(Ordering::SeqCst), 1);
+    });
+}
+
+// 9. A second call within the TTL is served from cache; the provider isn't
+// called again.
+#[test]
+fn test_generate_group_report_uses_cache_within_ttl() {
+    support::runtime().block_on(async {
+        let (db, owner_id, _member_id, group_id) = setup_for_report().await;
+        let provider = FakeProvider::new("summary", default_analysis());
+        let service = AiService::with_provider(&db, provider.clone());
+
+        let first = service
+            .generate_group_report(owner_id, group_id)
+            .await
+            .expect("first generate_group_report failed");
+        let second = service
+            .generate_group_report(owner_id, group_id)
+            .await
+            .expect("second generate_group_report failed");
+
+        assert!(second.cached);
+        assert_eq!(second.data, first.data);
+        assert_eq!(provider.narrate_calls.load(Ordering::SeqCst), 1);
+    });
+}
+
+// 10. A Contributor (non-Group-Admin) is rejected before the provider is
+// ever called.
+#[test]
+fn test_generate_group_report_requires_group_admin() {
+    support::runtime().block_on(async {
+        let (db, _owner_id, member_id, group_id) = setup_for_report().await;
+        let provider = FakeProvider::new("summary", default_analysis());
+        let service = AiService::with_provider(&db, provider.clone());
+
+        let result = service.generate_group_report(member_id, group_id).await;
+
+        assert!(matches!(result, Err(ApiError::Forbidden)), "{result:?}");
+        assert_eq!(provider.narrate_calls.load(Ordering::SeqCst), 0);
     });
 }

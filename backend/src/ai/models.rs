@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use mongodb::bson::{DateTime as BsonDateTime, Document, oid::ObjectId};
 use serde::{Deserialize, Serialize};
 
@@ -69,10 +70,48 @@ impl AiTicketInsight {
     }
 }
 
-// Aggregated group-wide analytics (docs/api.md, "POST /ai/groups/{id}/report").
-// report_data is a raw Document rather than a typed struct: its shape is
-// decided when the report generator is built (later stage), so this stays
-// whatever the service hands it in the meantime.
+// docs/api.md's "POST /ai/groups/{id}/report" returns "group-wide analytics,
+// ticket trends, workload distribution". There's no assignee/owner concept
+// in the ticket model (only created_by, status, priority — see
+// ticket::models::Ticket), so "workload distribution" is read here as ticket
+// volume distributed across priority/status rather than per-person load;
+// `narrative` is where Gemini synthesizes trends/workload commentary in
+// prose from these hard numbers (see AiProvider::narrate_report — the model
+// narrates, it doesn't count).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PriorityBreakdown {
+    pub low: i64,
+    pub high: i64,
+    pub critical: i64,
+}
+
+// Backing shape for AiGroupReport::report_data. Stored as a plain Document in
+// Mongo (docs/database.md doesn't pin report_data's schema) but always
+// round-tripped through this struct via bson::to_document/from_document, so
+// nothing hand-rolls doc! key access for it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReportData {
+    pub total_tickets: i64,
+    pub open_tickets: i64,
+    pub closed_tickets: i64,
+    pub priority_breakdown: PriorityBreakdown,
+    pub recent_tickets_7d: i64,
+    pub narrative: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupReportResponse {
+    #[serde(flatten)]
+    pub data: ReportData,
+    pub generated_at: DateTime<Utc>,
+    pub cached: bool,
+}
+
+// Aggregated group-wide analytics document (docs/api.md, "POST
+// /ai/groups/{id}/report"). One new document per generation (unlike
+// AiTicketInsight's single upserted-in-place doc) — docs/database.md:
+// "groups -> ai_group_reports (1-to-many)" — so find_latest_report always
+// reads the most recent one and older reports remain as a history.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiGroupReport {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
@@ -81,6 +120,17 @@ pub struct AiGroupReport {
     pub report_data: Document,
     pub generated_at: BsonDateTime,
     pub generated_by: ObjectId,
+}
+
+impl AiGroupReport {
+    // docs/ai-integration.md: "Group reports are cached for a period of
+    // time" — unlike ticket insights (invalidated by a content change),
+    // reports are cheap-but-imprecise to invalidate exactly (would mean
+    // tracking every ticket's content_updated_at across the whole group), so
+    // a fixed time window is used instead (confirmed with user: 1 hour).
+    pub fn is_fresh(&self, now: BsonDateTime, ttl_millis: i64) -> bool {
+        now.timestamp_millis() - self.generated_at.timestamp_millis() < ttl_millis
+    }
 }
 
 #[cfg(test)]
@@ -137,5 +187,37 @@ mod tests {
         let mut insight = insight_at(ts);
         insight.suggested_fix = None;
         assert!(!insight.is_analysis_fresh(ts));
+    }
+
+    fn report_at(generated_at: BsonDateTime) -> AiGroupReport {
+        AiGroupReport {
+            id: Some(ObjectId::new()),
+            group_id: ObjectId::new(),
+            report_data: Document::new(),
+            generated_at,
+            generated_by: ObjectId::new(),
+        }
+    }
+
+    const ONE_HOUR_MILLIS: i64 = 60 * 60 * 1000;
+
+    #[test]
+    fn report_fresh_within_ttl() {
+        let generated_at = BsonDateTime::from_millis(0);
+        let now = BsonDateTime::from_millis(ONE_HOUR_MILLIS - 1);
+        assert!(report_at(generated_at).is_fresh(now, ONE_HOUR_MILLIS));
+    }
+
+    #[test]
+    fn report_stale_after_ttl() {
+        let generated_at = BsonDateTime::from_millis(0);
+        let now = BsonDateTime::from_millis(ONE_HOUR_MILLIS);
+        assert!(!report_at(generated_at).is_fresh(now, ONE_HOUR_MILLIS));
+    }
+
+    #[test]
+    fn report_fresh_at_generation_instant() {
+        let ts = BsonDateTime::now();
+        assert!(report_at(ts).is_fresh(ts, ONE_HOUR_MILLIS));
     }
 }

@@ -74,11 +74,16 @@ pub fn configure(config: &mut web::ServiceConfig) {
                 ),
         )
         .service(
-            web::scope("/ai").service(
-                web::scope("/groups/{id}/tickets/{ticket_id}")
-                    .route("/summarize", web::post().to(ai_handlers::summarize_ticket))
-                    .route("/analyze", web::post().to(ai_handlers::analyze_ticket)),
-            ),
+            web::scope("/ai")
+                .service(
+                    web::scope("/groups/{id}/tickets/{ticket_id}")
+                        .route("/summarize", web::post().to(ai_handlers::summarize_ticket))
+                        .route("/analyze", web::post().to(ai_handlers::analyze_ticket)),
+                )
+                .route(
+                    "/groups/{id}/report",
+                    web::post().to(ai_handlers::generate_group_report),
+                ),
         )
         .service(
             web::scope("/admin")
