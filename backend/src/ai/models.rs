@@ -6,13 +6,13 @@ use serde::{Deserialize, Serialize};
 // what the service-layer tests assert on to prove a cache hit skipped the
 // Gemini call, and it doubles as a signal the frontend can show later ("from
 // cache" vs. freshly generated) without adding any new capability.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TicketSummaryResponse {
     pub summary: String,
     pub cached: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TicketAnalysisResponse {
     pub severity_prediction: String,
     pub suggested_fix: String,
