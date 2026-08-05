@@ -1,6 +1,25 @@
 use mongodb::bson::{DateTime as BsonDateTime, Document, oid::ObjectId};
 use serde::{Deserialize, Serialize};
 
+// API response shapes (ai::service::AiService). `cached` isn't in
+// docs/api.md's field list but is cheap to include and directly useful: it's
+// what the service-layer tests assert on to prove a cache hit skipped the
+// Gemini call, and it doubles as a signal the frontend can show later ("from
+// cache" vs. freshly generated) without adding any new capability.
+#[derive(Debug, Clone, Serialize)]
+pub struct TicketSummaryResponse {
+    pub summary: String,
+    pub cached: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TicketAnalysisResponse {
+    pub severity_prediction: String,
+    pub suggested_fix: String,
+    pub classification: String,
+    pub cached: bool,
+}
+
 // One document per ticket, upserted in place by summarize/analyze
 // (ai::repository::AiRepository::upsert_summary / upsert_analysis) rather than
 // inserted fresh each call — docs/database.md's "tickets -> ai_ticket_insights

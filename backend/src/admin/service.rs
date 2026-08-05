@@ -11,6 +11,7 @@ use crate::admin::models::{
     DeletionCheckResponse,
 };
 use crate::admin::repository::AdminRepository;
+use crate::ai::repository::AiRepository;
 use crate::comment::repository::CommentRepository;
 use crate::errors::ApiError;
 use crate::group::models::{GroupMember, GroupResponse, MemberResponse, Role};
@@ -37,6 +38,8 @@ pub struct AdminService {
     ticket_repo: TicketRepository,
     // Held only to feed purge_group_data; admin has no other comment concern.
     comment_repo: CommentRepository,
+    // Held only to feed purge_group_data; admin has no other AI concern.
+    ai_repo: AiRepository,
     user_service: UserService,
     admin_repo: AdminRepository,
     rbac: RbacService,
@@ -48,6 +51,7 @@ impl AdminService {
             group_repo: GroupRepository::new(db),
             ticket_repo: TicketRepository::new(db),
             comment_repo: CommentRepository::new(db),
+            ai_repo: AiRepository::new(db),
             user_service: UserService::new(db),
             admin_repo: AdminRepository::new(db),
             rbac: RbacService::new(db),
@@ -169,6 +173,7 @@ impl AdminService {
                 &self.group_repo,
                 &self.ticket_repo,
                 &self.comment_repo,
+                &self.ai_repo,
                 *group_id,
             )
             .await?;
@@ -253,6 +258,7 @@ impl AdminService {
             &self.group_repo,
             &self.ticket_repo,
             &self.comment_repo,
+            &self.ai_repo,
             group_id,
         )
         .await?;

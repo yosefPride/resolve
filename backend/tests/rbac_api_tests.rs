@@ -65,6 +65,7 @@ fn build_app_state(db: Database, uri: String) -> web::Data<AppState> {
             jwt_secret: TEST_JWT_SECRET.to_string(),
             cookie_secure: false,
             frontend_origin: "http://localhost:5173".to_string(),
+            gemini_api_key: "test-gemini-api-key".to_string(),
         },
     })
 }

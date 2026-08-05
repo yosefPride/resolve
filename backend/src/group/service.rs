@@ -1,6 +1,7 @@
 use chrono::DateTime;
 use mongodb::{Database, bson::oid::ObjectId};
 
+use crate::ai::repository::AiRepository;
 use crate::comment::repository::CommentRepository;
 use crate::errors::ApiError;
 use crate::group::models::{
@@ -35,11 +36,13 @@ pub async fn purge_group_data(
     repo: &GroupRepository,
     ticket_repo: &TicketRepository,
     comment_repo: &CommentRepository,
+    ai_repo: &AiRepository,
     group_id: ObjectId,
 ) -> Result<bool, ApiError> {
     repo.delete_members_by_group(group_id).await?;
     ticket_repo.delete_by_group(group_id).await?;
     comment_repo.delete_by_group(group_id).await?;
+    ai_repo.delete_by_group(group_id).await?;
     Ok(repo.delete_group(group_id).await?)
 }
 
@@ -47,6 +50,7 @@ pub struct GroupService {
     repo: GroupRepository,
     ticket_repo: TicketRepository,
     comment_repo: CommentRepository,
+    ai_repo: AiRepository,
     user_service: UserService,
     rbac: RbacService,
 }
@@ -57,6 +61,7 @@ impl GroupService {
             repo: GroupRepository::new(db),
             ticket_repo: TicketRepository::new(db),
             comment_repo: CommentRepository::new(db),
+            ai_repo: AiRepository::new(db),
             user_service: UserService::new(db),
             rbac: RbacService::new(db),
         }
@@ -148,7 +153,14 @@ impl GroupService {
         group_id: ObjectId,
     ) -> Result<(), ApiError> {
         self.rbac.require_group_admin(group_id, user_id).await?;
-        purge_group_data(&self.repo, &self.ticket_repo, &self.comment_repo, group_id).await?;
+        purge_group_data(
+            &self.repo,
+            &self.ticket_repo,
+            &self.comment_repo,
+            &self.ai_repo,
+            group_id,
+        )
+        .await?;
         Ok(())
     }
 

@@ -4,6 +4,7 @@ use mongodb::{
     bson::{self, DateTime as BsonDateTime, Document, oid::ObjectId},
 };
 
+use crate::ai::repository::AiRepository;
 use crate::comment::repository::CommentRepository;
 use crate::errors::ApiError;
 use crate::rbac::service::RbacService;
@@ -21,6 +22,7 @@ const MAX_PER_PAGE: u64 = 100;
 pub struct TicketService {
     repo: TicketRepository,
     comment_repo: CommentRepository,
+    ai_repo: AiRepository,
     user_service: UserService,
     rbac: RbacService,
 }
@@ -30,6 +32,7 @@ impl TicketService {
         Self {
             repo: TicketRepository::new(db),
             comment_repo: CommentRepository::new(db),
+            ai_repo: AiRepository::new(db),
             user_service: UserService::new(db),
             rbac: RbacService::new(db),
         }
@@ -161,9 +164,10 @@ impl TicketService {
     ) -> Result<(), ApiError> {
         self.rbac.require_group_admin(group_id, user_id).await?;
         // Existence check first (so a bogus ticket_id 404s before any write),
-        // then the comment cascade, then the ticket document last — same
-        // child-before-parent ordering as purge_group_data, so a mid-failure
-        // leaves the ticket still resolvable and this call re-runnable.
+        // then the comment/AI-insight cascades, then the ticket document last
+        // — same child-before-parent ordering as purge_group_data, so a
+        // mid-failure leaves the ticket still resolvable and this call
+        // re-runnable.
         self.repo
             .find_by_id(group_id, ticket_id)
             .await?
@@ -171,6 +175,7 @@ impl TicketService {
         self.comment_repo
             .delete_by_ticket(group_id, ticket_id)
             .await?;
+        self.ai_repo.delete_by_ticket(group_id, ticket_id).await?;
         self.repo.delete_ticket(group_id, ticket_id).await?;
         Ok(())
     }
