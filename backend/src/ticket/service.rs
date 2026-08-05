@@ -128,17 +128,24 @@ impl TicketService {
         self.rbac.require_group_admin(group_id, user_id).await?;
 
         let mut changes = Document::new();
+        // Tracks whether this edit touches AI-relevant content, so
+        // content_updated_at (see Ticket's doc comment) only bumps for
+        // title/description/priority — not a status-only change.
+        let mut content_changed = false;
         if let Some(title) = input.title {
             changes.insert("title", title);
+            content_changed = true;
         }
         if let Some(description) = input.description {
             changes.insert("description", description);
+            content_changed = true;
         }
         if let Some(priority) = input.priority {
             changes.insert(
                 "priority",
                 bson::to_bson(&priority).expect("TicketPriority always serializes"),
             );
+            content_changed = true;
         }
         if let Some(status) = input.status {
             changes.insert(
@@ -146,7 +153,11 @@ impl TicketService {
                 bson::to_bson(&status).expect("TicketStatus always serializes"),
             );
         }
-        changes.insert("updated_at", BsonDateTime::now());
+        let now = BsonDateTime::now();
+        changes.insert("updated_at", now);
+        if content_changed {
+            changes.insert("content_updated_at", now);
+        }
 
         let ticket = self
             .repo
@@ -260,6 +271,7 @@ mod tests {
             created_by: ObjectId::new(),
             created_at: now,
             updated_at: now,
+            content_updated_at: now,
         }
     }
 

@@ -184,26 +184,30 @@ fn test_summarize_ticket_recalls_provider_after_ticket_edit() {
 
         // Mongo's Date type has millisecond resolution, and this test (with
         // a fake, non-network provider) can otherwise run fast enough for
-        // the edit's updated_at to collide with the cached fingerprint —
-        // same reasoning as ai_repository_tests's report-ordering test. A
-        // real Gemini round-trip takes far longer than 5ms, so this can't
-        // happen in production.
+        // the edit's content_updated_at to collide with the cached
+        // fingerprint — same reasoning as ai_repository_tests's
+        // report-ordering test. A real Gemini round-trip takes far longer
+        // than 5ms, so this can't happen in production.
         tokio::time::sleep(std::time::Duration::from_millis(5)).await;
 
-        // TicketRepository::update_ticket doesn't bump updated_at itself —
-        // that's TicketService::update_ticket's job, which inserts it into
-        // the changes doc before calling the repo. Going through the repo
-        // directly here (skipping RBAC and other ticket-service concerns
-        // this test doesn't care about) means updated_at must be set
-        // explicitly, the same way the service does it.
+        // TicketRepository::update_ticket doesn't bump updated_at/
+        // content_updated_at itself — that's TicketService::update_ticket's
+        // job, which decides per-field whether content_updated_at moves
+        // (ticket::models::Ticket's doc comment: title/description/priority
+        // only, not status). Going through the repo directly here (skipping
+        // RBAC and other ticket-service concerns this test doesn't care
+        // about) means both must be set explicitly, the same way the service
+        // does it for a content-bearing edit.
         let ticket_repo = TicketRepository::new(&db);
+        let now = BsonDateTime::now();
         ticket_repo
             .update_ticket(
                 group_id,
                 ticket_id,
                 doc! {
                     "description": "Now also broken on desktop Chrome.",
-                    "updated_at": BsonDateTime::now(),
+                    "updated_at": now,
+                    "content_updated_at": now,
                 },
             )
             .await
@@ -219,7 +223,45 @@ fn test_summarize_ticket_recalls_provider_after_ticket_edit() {
     });
 }
 
-// 4. Summary and analysis are cached independently: generating one doesn't
+// 4. A status-only change (closing the ticket) does NOT invalidate the
+// cache: the AI only ever reads title/description, so content_updated_at
+// (and therefore the cached summary) is untouched by a status flip.
+#[test]
+fn test_summarize_ticket_stays_cached_after_status_only_change() {
+    support::runtime().block_on(async {
+        let (db, group_id, member_id, ticket_id) = setup().await;
+        let provider = FakeProvider::new("a concise summary", default_analysis());
+        let service = AiService::with_provider(&db, provider.clone());
+
+        service
+            .summarize_ticket(member_id, group_id, ticket_id)
+            .await
+            .expect("first summarize_ticket failed");
+
+        // Status-only change: updated_at moves, content_updated_at doesn't
+        // (mirrors TicketService::update_ticket's field-selection logic —
+        // see ticket::models::Ticket's doc comment).
+        let ticket_repo = TicketRepository::new(&db);
+        ticket_repo
+            .update_ticket(
+                group_id,
+                ticket_id,
+                doc! { "status": "closed", "updated_at": BsonDateTime::now() },
+            )
+            .await
+            .expect("update_ticket failed");
+
+        let response = service
+            .summarize_ticket(member_id, group_id, ticket_id)
+            .await
+            .expect("second summarize_ticket failed");
+
+        assert!(response.cached);
+        assert_eq!(provider.summarize_calls.load(Ordering::SeqCst), 1);
+    });
+}
+
+// 5. Summary and analysis are cached independently: generating one doesn't
 // mark the other as cached too, but each is still cached on its own.
 #[test]
 fn test_analyze_ticket_is_cached_independently_of_summary() {
@@ -251,7 +293,7 @@ fn test_analyze_ticket_is_cached_independently_of_summary() {
     });
 }
 
-// 5. A non-member is rejected before the provider is ever called.
+// 6. A non-member is rejected before the provider is ever called.
 #[test]
 fn test_summarize_ticket_rejects_non_member() {
     support::runtime().block_on(async {
@@ -269,7 +311,7 @@ fn test_summarize_ticket_rejects_non_member() {
     });
 }
 
-// 6. An unknown ticket_id 404s (rather than, say, generating a summary for
+// 7. An unknown ticket_id 404s (rather than, say, generating a summary for
 // nothing).
 #[test]
 fn test_summarize_ticket_404s_on_unknown_ticket() {

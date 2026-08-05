@@ -27,14 +27,18 @@ pub struct TicketAnalysisResponse {
 // being this document's fields filling in / refreshing as each action runs.
 //
 // summary_source_updated_at / analysis_source_updated_at each snapshot the
-// ticket's updated_at at the moment that field group was last generated, and
-// are tracked separately rather than as one shared fingerprint: summarize and
-// analyze are independent calls, so an edit can invalidate one without the
-// other having ever run, or vice versa. A field group is fresh iff its own
-// value is present AND its source timestamp still matches the ticket's
-// current updated_at (see is_summary_fresh / is_analysis_fresh below) — this
-// is the mechanism behind docs/ai-integration.md's "cached per ticket... if
-// ticket does not change, AI is not re-run".
+// ticket's content_updated_at (ticket::models::Ticket — bumped only by
+// title/description/priority edits, NOT status) at the moment that field
+// group was last generated, and are tracked separately rather than as one
+// shared fingerprint: summarize and analyze are independent calls, so an
+// edit can invalidate one without the other having ever run, or vice versa.
+// A field group is fresh iff its own value is present AND its source
+// timestamp still matches the ticket's current content_updated_at (see
+// is_summary_fresh / is_analysis_fresh below) — this is the mechanism behind
+// docs/ai-integration.md's "cached per ticket... if ticket does not change,
+// AI is not re-run". Deliberately keyed off content_updated_at rather than
+// the ticket's plain updated_at: closing/reopening a ticket shouldn't throw
+// away a cached summary/analysis, since the AI never reads status.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiTicketInsight {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
@@ -52,15 +56,16 @@ pub struct AiTicketInsight {
 }
 
 impl AiTicketInsight {
-    pub fn is_summary_fresh(&self, ticket_updated_at: BsonDateTime) -> bool {
-        self.summary.is_some() && self.summary_source_updated_at == Some(ticket_updated_at)
+    pub fn is_summary_fresh(&self, ticket_content_updated_at: BsonDateTime) -> bool {
+        self.summary.is_some()
+            && self.summary_source_updated_at == Some(ticket_content_updated_at)
     }
 
-    pub fn is_analysis_fresh(&self, ticket_updated_at: BsonDateTime) -> bool {
+    pub fn is_analysis_fresh(&self, ticket_content_updated_at: BsonDateTime) -> bool {
         self.severity_prediction.is_some()
             && self.suggested_fix.is_some()
             && self.classification.is_some()
-            && self.analysis_source_updated_at == Some(ticket_updated_at)
+            && self.analysis_source_updated_at == Some(ticket_content_updated_at)
     }
 }
 

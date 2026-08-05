@@ -54,7 +54,7 @@ impl<P: AiProvider> AiService<P> {
 
         let cached = self.repo.find_insight(group_id, ticket_id).await?;
         if let Some(insight) = &cached
-            && insight.is_summary_fresh(ticket.updated_at)
+            && insight.is_summary_fresh(ticket.content_updated_at)
         {
             return Ok(TicketSummaryResponse {
                 summary: insight.summary.clone().expect("is_summary_fresh implies Some"),
@@ -67,7 +67,7 @@ impl<P: AiProvider> AiService<P> {
             .summarize(&ticket.title, &ticket.description)
             .await?;
         self.repo
-            .upsert_summary(group_id, ticket_id, &summary, ticket.updated_at)
+            .upsert_summary(group_id, ticket_id, &summary, ticket.content_updated_at)
             .await?;
         Ok(TicketSummaryResponse {
             summary,
@@ -92,7 +92,7 @@ impl<P: AiProvider> AiService<P> {
 
         let cached = self.repo.find_insight(group_id, ticket_id).await?;
         if let Some(insight) = &cached
-            && insight.is_analysis_fresh(ticket.updated_at)
+            && insight.is_analysis_fresh(ticket.content_updated_at)
         {
             return Ok(TicketAnalysisResponse {
                 severity_prediction: insight
@@ -122,7 +122,7 @@ impl<P: AiProvider> AiService<P> {
                 &analysis.severity_prediction,
                 &analysis.suggested_fix,
                 &analysis.classification,
-                ticket.updated_at,
+                ticket.content_updated_at,
             )
             .await?;
         Ok(TicketAnalysisResponse {
