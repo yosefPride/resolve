@@ -149,5 +149,27 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), Error> {
         )
         .await?;
 
+    // One insight document per ticket (AiRepository::upsert_summary /
+    // upsert_analysis upsert against this pair), so it's unique as well as
+    // the lookup path for find_insight.
+    db.collection::<Document>("ai_ticket_insights")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "ticket_id": 1 })
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+        )
+        .await?;
+
+    // Serves find_latest_report's per-group "most recent" query (sorted
+    // descending on generated_at).
+    db.collection::<Document>("ai_group_reports")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "generated_at": -1 })
+                .build(),
+        )
+        .await?;
+
     Ok(())
 }

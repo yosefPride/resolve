@@ -2,6 +2,7 @@ use actix_web::{HttpResponse, ResponseError, http::StatusCode};
 use serde::Serialize;
 
 use crate::admin::repository::AdminRepoError;
+use crate::ai::repository::AiRepoError;
 use crate::comment::repository::CommentRepoError;
 use crate::group::repository::GroupRepoError;
 use crate::ticket::repository::TicketRepoError;
@@ -147,6 +148,12 @@ impl From<TicketRepoError> for ApiError {
 
 impl From<CommentRepoError> for ApiError {
     fn from(_: CommentRepoError) -> Self {
+        ApiError::Internal
+    }
+}
+
+impl From<AiRepoError> for ApiError {
+    fn from(_: AiRepoError) -> Self {
         ApiError::Internal
     }
 }
