@@ -1,5 +1,12 @@
 use mongodb::bson::{DateTime as BsonDateTime, doc, oid::ObjectId};
 use resolve::ai::repository::AiRepository;
+use resolve::comment::repository::CommentRepository;
+use resolve::group::models::{CreateGroupInput, Role};
+use resolve::group::repository::GroupRepository;
+use resolve::group::service::purge_group_data;
+use resolve::ticket::models::{CreateTicketInput, TicketPriority};
+use resolve::ticket::repository::TicketRepository;
+use resolve::ticket::service::TicketService;
 
 mod support;
 
@@ -276,6 +283,167 @@ fn test_delete_by_group_clears_insights_and_reports() {
                 .await
                 .expect("find_insight failed")
                 .is_none() // different ticket_id was used for the other group
+        );
+    });
+}
+
+// The tests below prove the cascade wiring itself (TicketService::
+// delete_ticket, purge_group_data) actually calls through to AiRepository —
+// distinct from the delete_by_ticket/delete_by_group tests above, which only
+// prove the repository methods work in isolation. Neither ticket_api_tests.rs
+// nor group_api_tests.rs/admin_api_tests.rs ever touch the ai_* collections,
+// so this is the only place a regression here (e.g. someone removing the
+// ai_repo.delete_by_ticket call from TicketService::delete_ticket) would be
+// caught.
+
+// 9. Deleting a ticket removes its AI insight.
+#[test]
+fn test_ticket_delete_cascades_to_ai_insight() {
+    support::runtime().block_on(async {
+        let db = support::shared_client().await.database("resolve_test");
+        for collection in ["ai_ticket_insights", "ai_group_reports", "groups", "group_members", "tickets", "counters"] {
+            db.collection::<mongodb::bson::Document>(collection)
+                .drop()
+                .await
+                .unwrap_or_else(|_| panic!("failed to drop {collection} collection"));
+        }
+
+        let ai_repo = AiRepository::new(&db);
+        let group_repo = GroupRepository::new(&db);
+        let ticket_repo = TicketRepository::new(&db);
+        let ticket_service = TicketService::new(&db);
+
+        let owner_id = oid();
+        let group = group_repo
+            .create_group(CreateGroupInput {
+                name: "Cascade Test Group".to_string(),
+                owner_id,
+            })
+            .await
+            .expect("create_group failed");
+        let group_id = group.id.expect("created group has an id");
+        // GroupRepository::create_group only creates the group document —
+        // the creator's own membership row is a separate insert_member call
+        // (normally GroupService::create_group's job).
+        group_repo
+            .insert_member(group_id, owner_id, Role::GroupAdmin)
+            .await
+            .expect("insert_member failed");
+
+        let ticket_number = ticket_repo
+            .next_ticket_number(group_id)
+            .await
+            .expect("next_ticket_number failed");
+        let ticket = ticket_repo
+            .insert_ticket(CreateTicketInput {
+                group_id,
+                ticket_number,
+                title: "a ticket".to_string(),
+                description: "a description".to_string(),
+                priority: TicketPriority::Low,
+                created_by: owner_id,
+            })
+            .await
+            .expect("insert_ticket failed");
+        let ticket_id = ticket.id.expect("created ticket has an id");
+
+        ai_repo
+            .upsert_summary(group_id, ticket_id, "a summary", BsonDateTime::now())
+            .await
+            .expect("upsert_summary failed");
+        assert!(
+            ai_repo
+                .find_insight(group_id, ticket_id)
+                .await
+                .expect("find_insight failed")
+                .is_some()
+        );
+
+        ticket_service
+            .delete_ticket(owner_id, group_id, ticket_id)
+            .await
+            .expect("delete_ticket failed");
+
+        assert!(
+            ai_repo
+                .find_insight(group_id, ticket_id)
+                .await
+                .expect("find_insight failed")
+                .is_none()
+        );
+    });
+}
+
+// 10. Deleting a group removes its AI insights and reports.
+#[test]
+fn test_group_delete_cascades_to_ai_data() {
+    support::runtime().block_on(async {
+        let db = support::shared_client().await.database("resolve_test");
+        for collection in ["ai_ticket_insights", "ai_group_reports", "groups", "group_members", "tickets", "counters"] {
+            db.collection::<mongodb::bson::Document>(collection)
+                .drop()
+                .await
+                .unwrap_or_else(|_| panic!("failed to drop {collection} collection"));
+        }
+
+        let ai_repo = AiRepository::new(&db);
+        let group_repo = GroupRepository::new(&db);
+        let ticket_repo = TicketRepository::new(&db);
+        let comment_repo = CommentRepository::new(&db);
+
+        let owner_id = oid();
+        let group = group_repo
+            .create_group(CreateGroupInput {
+                name: "Cascade Test Group 2".to_string(),
+                owner_id,
+            })
+            .await
+            .expect("create_group failed");
+        let group_id = group.id.expect("created group has an id");
+
+        let ticket_number = ticket_repo
+            .next_ticket_number(group_id)
+            .await
+            .expect("next_ticket_number failed");
+        let ticket = ticket_repo
+            .insert_ticket(CreateTicketInput {
+                group_id,
+                ticket_number,
+                title: "a ticket".to_string(),
+                description: "a description".to_string(),
+                priority: TicketPriority::Low,
+                created_by: owner_id,
+            })
+            .await
+            .expect("insert_ticket failed");
+        let ticket_id = ticket.id.expect("created ticket has an id");
+
+        ai_repo
+            .upsert_summary(group_id, ticket_id, "a summary", BsonDateTime::now())
+            .await
+            .expect("upsert_summary failed");
+        ai_repo
+            .insert_report(group_id, doc! { "total_tickets": 1 }, owner_id)
+            .await
+            .expect("insert_report failed");
+
+        purge_group_data(&group_repo, &ticket_repo, &comment_repo, &ai_repo, group_id)
+            .await
+            .expect("purge_group_data failed");
+
+        assert!(
+            ai_repo
+                .find_insight(group_id, ticket_id)
+                .await
+                .expect("find_insight failed")
+                .is_none()
+        );
+        assert!(
+            ai_repo
+                .find_latest_report(group_id)
+                .await
+                .expect("find_latest_report failed")
+                .is_none()
         );
     });
 }

@@ -53,24 +53,7 @@ explaining the project — it's a bootstrap gap, not an oversight in the admin m
 
 ---
 
-## 3. AI is entirely unimplemented — **Gap**
-
-**Spec** — `CLAUDE.md` calls the Gemini API *"a core system feature"*.
-`docs/specification/api.md` defines three AI endpoints; `database.md` defines
-`ai_ticket_insights` and `ai_group_reports`; `ai-integration.md` is a 100-line document.
-
-**Code** — all five files in `backend/src/ai/` are **0 bytes**. `routes.rs` registers
-`web::scope("/ai")` with **no routes inside it**. `Cargo.toml` has no Gemini SDK and no HTTP
-client (`reqwest`) — so there isn't even a dependency in place. Frontend `features/ai/*` (3
-files), `hooks/useAI.js`, and `services/ai.service.js` are all empty.
-
-Consistent with `CLAUDE.md`'s own build order ("Do NOT implement AI before core system
-works" — step 7 of 7), so this is planned sequencing rather than drift. But "core feature"
-overstates what exists.
-
----
-
-## 4. `GET /admin/analytics` doesn't exist — **Gap**
+## 3. `GET /admin/analytics` doesn't exist — **Gap**
 
 **Spec** — `docs/specification/api.md` lists it under System Admin Endpoints; `backend.md`
 lists "view system analytics (aggregated only)" as a capability.
@@ -79,7 +62,7 @@ lists "view system analytics (aggregated only)" as a capability.
 
 ---
 
-## 5. "EVERY database query MUST include group_id" is not literally true — **Doc drift**
+## 4. "EVERY database query MUST include group_id" is not literally true — **Doc drift**
 
 **Spec** — `docs/specification/backend.md`: *"EVERY database query MUST include group_id
 filter. No exceptions."* `database.md` repeats it as the "Multi-Tenancy Rule (CRITICAL)".
@@ -101,7 +84,7 @@ group-filtered query.
 
 ---
 
-## 6. `database.md` documents the pre-threading `comments` shape — **Doc drift**
+## 5. `database.md` documents the pre-threading `comments` shape — **Doc drift**
 
 **Spec** — `docs/specification/database.md`, `comments`: `_id, group_id, ticket_id, user_id,
 content, created_at`, plus two single-field indexes (`ticket_id`, `group_id`).
@@ -121,6 +104,33 @@ the spec lists is created.
 wasn't. The code is the sound half here — the fix is to update the spec. See
 [`db/collections.md`](./db/collections.md) and [`db/indexes.md`](./db/indexes.md) for the
 actual shape.
+
+---
+
+## 6. `database.md`'s `ai_ticket_insights` schema doesn't mention the caching fields, and says nothing about `tickets` — **Doc drift**
+
+**Spec** — `docs/specification/database.md`, `ai_ticket_insights`: `_id, group_id, ticket_id,
+summary, severity_prediction, suggested_fix, classification, created_at, updated_at`. Its
+`tickets` entry lists no `content_updated_at` field either — unsurprising, since that field
+didn't exist until the AI feature needed it.
+
+**Code** — `ai::models::AiTicketInsight` stores two fields the spec doesn't mention:
+`summary_source_updated_at` and `analysis_source_updated_at`, both `Option<BsonDateTime>`.
+They're what make `docs/specification/ai-integration.md`'s own caching requirement ("cached
+per ticket... if ticket does not change, AI is not re-run") actually work — the spec mandates
+the caching behavior but doesn't say how staleness should be tracked, and "compare against a
+stored timestamp" is what fills that gap. Same shape as #5: the spec states a requirement,
+the implementation needs fields to satisfy it that the spec's schema listing never grew to
+include.
+
+Separately, `ticket::models::Ticket` gained a field the spec doesn't mention at all:
+`content_updated_at`, bumped only by title/description/priority edits (not status). This
+exists purely to serve the AI cache above — it's the timestamp
+`summary_source_updated_at`/`analysis_source_updated_at` are compared against, kept separate
+from the ticket's own `updated_at` specifically so closing/reopening a ticket doesn't
+invalidate a still-accurate cached summary/analysis. See
+[`backend/08-ai.md`](./backend/08-ai.md) and [`backend/05-tickets.md`](./backend/05-tickets.md)
+for the full picture.
 
 ---
 
@@ -191,17 +201,19 @@ an earlier design; safe to remove.
 |---|---|---|---|
 | 1 | Admin can delete own account; UI comment claims otherwise | Bug | **High** |
 | 2 | No way to create a System Admin | Gap | **High** |
-| 3 | AI unimplemented (declared "core") | Gap | Medium |
-| 4 | `GET /admin/analytics` missing | Gap | Low |
-| 5 | "every query needs group_id" is overstated | Doc drift | Low |
-| 6 | `database.md` missing `parent_comment_id` / `is_deleted`; wrong comment indexes | Doc drift | Low |
+| 3 | `GET /admin/analytics` missing | Gap | Low |
+| 4 | "every query needs group_id" is overstated | Doc drift | Low |
+| 5 | `database.md` missing `parent_comment_id` / `is_deleted`; wrong comment indexes | Doc drift | Low |
+| 6 | `database.md` missing the AI caching fields (`ai_ticket_insights` + `tickets.content_updated_at`) | Doc drift | Low |
 | 7 | Lookup endpoint role requirement placement | Doc drift | Trivial |
 | 8 | Assorted rough edges (a–g) | Bug (minor) | Low |
 | 9 | Unused `uuid` dependency | Doc drift | Trivial |
 
 **The pattern worth noting:** where the code exists, it is careful, well-commented, and
-consistent with the spec — the backend's session model, isolation, and succession logic all
-do exactly what's documented. What's left divides into **bootstrap and admin-lifecycle holes**
-(#1 and #2, which compound: an admin can delete the last admin account, and nothing can
-create a replacement) and **AI, specified in detail and not started** (#3 and #4). Those are
-different kinds of problem and are worth separating when explaining the project.
+consistent with the spec — the backend's session model, isolation, succession logic, and now
+AI caching all do exactly what's documented, even where (#5, #6) the spec's own schema
+listing lagged behind what building the feature actually required. What's left is almost
+entirely **bootstrap and admin-lifecycle holes** (#1 and #2, which compound: an admin can
+delete the last admin account, and nothing can create a replacement) plus one remaining
+**genuine gap** (#3, `GET /admin/analytics`). Those are different kinds of problem and are
+worth separating when explaining the project.

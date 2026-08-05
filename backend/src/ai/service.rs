@@ -36,8 +36,12 @@ pub struct AiService<P: AiProvider = GeminiClient> {
 }
 
 impl AiService<GeminiClient> {
-    pub fn new(db: &Database, config: &Config) -> Self {
-        Self::with_provider(db, GeminiClient::new(config.gemini_api_key.clone()))
+    // Fails per-request rather than at startup — see Config::gemini_api_key's
+    // doc comment on why a missing key doesn't block the whole backend from
+    // booting.
+    pub fn new(db: &Database, config: &Config) -> Result<Self, ApiError> {
+        let api_key = config.gemini_api_key.clone().ok_or(ApiError::Internal)?;
+        Ok(Self::with_provider(db, GeminiClient::new(api_key)))
     }
 }
 
@@ -182,13 +186,19 @@ impl<P: AiProvider> AiService<P> {
 
         let report_data =
             bson::to_document(&data).expect("ReportData always serializes to a Document");
-        self.repo
+        // Use the inserted document's own generated_at (set inside
+        // insert_report via a fresh BsonDateTime::now()), not the `now`
+        // captured above — that one predates the narrate_report network
+        // call, so it would otherwise report an earlier timestamp than
+        // what's actually persisted.
+        let inserted = self
+            .repo
             .insert_report(group_id, report_data, user_id)
             .await?;
 
         Ok(GroupReportResponse {
             data,
-            generated_at: to_chrono(now),
+            generated_at: to_chrono(inserted.generated_at),
             cached: false,
         })
     }

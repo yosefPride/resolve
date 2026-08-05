@@ -129,10 +129,9 @@ impl AiRepository {
         Ok(insight)
     }
 
-    // Cascade target for ticket/group deletion, mirroring
-    // CommentRepository::delete_by_ticket. Not yet wired into
-    // TicketService::delete_ticket — that's cross-module plumbing left for
-    // when AiService exists, so an insight can't outlive the ticket it
+    // Cascade target for ticket deletion, mirroring
+    // CommentRepository::delete_by_ticket. Called from
+    // TicketService::delete_ticket so an insight can't outlive the ticket it
     // describes.
     pub async fn delete_by_ticket(
         &self,
@@ -147,21 +146,28 @@ impl AiRepository {
     }
 
     // Cascade target for group deletion, mirroring
-    // CommentRepository::delete_by_group. Not yet wired into
-    // purge_group_data — same follow-up as delete_by_ticket above.
+    // CommentRepository::delete_by_group. Called from purge_group_data
+    // (group/service.rs). Returns the combined count across both
+    // collections — insights and reports are different documents but the
+    // same cascade concern, so callers get one number rather than needing to
+    // track two.
     pub async fn delete_by_group(&self, group_id: ObjectId) -> Result<u64, AiRepoError> {
         let insights_deleted = self
             .insights
             .delete_many(doc! { "group_id": group_id })
             .await?
             .deleted_count;
-        self.reports.delete_many(doc! { "group_id": group_id }).await?;
-        Ok(insights_deleted)
+        let reports_deleted = self
+            .reports
+            .delete_many(doc! { "group_id": group_id })
+            .await?
+            .deleted_count;
+        Ok(insights_deleted + reports_deleted)
     }
 
     // Most recent report for the group, or None if one has never been
-    // generated — used by the report cache's time-window check (later
-    // stage).
+    // generated — used by AiService::generate_group_report's TTL check
+    // (AiGroupReport::is_fresh).
     pub async fn find_latest_report(
         &self,
         group_id: ObjectId,

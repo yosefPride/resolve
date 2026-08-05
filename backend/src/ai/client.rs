@@ -21,9 +21,9 @@ pub struct AnalysisResult {
 }
 
 // Abstraction over "call an LLM with a ticket and get structured output
-// back" so AiService (next stage) can be tested against a fake instead of
-// hitting the real network — same reason TicketService takes a Database
-// handle rather than talking to Mongo's wire protocol itself.
+// back" so AiService can be tested against a fake instead of hitting the
+// real network — same reason TicketService takes a Database handle rather
+// than talking to Mongo's wire protocol itself.
 // Desugared to `-> impl Future<...> + Send` (rather than plain `async fn`) so
 // the returned future is Send — required for it to cross the .await points
 // inside an actix-web handler running on Actix's multi-threaded runtime.

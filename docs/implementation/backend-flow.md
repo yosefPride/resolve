@@ -15,6 +15,7 @@ Detailed per-file breakdowns live in [`backend/`](./backend/):
 | [`backend/05-tickets.md`](./backend/05-tickets.md) | `ticket/` |
 | [`backend/06-admin.md`](./backend/06-admin.md) | `admin/` |
 | [`backend/07-comments.md`](./backend/07-comments.md) | `comment/`, and the two cascades it added |
+| [`backend/08-ai.md`](./backend/08-ai.md) | `ai/`, the Gemini client, and the two caching strategies |
 
 ---
 
@@ -25,16 +26,16 @@ Read this first — it saves you from explaining features that aren't there.
 **Built and working:** auth (register/login/refresh/logout/profile/password), users,
 groups + membership + roles, RBAC enforcement, tickets (full CRUD + search + filters +
 pagination), comments (threaded, owner-or-admin delete, cascades), system-admin panel (user
-list, group list, user deletion with succession, audit log).
+list, group list, user deletion with succession, audit log), and AI (`08-ai.md`: ticket
+summarize/analyze with content-based caching, group reports with a 1-hour TTL cache, all
+against the real Gemini API).
 
-**Scaffolded but empty (0 bytes):** `src/ai/*.rs` — every file in that module is an empty
-file. `main.rs` declares `mod ai;` and `routes.rs` registers `web::scope("/ai")` with **no
-routes inside it**. So AI is declared in the module tree and described in the specification
-docs, but there is zero implementation. The Gemini integration that `CLAUDE.md` calls "the
-core system feature" does not exist in code.
+**Backend-complete, frontend still pending:** the Ticket Detail page's AI panel exists in the
+UI but its Summarize/Analyze buttons are still disabled placeholders — the three backend
+endpoints (`08-ai.md`) aren't wired up to them yet.
 
-This matches the build order in `CLAUDE.md`: steps 1–5 done, step 6 (frontend) partial —
-comments are backend-only so far, with no UI — and step 7 (AI) not started.
+This matches the build order in `CLAUDE.md`: steps 1–7 are all done on the backend now; step 6
+(frontend) is partial for both comments and AI — neither has its UI fully wired up yet.
 
 ---
 
@@ -127,16 +128,26 @@ Read the cross-links as: every feature service owns an `RbacService`, and a hand
 services reach into *another* feature's repository — always for a cascade or a count, listed
 below.
 
+**The diagram above predates the `ai/` module** — it isn't redrawn here to avoid getting the
+ASCII alignment wrong, but `ai/` slots in as a sixth column exactly like `comment/`:
+`ai/handlers.rs` → `ai/service.rs` → `ai/repository.rs`, with `ai/service.rs` additionally
+reaching into `ticket/repository.rs` (read-only, to load the ticket being summarized/analyzed,
+and to list a group's tickets for the report) the same way `comment/service.rs` does. See
+`08-ai.md` and the cross-feature edges below, which **are** current.
+
 Things worth knowing about this graph:
 
 - **`rbac/service.rs` is the shared hub.** It owns `GroupRepository` + `UserService` and answers only one kind of question: "what is this user's relationship to this group / to the system?" Every feature service holds an `RbacService`.
 - **The cross-feature edges all point at cascades or counts**, and they're the only place the strict per-feature layering bends:
   - `group/service.rs` → `ticket/repository.rs` (for `open_ticket_count`, and for the group cascade)
   - `group/service.rs` → `comment/repository.rs` (group cascade)
+  - `group/service.rs` → `ai/repository.rs` (group cascade)
   - `ticket/service.rs` → `comment/repository.rs` (ticket cascade)
+  - `ticket/service.rs` → `ai/repository.rs` (ticket cascade)
+  - `ai/service.rs` → `ticket/repository.rs` (load the ticket being summarized/analyzed; list a group's tickets for the report)
   - `comment/service.rs` → `ticket/repository.rs` (verifying the path's ticket belongs to the path's group)
-  - `admin/service.rs` → both repositories, held **only** to pass into `purge_group_data`
-- **`purge_group_data` is a free function in `group/service.rs`**, not a method — that's what lets all three group-deleting paths (group service, admin group delete, admin sole-admin auto-delete) share one cascade instead of three copies.
+  - `admin/service.rs` → `ticket/repository.rs`, `comment/repository.rs`, and `ai/repository.rs`, held **only** to pass into `purge_group_data`
+- **`purge_group_data` is a free function in `group/service.rs`**, not a method — that's what lets all three group-deleting paths (group service, admin group delete, admin sole-admin auto-delete) share one cascade instead of three copies. It cascades `group_members` → `tickets` + `counters` → `comments` → `ai_ticket_insights` + `ai_group_reports` → the group document, in that order.
 - **`admin/service.rs` bypasses `GroupService`** and talks to `GroupRepository` directly. Deliberate: the admin succession flow must do things `GroupService` forbids (reassigning roles it doesn't own), so it can't route through the group business rules.
 - **`errors/api_error.rs` depends on every repository's error enum** via `From` impls. That's what makes `?` work uniformly across all layers.
 - **Services are constructed per-request**, e.g. `GroupService::new(&state.db)` inside the handler. They're cheap (just `Collection` handles, which are themselves cheap clones over the shared connection pool). There's no DI container.
@@ -145,12 +156,12 @@ Things worth knowing about this graph:
 
 The crate builds twice. `main.rs` is the binary and declares `mod ai; mod comment; mod db;`
 plus the rest. `lib.rs` is the library used by the integration tests in `backend/tests/`,
-and exports a **subset**: `admin, auth, comment, config, errors, group, rbac, server, state,
-ticket, user, utils` — no `ai`, no `db`. Tests build their own Mongo client via
+and exports a **subset**: `admin, ai, auth, comment, config, errors, group, rbac, server,
+state, ticket, user, utils` — everything except `db`. Tests build their own Mongo client via
 `tests/support/mod.rs` instead of using `db::connect`.
 
-`comment` joined that export list when the module was implemented; `ai` is still excluded
-because it's still empty.
+`comment` and `ai` each joined that export list when their module was implemented — `ai`
+needed it so `tests/ai_*.rs` could import `resolve::ai::...`.
 
 ---
 
@@ -242,13 +253,48 @@ tombstones. `GET .../comments` returns tombstones like any other comment.
 
 ### Cascading deletes
 
-Two cascades, both added with comments, both ordered child-before-parent so a mid-failure
-leaves the parent resolvable and the whole thing re-runnable:
+Two cascades — one added with comments, extended when AI was built — both ordered
+child-before-parent so a mid-failure leaves the parent resolvable and the whole thing
+re-runnable:
 
-- **Delete a ticket** — `TicketService::delete_ticket`: `require_group_admin` → existence check (so a bogus id `404`s before any write) → `CommentRepository::delete_by_ticket` → delete the ticket.
-- **Delete a group** — `purge_group_data`, a free function in `group/service.rs`: memberships → tickets + the `counters` row → comments → the group document. All three group-destroying paths call it (`GroupService::delete_group`, `AdminService::delete_group`, and the auto-delete loop in `AdminService::delete_user`), so the definition of "a group's data" lives in exactly one place.
+- **Delete a ticket** — `TicketService::delete_ticket`: `require_group_admin` → existence check (so a bogus id `404`s before any write) → `CommentRepository::delete_by_ticket` → `AiRepository::delete_by_ticket` → delete the ticket.
+- **Delete a group** — `purge_group_data`, a free function in `group/service.rs`: memberships → tickets + the `counters` row → comments → `ai_ticket_insights` + `ai_group_reports` → the group document. All three group-destroying paths call it (`GroupService::delete_group`, `AdminService::delete_group`, and the auto-delete loop in `AdminService::delete_user`), so the definition of "a group's data" lives in exactly one place.
 
 Neither uses a transaction, consistent with everything else here.
+
+### Summarize a ticket (and the cache check that usually short-circuits it)
+
+`POST /ai/groups/{id}/tickets/{ticket_id}/summarize` → `GroupScoped` (must be a member) →
+`AiService::summarize_ticket`:
+1. `require_member` again (defense in depth) → load the ticket, else `404`.
+2. Look up any existing `ai_ticket_insights` doc for this ticket. If one exists **and** its
+   `summary_source_updated_at` still matches the ticket's current `content_updated_at`,
+   return the stored `summary` with `cached: true` — **no Gemini call at all**.
+3. Otherwise: call Gemini (`AiProvider::summarize`) → upsert the insight doc (setting
+   `summary_source_updated_at` to the ticket's *current* `content_updated_at`) → return with
+   `cached: false`.
+
+`content_updated_at` (not the ticket's plain `updated_at`) is the fingerprint — it only moves
+on a title/description/priority edit, not a status change, so closing/reopening a ticket
+doesn't throw away a still-accurate cached summary. `analyze` is the same shape, against its
+own independent `analysis_source_updated_at` — the two field groups can be fresh/stale
+independently of each other. See `08-ai.md` for the full mechanism.
+
+### Generate a group report (time-based cache, not content-based)
+
+`POST /ai/groups/{id}/report` → `GroupScoped` → `AiService::generate_group_report`:
+1. `require_group_admin` (not just member — the only AI endpoint with this stricter check).
+2. Look up the group's most recent `ai_group_reports` doc. If one exists and is less than an
+   hour old, deserialize its stored data and return it with `cached: true`.
+3. Otherwise: pull every ticket in the group (in memory, same tradeoff as ticket search) →
+   count totals/open/closed/priority breakdown/recent-activity in a pure function → ask
+   Gemini to narrate those numbers into 2-4 sentences of prose (never to do the counting
+   itself) → insert a **new** report document (history is kept, not upserted-over) → return
+   with `cached: false`.
+
+Unlike the per-ticket cache, this one is time-based rather than content-based — tracking every
+ticket's `content_updated_at` across a whole group would be expensive to check precisely, so
+it just expires after a fixed window (one hour) instead.
 
 ### Delete a user as System Admin (the most complex flow)
 
@@ -286,3 +332,4 @@ If you're studying this to explain it, read in this order — each file only dep
 9. `ticket/` — the first module with real query complexity (search, filters, paging, counters).
 10. `comment/` — small, and best read straight after `ticket/`: it's the same layering one level deeper, plus the self-referential entity and both cascades.
 11. `admin/` — the hardest, and it assumes you know groups already.
+12. `ai/` — the only module with a real external dependency; best read last since it reaches into `ticket/repository.rs` and its cascade wiring touches `ticket/service.rs` and `group/service.rs`'s `purge_group_data`, both of which you'll already know by this point.

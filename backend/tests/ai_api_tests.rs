@@ -1,16 +1,24 @@
+// Full-HTTP-stack tests for the /ai routes. Every test here is #[ignore]'d:
+// unlike every other *_api_tests.rs file, the happy-path tests
+// (summarize/analyze/report actually succeeding) go through the real
+// GeminiClient — real network calls, dependent on GEMINI_API_KEY and
+// Gemini's own quota/rate limits — so this file can't run as part of the
+// default `cargo test` without making the whole suite's success depend on
+// external network state. ai_service_tests.rs already covers the RBAC/cache
+// logic against a fake provider for the default run; this file is what
+// actually proves the real stack (routing, extractor, RBAC, service,
+// network call, response shape) works end to end. Run explicitly with:
+//   cargo test --test ai_api_tests -- --ignored --test-threads=1
 use actix_web::{App, test as actix_test, web};
 use mongodb::{Database, IndexModel, bson::doc, bson::oid::ObjectId, options::IndexOptions};
 use resolve::ai::models::{GroupReportResponse, TicketAnalysisResponse, TicketSummaryResponse};
 use resolve::auth::models::{AuthResponse, RegisterRequest};
-use resolve::config::Config;
 use resolve::group::models::{AddMemberRequest, CreateGroupRequest, GroupResponse, Role};
 use resolve::group::repository::GroupRepository;
 use resolve::server::routes;
 use resolve::state::AppState;
 use resolve::ticket::models::{CreateTicketRequest, TicketPriority, TicketResponse};
 use resolve::user::repository::UserRepository;
-
-const TEST_JWT_SECRET: &str = "test-secret";
 
 mod support;
 
@@ -42,23 +50,16 @@ async fn setup_db() -> (Database, String) {
     (db, uri)
 }
 
-// Unlike the other *_api_tests.rs files, this one needs a real
-// GEMINI_API_KEY: the happy-path tests below (member calls summarize/analyze
-// and actually gets a result) go through the real GeminiClient, same as
-// ai_client_live_test.rs. The RBAC/validation tests don't reach the provider
-// at all, so they'd pass with a placeholder key too, but keeping one Config
-// for the whole file is simpler than branching.
+// Unlike the other *_api_tests.rs files, this one needs a real GEMINI_API_KEY
+// for its happy-path tests (member calls summarize/analyze/report and
+// actually gets a result), same as ai_client_live_test.rs. support::test_config
+// reads the real key from the environment, so nothing special is needed here
+// — if it's unset, those specific tests fail with a 500 rather than this
+// function panicking at setup.
 fn build_app_state(db: Database, uri: String) -> web::Data<AppState> {
-    dotenvy::dotenv().ok();
     web::Data::new(AppState {
         db,
-        config: Config {
-            mongo_uri: uri,
-            jwt_secret: TEST_JWT_SECRET.to_string(),
-            cookie_secure: false,
-            frontend_origin: "http://localhost:5173".to_string(),
-            gemini_api_key: std::env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY must be set"),
-        },
+        config: support::test_config(uri),
     })
 }
 
@@ -175,6 +176,7 @@ macro_rules! seed {
 // succeeds and the response is a non-empty, uncached summary. A second call
 // for the same unchanged ticket is served from cache.
 #[test]
+#[ignore]
 fn test_summarize_member_succeeds_then_caches() {
     support::runtime().block_on(async {
         let (db, uri) = setup_db().await;
@@ -227,6 +229,7 @@ fn test_summarize_member_succeeds_then_caches() {
 // 2. A member can analyze a ticket; the real Gemini call succeeds and every
 // field comes back non-empty.
 #[test]
+#[ignore]
 fn test_analyze_member_succeeds() {
     support::runtime().block_on(async {
         let (db, uri) = setup_db().await;
@@ -266,6 +269,7 @@ fn test_analyze_member_succeeds() {
 // 3. A non-member is forbidden, and never reaches the Gemini call (so this
 // doesn't depend on the API key at all).
 #[test]
+#[ignore]
 fn test_summarize_non_member_forbidden() {
     support::runtime().block_on(async {
         let (db, uri) = setup_db().await;
@@ -304,6 +308,7 @@ fn test_summarize_non_member_forbidden() {
 // 4. No Authorization header at all is rejected before any RBAC or provider
 // logic runs.
 #[test]
+#[ignore]
 fn test_summarize_requires_authentication() {
     support::runtime().block_on(async {
         let (db, uri) = setup_db().await;
@@ -337,6 +342,7 @@ fn test_summarize_requires_authentication() {
 // 5. A ticket_id that doesn't belong to the group (or doesn't exist at all)
 // 404s rather than leaking whether it exists elsewhere.
 #[test]
+#[ignore]
 fn test_summarize_unknown_ticket_not_found() {
     support::runtime().block_on(async {
         let (db, uri) = setup_db().await;
@@ -371,6 +377,7 @@ fn test_summarize_unknown_ticket_not_found() {
 
 // 6. An invalid (non-ObjectId) ticket_id is a 400, not a 500 or a panic.
 #[test]
+#[ignore]
 fn test_summarize_invalid_ticket_id_is_bad_request() {
     support::runtime().block_on(async {
         let (db, uri) = setup_db().await;
@@ -405,6 +412,7 @@ fn test_summarize_invalid_ticket_id_is_bad_request() {
 // 7. A Group Admin can generate a group report; the real Gemini call
 // succeeds and a second call within the TTL is served from cache.
 #[test]
+#[ignore]
 fn test_report_group_admin_succeeds_then_caches() {
     support::runtime().block_on(async {
         let (db, uri) = setup_db().await;
@@ -453,6 +461,7 @@ fn test_report_group_admin_succeeds_then_caches() {
 
 // 8. A Contributor is forbidden from generating a group report.
 #[test]
+#[ignore]
 fn test_report_contributor_forbidden() {
     support::runtime().block_on(async {
         let (db, uri) = setup_db().await;

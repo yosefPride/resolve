@@ -2,7 +2,6 @@ use actix_web::{App, test as actix_test, web};
 use mongodb::{Database, IndexModel, bson::doc, bson::oid::ObjectId, options::IndexOptions};
 use resolve::auth::models::{AuthResponse, RegisterRequest};
 use resolve::comment::models::{CommentResponse, CreateCommentRequest};
-use resolve::config::Config;
 use resolve::group::models::{AddMemberRequest, CreateGroupRequest, GroupResponse, Role};
 use resolve::group::repository::GroupRepository;
 use resolve::server::routes;
@@ -11,8 +10,6 @@ use resolve::ticket::models::{
     CreateTicketRequest, TicketPriority, TicketResponse, TicketStatus, UpdateTicketRequest,
 };
 use resolve::user::repository::UserRepository;
-
-const TEST_JWT_SECRET: &str = "test-secret";
 
 mod support;
 
@@ -47,13 +44,7 @@ async fn setup_db() -> (Database, String) {
 fn build_app_state(db: Database, uri: String) -> web::Data<AppState> {
     web::Data::new(AppState {
         db,
-        config: Config {
-            mongo_uri: uri,
-            jwt_secret: TEST_JWT_SECRET.to_string(),
-            cookie_secure: false,
-            frontend_origin: "http://localhost:5173".to_string(),
-            gemini_api_key: "test-gemini-api-key".to_string(),
-        },
+        config: support::test_config(uri),
     })
 }
 

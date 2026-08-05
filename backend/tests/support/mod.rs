@@ -1,7 +1,14 @@
 use mongodb::Client;
+use resolve::config::Config;
 use std::sync::OnceLock;
 use tokio::runtime::Runtime;
 use tokio::sync::OnceCell;
+
+// Shared across every *_api_tests.rs / auth_tests.rs file — some also use it
+// directly for minting tokens outside of a Config (e.g. rbac_api_tests.rs's
+// jwt::issue_token, auth_tests.rs's issue_token_with_exp), not just via
+// test_config below.
+pub const TEST_JWT_SECRET: &str = "test-secret";
 
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
@@ -41,4 +48,23 @@ pub async fn shared_client() -> &'static Client {
                 .expect("failed to connect to MongoDB")
         })
         .await
+}
+
+// Every *_api_tests.rs file was hand-building this same Config literal
+// (field-for-field identical apart from mongo_uri), which meant every new
+// required Config field needed editing in 7+ places — this is that one
+// place instead. gemini_api_key comes from the real environment (`.ok()`,
+// so it's None rather than a panic if unset) rather than a placeholder
+// string: only ai_api_tests.rs's #[ignore]-gated live tests actually need a
+// working key, and reading the real one here means they get it for free
+// without a separate code path.
+pub fn test_config(mongo_uri: String) -> Config {
+    dotenvy::dotenv().ok();
+    Config {
+        mongo_uri,
+        jwt_secret: TEST_JWT_SECRET.to_string(),
+        cookie_secure: false,
+        frontend_origin: "http://localhost:5173".to_string(),
+        gemini_api_key: std::env::var("GEMINI_API_KEY").ok(),
+    }
 }
