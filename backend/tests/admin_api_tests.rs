@@ -4,7 +4,6 @@ use actix_web::{App, test as actix_test, web};
 use mongodb::{Database, IndexModel, bson::doc, bson::oid::ObjectId, options::IndexOptions};
 use resolve::admin::models::{AuditLogEntryResponse, DeleteUserRequest, DeletionCheckResponse};
 use resolve::auth::models::{AuthResponse, RegisterRequest};
-use resolve::config::Config;
 use resolve::group::models::{AddMemberRequest, CreateGroupRequest, GroupResponse, Role};
 use resolve::group::repository::GroupRepository;
 use resolve::server::routes;
@@ -12,8 +11,6 @@ use resolve::state::AppState;
 use resolve::user::models::GlobalRole;
 use resolve::user::models::UserResponse;
 use resolve::user::repository::UserRepository;
-
-const TEST_JWT_SECRET: &str = "test-secret";
 
 mod support;
 
@@ -52,12 +49,7 @@ async fn setup_db() -> (Database, String) {
 fn build_app_state(db: Database, uri: String) -> web::Data<AppState> {
     web::Data::new(AppState {
         db,
-        config: Config {
-            mongo_uri: uri,
-            jwt_secret: TEST_JWT_SECRET.to_string(),
-            cookie_secure: false,
-            frontend_origin: "http://localhost:5173".to_string(),
-        },
+        config: support::test_config(uri),
     })
 }
 

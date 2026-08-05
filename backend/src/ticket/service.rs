@@ -4,6 +4,7 @@ use mongodb::{
     bson::{self, DateTime as BsonDateTime, Document, oid::ObjectId},
 };
 
+use crate::ai::repository::AiRepository;
 use crate::comment::repository::CommentRepository;
 use crate::errors::ApiError;
 use crate::rbac::service::RbacService;
@@ -21,6 +22,7 @@ const MAX_PER_PAGE: u64 = 100;
 pub struct TicketService {
     repo: TicketRepository,
     comment_repo: CommentRepository,
+    ai_repo: AiRepository,
     user_service: UserService,
     rbac: RbacService,
 }
@@ -30,6 +32,7 @@ impl TicketService {
         Self {
             repo: TicketRepository::new(db),
             comment_repo: CommentRepository::new(db),
+            ai_repo: AiRepository::new(db),
             user_service: UserService::new(db),
             rbac: RbacService::new(db),
         }
@@ -125,17 +128,24 @@ impl TicketService {
         self.rbac.require_group_admin(group_id, user_id).await?;
 
         let mut changes = Document::new();
+        // Tracks whether this edit touches AI-relevant content, so
+        // content_updated_at (see Ticket's doc comment) only bumps for
+        // title/description/priority — not a status-only change.
+        let mut content_changed = false;
         if let Some(title) = input.title {
             changes.insert("title", title);
+            content_changed = true;
         }
         if let Some(description) = input.description {
             changes.insert("description", description);
+            content_changed = true;
         }
         if let Some(priority) = input.priority {
             changes.insert(
                 "priority",
                 bson::to_bson(&priority).expect("TicketPriority always serializes"),
             );
+            content_changed = true;
         }
         if let Some(status) = input.status {
             changes.insert(
@@ -143,7 +153,11 @@ impl TicketService {
                 bson::to_bson(&status).expect("TicketStatus always serializes"),
             );
         }
-        changes.insert("updated_at", BsonDateTime::now());
+        let now = BsonDateTime::now();
+        changes.insert("updated_at", now);
+        if content_changed {
+            changes.insert("content_updated_at", now);
+        }
 
         let ticket = self
             .repo
@@ -161,9 +175,10 @@ impl TicketService {
     ) -> Result<(), ApiError> {
         self.rbac.require_group_admin(group_id, user_id).await?;
         // Existence check first (so a bogus ticket_id 404s before any write),
-        // then the comment cascade, then the ticket document last — same
-        // child-before-parent ordering as purge_group_data, so a mid-failure
-        // leaves the ticket still resolvable and this call re-runnable.
+        // then the comment/AI-insight cascades, then the ticket document last
+        // — same child-before-parent ordering as purge_group_data, so a
+        // mid-failure leaves the ticket still resolvable and this call
+        // re-runnable.
         self.repo
             .find_by_id(group_id, ticket_id)
             .await?
@@ -171,6 +186,7 @@ impl TicketService {
         self.comment_repo
             .delete_by_ticket(group_id, ticket_id)
             .await?;
+        self.ai_repo.delete_by_ticket(group_id, ticket_id).await?;
         self.repo.delete_ticket(group_id, ticket_id).await?;
         Ok(())
     }
@@ -255,6 +271,7 @@ mod tests {
             created_by: ObjectId::new(),
             created_at: now,
             updated_at: now,
+            content_updated_at: now,
         }
     }
 

@@ -33,6 +33,14 @@ pub struct Ticket {
     pub created_by: ObjectId,
     pub created_at: BsonDateTime,
     pub updated_at: BsonDateTime,
+    // Bumped only when title/description/priority change — NOT on a
+    // status-only change (e.g. closing/reopening). This is what AiService
+    // compares insights against (ai::models::AiTicketInsight), so closing a
+    // ticket doesn't throw away a perfectly good cached summary/analysis:
+    // the AI only ever reads title+description, so a status flip alone
+    // doesn't make its output stale. Distinct from `updated_at`, which still
+    // bumps on every edit including status.
+    pub content_updated_at: BsonDateTime,
 }
 
 pub struct CreateTicketInput {

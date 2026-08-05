@@ -11,16 +11,14 @@ use resolve::auth::models::{
 };
 use resolve::auth::refresh_token::REFRESH_TOKEN_COOKIE;
 use resolve::auth::service::AuthService;
-use resolve::config::Config;
 use resolve::errors::ApiError;
 use resolve::server::routes;
 use resolve::state::AppState;
 use resolve::user::models::UserResponse;
 use resolve::user::repository::UserRepository;
 
-const TEST_JWT_SECRET: &str = "test-secret";
-
 mod support;
+use support::TEST_JWT_SECRET;
 
 async fn setup() -> AuthService {
     let db = support::shared_client().await.database("resolve_test");
@@ -74,12 +72,7 @@ async fn setup_db() -> (Database, String) {
 fn build_app_state(db: Database, uri: String) -> web::Data<AppState> {
     web::Data::new(AppState {
         db,
-        config: Config {
-            mongo_uri: uri,
-            jwt_secret: TEST_JWT_SECRET.to_string(),
-            cookie_secure: false,
-            frontend_origin: "http://localhost:5173".to_string(),
-        },
+        config: support::test_config(uri),
     })
 }
 

@@ -29,31 +29,38 @@ Note: `PUT` is absent from the allowed methods — the API only ever uses `PATCH
 
 ---
 
-## `src/lib.rs` (12 lines)
+## `src/lib.rs` (13 lines)
 
-Re-exports a **subset** of the module tree as a library crate: `admin, auth, comment, config,
-errors, group, rbac, server, state, ticket, user, utils`.
+Re-exports a **subset** of the module tree as a library crate: `admin, ai, auth, comment,
+config, errors, group, rbac, server, state, ticket, user, utils`.
 
-Deliberately missing: `ai` (still empty) and `db` (tests build their own client). `comment`
-was added here when the module was implemented — the integration tests in
-`tests/comment_*.rs` import it as `resolve::comment::...`.
+Deliberately missing: `db` (tests build their own client via `tests/support`). `comment` and
+`ai` were each added here when their module was implemented — the integration tests in
+`tests/comment_*.rs` / `tests/ai_*.rs` import them as `resolve::comment::...` /
+`resolve::ai::...`.
 This is the crate the integration tests in `backend/tests/` import as `resolve::...`.
 
 ---
 
-## `src/config.rs` (33 lines)
+## `src/config.rs` (42 lines)
 
 ### `struct Config`
-Four fields, all resolved at boot:
+Five fields, all resolved at boot:
 - `mongo_uri: String` — required.
 - `jwt_secret: String` — required.
 - `cookie_secure: bool` — defaults `true`; only the literal string `"false"` turns it off. Needed because a browser silently refuses to store a `Secure` cookie over plain HTTP, which local dev uses.
 - `frontend_origin: String` — defaults `"http://localhost:5173"` (Vite's default port).
+- `gemini_api_key: Option<String>` — **not** required, unlike the two above. `08-ai.md`'s
+  `AiService::new` fails per-request (`ApiError::Internal`) if this is `None`, rather than the
+  whole process refusing to boot — CLAUDE.md's Core Rules state AI is "advisory (not required
+  for correctness)," so a deployment (or a dev not working on AI) shouldn't be blocked from
+  starting the server at all over a missing key.
 
 ### `Config::from_env() -> Result<Self, std::env::VarError>`
 Calls `dotenvy::dotenv().ok()` (ignoring failure — in production the vars come from the real
 environment, not a file), then reads each var. `?` on the two required ones propagates
-`VarError`.
+`VarError`; `gemini_api_key` uses `.ok()` instead, turning a missing/absent var into `None`
+rather than a boot failure.
 
 ### `Config::bind_address(&self) -> String`
 Returns the hardcoded `"127.0.0.1:8080"`. Not configurable — worth flagging if you ever
@@ -74,7 +81,7 @@ connection pool — cloning it (which every `Repository::new` effectively does v
 
 ---
 
-## `src/db.rs` (153 lines)
+## `src/db.rs` (198 lines)
 
 ### `async fn connect(config: &Config) -> Result<Client, Error>`
 `Client::with_uri_str` does **not** open a connection (the driver connects lazily), so this
@@ -105,12 +112,13 @@ index already exists, so this runs safely on every boot. Full list with rational
 | `tickets` | `group_id: 1, ticket_number: 1` | unique | Belt-and-braces on the per-group sequence, on top of the atomic counter. |
 | `comments` | `group_id: 1, ticket_id: 1` | — | Serves `list_by_ticket` (every comment fetch is scoped to both ids) and both cascades — `delete_by_ticket` filters on both, `delete_by_group` uses the `group_id` prefix. |
 | `comments` | `parent_comment_id: 1` | — | Serves `has_replies`, the hard-vs-soft-delete check run on every comment deletion. |
-
-No indexes for `ai_*` — those collections don't exist in code.
+| `ai_ticket_insights` | `group_id: 1, ticket_id: 1` | unique | One insight document per ticket (`AiRepository::upsert_summary`/`upsert_analysis` upsert against this pair) — enforces it, and serves `find_insight`. |
+| `ai_group_reports` | `group_id: 1, generated_at: -1` | — | Serves `find_latest_report`'s per-group "most recent" query. |
+| `ai_group_reports` | `generated_at: 1` | TTL, `expireAfterSeconds: 2592000` (30 days) | Reports are insert-only (one new doc per generation, `08-ai.md`), and nothing reads anything but the latest — without this, an actively-regenerated group's history grows unbounded. Must be a separate single-field index from the compound one above: MongoDB TTL indexes can't be compound. |
 
 ---
 
-## `src/server/routes.rs` (88 lines)
+## `src/server/routes.rs` (100 lines)
 
 ### `fn configure(config: &mut web::ServiceConfig)`
 The single source of truth for the API surface. Everything is already inside
@@ -156,7 +164,15 @@ nest one level deeper still, under `{ticket_id}`.
 Route-ordering detail: `/{id}/users/lookup` is registered **before** `/{id}/users/{user_id}`,
 so `lookup` isn't swallowed as a `user_id`.
 
-**`/ai`** — `web::scope("/ai")` registered with **zero routes**. A placeholder.
+**`/ai`** — all `GroupScoped`. See [`08-ai.md`](./08-ai.md).
+```
+POST   /ai/groups/{id}/tickets/{ticket_id}/summarize
+POST   /ai/groups/{id}/tickets/{ticket_id}/analyze
+POST   /ai/groups/{id}/report
+```
+The `tickets/{ticket_id}/summarize`+`analyze` pair is nested under its own sub-scope
+(`/groups/{id}/tickets/{ticket_id}`) inside `/ai`; `report` is a sibling route directly under
+`/ai` (its path has no `{ticket_id}` segment).
 
 **`/admin`** — all `SystemAdminUser`.
 ```
@@ -171,7 +187,7 @@ The last two live in a nested `web::scope("/users/{id}")`.
 
 ---
 
-## `src/errors/api_error.rs` (153 lines)
+## `src/errors/api_error.rs` (160 lines)
 
 The error vocabulary shared by every layer.
 
@@ -205,6 +221,8 @@ detail into `ApiError::Internal`**, so raw Mongo errors are never exposed to a c
 | `GroupRepoError` | `DuplicateMember` → `Conflict("user is already a member of this group")`; `Database(_)` → `Internal` |
 | `AdminRepoError` | always `Internal` |
 | `TicketRepoError` | always `Internal` |
+| `CommentRepoError` | always `Internal` |
+| `AiRepoError` | always `Internal` |
 | `bcrypt::BcryptError` | `Internal` |
 | `jsonwebtoken::errors::Error` | `Internal` |
 | `mongodb::error::Error` | `Internal` |

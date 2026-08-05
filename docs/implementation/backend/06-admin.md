@@ -1,6 +1,6 @@
 # Backend — System Admin
 
-Covers `src/admin/`: `models.rs` (121), `repository.rs` (80), `service.rs` (327),
+Covers `src/admin/`: `models.rs` (121), `repository.rs` (80), `service.rs` (333),
 `handlers.rs` (92).
 
 This is the hardest module. It implements the **one narrow exception** to group
@@ -99,7 +99,9 @@ The classification result — three buckets, and understanding them *is* underst
 | `auto_delete: Vec<(ObjectId, String)>` | Target is the sole Group Admin **and** the only member. No successor is possible, so the group is deleted outright. |
 | `plain_removals: Vec<ObjectId>` | Target is a Contributor, **or** a Group Admin alongside other admins. Nothing to preserve — just drop the membership. |
 
-### `struct AdminService { group_repo, user_service, admin_repo, rbac }`
+### `struct AdminService { group_repo, ticket_repo, comment_repo, ai_repo, user_service, admin_repo, rbac }`
+`ticket_repo`, `comment_repo`, and `ai_repo` (added for `08-ai.md`) exist **solely** to feed
+`purge_group_data` — see `delete_group` below.
 
 ### `async fn build_plan(&self, target_user_id) -> Result<DeletionPlan, ApiError>` (private)
 The classifier, shared by both the preview and the commit.
@@ -136,7 +138,7 @@ completely untouched — no partial deletion.
 
 **Phase 3 — execute, sequentially.**
 - Per blocked group: look up the successor's name → `update_member_role(group, successor, GroupAdmin)` → `delete_member(group, target)` → `insert_audit_entry(action: Succession, successor_user_id: Some, successor_user_name: Some)`.
-- Per auto-delete group: `purge_group_data` (members → tickets + `counters` → comments → the group document) → `insert_audit_entry(action: GroupAutoDeleted, successor fields: None)`.
+- Per auto-delete group: `purge_group_data` (members → tickets + `counters` → comments → AI insights/reports → the group document) → `insert_audit_entry(action: GroupAutoDeleted, successor fields: None)`.
 - Per plain removal: `delete_member`.
 
 **Phase 4 — `user_service.delete(target_user_id)` last.**
@@ -171,10 +173,10 @@ along with it, so there's no continuity to preserve. Group Admins deleting their
 use `GroupService::delete_group` instead; this is the System-Admin-as-non-member path.
 
 The cascade is the shared free function in `group/service.rs` (see
-[`04-groups.md`](./04-groups.md)) — members, tickets, the `counters` row, comments, then the
-group document last. `AdminService` holds a `ticket_repo` and a `comment_repo` **solely** to
-pass them in; admin has no other ticket or comment concern, and the struct's field comments
-say exactly that.
+[`04-groups.md`](./04-groups.md)) — members, tickets, the `counters` row, comments, AI
+insights/reports, then the group document last. `AdminService` holds a `ticket_repo`, a
+`comment_repo`, and an `ai_repo` **solely** to pass them in; admin has no other ticket,
+comment, or AI concern, and the struct's field comments say exactly that.
 
 Also note: this is **not audit-logged** — only succession and auto-deletion are.
 

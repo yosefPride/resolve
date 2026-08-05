@@ -1,6 +1,6 @@
 # Backend — Tickets
 
-Covers `src/ticket/`: `models.rs` (152), `repository.rs` (182), `service.rs` (291),
+Covers `src/ticket/`: `models.rs` (160), `repository.rs` (183), `service.rs` (308),
 `handlers.rs` (140).
 
 Tickets are the core business entity and the module with the most interesting query logic:
@@ -27,10 +27,11 @@ these two fields.
 
 ### `struct Ticket`
 Stored document: `id`, `group_id`, `ticket_number: i64`, `title`, `description`, `status`,
-`priority`, `created_by: ObjectId`, `created_at`, `updated_at`.
+`priority`, `created_by: ObjectId`, `created_at`, `updated_at`, `content_updated_at`.
 
 - `ticket_number` is the **human-facing** identifier — a running number scoped to the group (1, 2, 3… independently per group), distinct from `_id`.
-- **No `assignee` field.** Tickets are never assigned to anyone; that's a deliberate product decision, not an omission.
+- **No `assignee` field.** Tickets are never assigned to anyone; that's a deliberate product decision, not an omission. (`08-ai.md`'s group report reads "workload distribution" as ticket volume across priority/status as a consequence of this.)
+- **`content_updated_at`**, added for the AI feature (`08-ai.md`): bumped only when title/description/priority change, **not** status — see `update_ticket` below. `ai::models::AiTicketInsight`'s freshness check is keyed off this instead of the plain `updated_at`, so closing/reopening a ticket doesn't invalidate a still-accurate cached AI summary/analysis, which never reads status in the first place.
 
 ### `struct CreateTicketInput { group_id, ticket_number, title, description, priority, created_by }`
 Repository input. Note `status` is absent — the repository always sets `Open`.
@@ -95,8 +96,8 @@ returns a document")` is safe given `After` + `upsert`.
 The unique index on `(group_id, ticket_number)` is a second line of defense on top of this.
 
 ### `async fn insert_ticket(&self, input) -> Result<Ticket, TicketRepoError>`
-Sets `status: Open` and `created_at == updated_at == now`, inserts, returns the struct with
-the generated `_id`.
+Sets `status: Open` and `created_at == updated_at == content_updated_at == now`, inserts,
+returns the struct with the generated `_id`.
 
 ### `async fn find_by_id(&self, group_id, ticket_id) -> Result<Option<Ticket>, _>`
 **Filters on `_id` AND `group_id`.** This is the group-isolation mechanism in its clearest
@@ -144,8 +145,9 @@ reaches across for.
 - `DEFAULT_PER_PAGE: u64 = 20`
 - `MAX_PER_PAGE: u64 = 100`
 
-### `struct TicketService { repo, comment_repo, user_service, rbac }`
-The `comment_repo` exists for one reason: `delete_ticket` cascades the ticket's comments.
+### `struct TicketService { repo, comment_repo, ai_repo, user_service, rbac }`
+`comment_repo` and `ai_repo` exist for one reason each: `delete_ticket` cascades the ticket's
+comments and its AI insight (`08-ai.md`).
 
 ### `async fn create_ticket(&self, user_id, group_id, input) -> Result<TicketResponse, ApiError>`
 `require_member` (any member may create) → `next_ticket_number` → `insert_ticket` with
@@ -179,17 +181,26 @@ Builds a `Document` from whichever fields are `Some`, enum fields via `bson::to_
 set, the `$set` document is never empty — but the handler has already rejected an all-absent
 body, so that path isn't reachable.
 
+Also tracks a `content_changed` flag while building that `Document`: `true` if `title`,
+`description`, or `priority` was `Some` (i.e. actually present in the request), `false` if only
+`status` was. `content_updated_at: now` is inserted into the `$set` **only when
+`content_changed`** — so a status-only PATCH bumps `updated_at` but leaves
+`content_updated_at` untouched. This is what `ai::service::AiService`'s cache freshness check
+relies on (`08-ai.md`); it was added for that feature, not by the ticket module itself needing
+it.
+
 `update_ticket` → `ok_or(NotFound)` → `enrich_ticket`.
 
 ### `async fn delete_ticket(&self, user_id, group_id, ticket_id) -> Result<(), ApiError>`
-`require_group_admin` → `find_by_id` → `ok_or(NotFound)` → `comment_repo.delete_by_ticket`
-→ `repo.delete_ticket`.
+`require_group_admin` → `find_by_id` → `ok_or(NotFound)` → `comment_repo.delete_by_ticket` →
+`ai_repo.delete_by_ticket` → `repo.delete_ticket`.
 
 Note the **explicit existence check before the cascade**. It would be shorter to infer
-existence from `delete_ticket`'s boolean (as this method used to), but the comment cascade
-has to run first, and a bogus ticket id must still `404` before any write happens. Child
+existence from `delete_ticket`'s boolean (as this method used to), but the cascades have
+to run first, and a bogus ticket id must still `404` before any write happens. Child
 before parent, same ordering as `purge_group_data`, so a mid-failure leaves the ticket still
-resolvable and the call re-runnable.
+resolvable and the call re-runnable. The `ai_repo` cascade (an insight can't outlive the
+ticket it describes) was added alongside the AI feature — see `08-ai.md`.
 
 ### `async fn enrich_ticket(&self, ticket: Ticket) -> Result<TicketResponse, ApiError>` (private)
 One `user_service.find_by_id(ticket.created_by)` to attach `created_by_name`. A deleted

@@ -22,7 +22,7 @@ fails the query. Indexes are created at boot by `db::ensure_indexes()`.
 
 ## Collections that actually exist
 
-Eight, of which **six are written by application code**:
+Ten, of which **eight are written by application code**:
 
 | Collection | Rust type | Written by | Purpose |
 |---|---|---|---|
@@ -34,10 +34,8 @@ Eight, of which **six are written by application code**:
 | `counters` | `ticket::models::TicketCounter` | `TicketRepository` | Per-group ticket-number sequence |
 | `comments` | `comment::models::Comment` | `CommentRepository` | Threaded ticket discussion |
 | `admin_audit_log` | `admin::models::AuditLogEntry` | `AdminRepository` | Succession / auto-deletion trail |
-
-**Do not exist in code:** `ai_ticket_insights`, `ai_group_reports`. They are specified in
-`docs/specification/database.md`, but the `ai/` Rust module is still empty files — nothing
-creates, reads, or indexes them.
+| `ai_ticket_insights` | `ai::models::AiTicketInsight` | `AiRepository` | Cached per-ticket summary/analysis (`08-ai.md`) |
+| `ai_group_reports` | `ai::models::AiGroupReport` | `AiRepository` | Cached group analytics reports, TTL-expired after 30 days |
 
 ---
 
@@ -108,9 +106,13 @@ creates, reads, or indexes them.
 | `groups` | `comments` | **1-to-many** | `comments.group_id` — denormalized, *not* resolved through the ticket |
 | `users` | `comments` | **1-to-many** (as author) | `comments.user_id` |
 | `comments` | `comments` | **1-to-many, self-referential** | `comments.parent_comment_id`, nullable, **no depth limit** |
+| `tickets` | `ai_ticket_insights` | **1-to-1** | `ai_ticket_insights.ticket_id` — one document, upserted in place per generation, not a fresh row each time |
+| `groups` | `ai_ticket_insights` | **1-to-many** | `ai_ticket_insights.group_id` — denormalized, same reasoning as `comments.group_id` below |
+| `groups` | `ai_group_reports` | **1-to-many** | `ai_group_reports.group_id` — a fresh document per generation (history), TTL-expired after 30 days |
+| `users` | `ai_group_reports` | **1-to-many** (as generator) | `ai_group_reports.generated_by` |
 
-**Not implemented** (would exist if AI were built): `tickets → ai_ticket_insights`,
-`groups → ai_group_reports`.
+The entity-relationship diagram above predates the AI module and doesn't show these four —
+see [`backend/08-ai.md`](./backend/08-ai.md) for the full field-by-field breakdown.
 
 `comments` is the schema's only self-reference, and the only place a child row duplicates its
 grandparent's id (`group_id`) rather than joining up through its parent. That duplication is
