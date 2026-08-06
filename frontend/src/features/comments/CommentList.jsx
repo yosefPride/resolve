@@ -119,7 +119,7 @@ function CommentItem({
             only thing between a pasted <script> and the DOM. Do not swap this
             for dangerouslySetInnerHTML or a markdown renderer. */}
         <p
-          className={`whitespace-pre-wrap text-sm ${
+          className={`whitespace-pre-wrap break-words text-sm ${
             comment.is_deleted ? 'italic text-slate-500' : 'text-slate-200'
           }`}
         >

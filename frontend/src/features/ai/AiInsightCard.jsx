@@ -20,7 +20,7 @@ export default function AiInsightCard({ title, isLoading, error, cached, childre
       ) : error ? (
         <p className="text-xs text-red-400">{error}</p>
       ) : (
-        <div className="text-xs leading-relaxed text-slate-300">{children}</div>
+        <div className="break-words text-xs leading-relaxed text-slate-300">{children}</div>
       )}
     </div>
   );

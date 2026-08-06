@@ -49,12 +49,12 @@ export default function DashboardStats() {
 
   return (
     <div className="flex flex-col gap-6 border-t border-white/10 pt-6">
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <StatTile icon={Users} label="Teams" value={groups.length} />
         <StatTile icon={Ticket} label="Open Issues" value={totalOpenIssues} />
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {groups.map((group) => (
           <Link
             key={group.id}

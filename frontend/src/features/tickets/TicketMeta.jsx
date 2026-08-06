@@ -96,18 +96,18 @@ export default function TicketMeta({ ticket, teamName, groupId, isAdmin }) {
           </dd>
         </div>
         <div className="flex items-center justify-between gap-4">
-          <dt className="text-sm text-slate-500">Reporter</dt>
-          <dd className="flex items-center gap-2">
+          <dt className="shrink-0 text-sm text-slate-500">Reporter</dt>
+          <dd className="flex min-w-0 items-center gap-2">
             <Avatar name={ticket.created_by_name} seed={ticket.created_by} size="sm" />
-            <span className="text-sm text-slate-200">{ticket.created_by_name}</span>
+            <span className="truncate text-sm text-slate-200">{ticket.created_by_name}</span>
           </dd>
         </div>
         <div className="flex items-center justify-between gap-4">
-          <dt className="text-sm text-slate-500">Team</dt>
-          <dd className="flex items-center gap-2 text-sm text-slate-200">
-            <Users className="h-4 w-4 text-slate-400" />
+          <dt className="shrink-0 text-sm text-slate-500">Team</dt>
+          <dd className="flex min-w-0 items-center gap-2 text-sm text-slate-200">
+            <Users className="h-4 w-4 shrink-0 text-slate-400" />
             {teamName ? (
-              <Link to={`/groups/${groupId}`} className="hover:text-white hover:underline">
+              <Link to={`/groups/${groupId}`} className="truncate hover:text-white hover:underline">
                 {teamName}
               </Link>
             ) : (
