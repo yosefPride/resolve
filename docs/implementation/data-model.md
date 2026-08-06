@@ -22,7 +22,7 @@ fails the query. Indexes are created at boot by `db::ensure_indexes()`.
 
 ## Collections that actually exist
 
-Ten, of which **eight are written by application code**:
+Eleven, of which **nine are written by application code**:
 
 | Collection | Rust type | Written by | Purpose |
 |---|---|---|---|
@@ -36,6 +36,7 @@ Ten, of which **eight are written by application code**:
 | `admin_audit_log` | `admin::models::AuditLogEntry` | `AdminRepository` | Succession / auto-deletion trail |
 | `ai_ticket_insights` | `ai::models::AiTicketInsight` | `AiRepository` | Cached per-ticket summary/analysis (`08-ai.md`) |
 | `ai_group_reports` | `ai::models::AiGroupReport` | `AiRepository` | Cached group analytics reports, TTL-expired after 30 days |
+| `ai_chat_messages` | `ai::models::ChatMessage` | `AiRepository` | Per-ticket chat thread with the AI, one document per message (`08-ai.md`) |
 
 ---
 
@@ -110,8 +111,11 @@ Ten, of which **eight are written by application code**:
 | `groups` | `ai_ticket_insights` | **1-to-many** | `ai_ticket_insights.group_id` — denormalized, same reasoning as `comments.group_id` below |
 | `groups` | `ai_group_reports` | **1-to-many** | `ai_group_reports.group_id` — a fresh document per generation (history), TTL-expired after 30 days |
 | `users` | `ai_group_reports` | **1-to-many** (as generator) | `ai_group_reports.generated_by` |
+| `tickets` | `ai_chat_messages` | **1-to-many** | `ai_chat_messages.ticket_id` — one ongoing conversation's worth of messages, no separate thread id |
+| `groups` | `ai_chat_messages` | **1-to-many** | `ai_chat_messages.group_id` — denormalized, same reasoning as `comments.group_id` |
+| `users` | `ai_chat_messages` | **1-to-many** (as author) | `ai_chat_messages.user_id` — `null` on an assistant message, so this relationship only holds for the user-authored half of the thread |
 
-The entity-relationship diagram above predates the AI module and doesn't show these four —
+The entity-relationship diagram above predates the AI module and doesn't show these seven —
 see [`backend/08-ai.md`](./backend/08-ai.md) for the full field-by-field breakdown.
 
 `comments` is the schema's only self-reference, and the only place a child row duplicates its

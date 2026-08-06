@@ -4,7 +4,7 @@ All indexes are created by `db::ensure_indexes()` in `backend/src/db.rs`, called
 startup from `main()`. `createIndex` is idempotent in MongoDB, so this runs safely on every
 boot and there is no migration step.
 
-**Sixteen indexes across eight collections** (plus the implicit `_id` index Mongo creates for
+**Eighteen indexes across nine collections** (plus the implicit `_id` index Mongo creates for
 every collection).
 
 ---
@@ -29,6 +29,8 @@ every collection).
 | 14 | `ai_ticket_insights` | `group_id: 1, ticket_id: 1` | **unique** | `find_insight`; guards the "one document per ticket" invariant |
 | 15 | `ai_group_reports` | `group_id: 1, generated_at: -1` | — | `find_latest_report` — the newest report for a group |
 | 16 | `ai_group_reports` | `generated_at: 1` | **TTL**, `expireAfterSeconds: 2592000` (30 days) | Automatic cleanup of old reports — not query performance |
+| 17 | `ai_chat_messages` | `group_id: 1, ticket_id: 1, created_at: 1` | — | `list_chat_messages` — every read scoped to a ticket's thread, oldest-first |
+| 18 | `ai_chat_messages` | `role: 1, user_id: 1, created_at: 1` | — | `count_recent_user_messages` — the chat rate-limit check |
 
 ---
 
@@ -102,6 +104,19 @@ allowed it).
   every TTL expiry (`08-ai.md`: one hour) would otherwise accumulate unbounded history that
   nothing ever reads (`find_latest_report` only ever wants the newest one).
 
+### The `ai_chat_messages` indexes (#17, #18)
+
+Two compound indexes on the same collection, serving genuinely different query shapes — same
+"can't be folded together" reasoning as the two `group_members` indexes.
+
+- **#17** `(group_id, ticket_id, created_at)` serves `list_chat_messages`'s per-thread,
+  oldest-first read, and doubles as the prefix `delete_by_ticket`/`delete_by_group` scan on
+  (via `(group_id, ticket_id)` and `group_id` alone respectively).
+- **#18** `(role, user_id, created_at)` serves `count_recent_user_messages`: equality on `role`
+  and `user_id`, a range on `created_at`. Without it, the rate-limit check on every chat message
+  would scan every message ever sent by anyone. Not TTL — chat messages don't expire, they're
+  deleted explicitly ("New chat" or a ticket/group cascade), unlike `ai_group_reports`.
+
 ### The ticket index family
 
 All four lead with `group_id`, which mirrors the isolation rule exactly: every ticket query
@@ -172,3 +187,9 @@ per-ticket invariant the spec's plain single-key indexes wouldn't. The spec says
 `ai_group_reports`' indexes or about a TTL policy for either AI collection; #15 and #16 (and
 the 30-day retention window) are both implementation decisions made when the AI feature was
 built — see `08-ai.md`.
+
+`ai_chat_messages` (and indexes #17/#18) don't appear in the spec at all — chat was built after
+the original AI feature, as a scope decision confirmed with the user (10 messages/hour,
+scoped per user). Same treatment as the two collections above: both indexes were chosen to
+match the query shapes chat actually needs (thread listing, rate-limit counting), not lifted
+from a spec that predates the feature.
