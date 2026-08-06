@@ -67,12 +67,12 @@ function AddMemberForm({ groupId }) {
       {error && <p className="text-sm text-red-500">{error}</p>}
 
       {found && (
-        <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-4 py-3">
-          <div>
-            <p className="text-sm font-medium text-white">{found.name}</p>
-            <p className="text-xs text-slate-400">{found.email}</p>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-white">{found.name}</p>
+            <p className="truncate text-xs text-slate-400">{found.email}</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="ghost"
               size="sm"
@@ -187,13 +187,13 @@ export default function MemberManager({ groupId, members, myUserId, myRole }) {
           return (
             <li
               key={member.id}
-              className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-4 py-3"
+              className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-3"
             >
-              <div>
-                <p className="text-sm font-medium text-white">{member.name}</p>
-                <p className="text-xs text-slate-400">{member.email}</p>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-white">{member.name}</p>
+                <p className="truncate text-xs text-slate-400">{member.email}</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2">
                 <Badge>{isGroupAdmin(member.role) ? 'Team Admin' : 'Contributor'}</Badge>
                 {iAmAdmin && (
                   <MemberActionsMenu

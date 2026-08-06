@@ -84,9 +84,9 @@ export default function GroupManagementPage() {
 
   return (
     <section className="flex flex-col gap-8">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">{group.name}</h1>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="truncate text-2xl font-bold text-white">{group.name}</h1>
           {myRole && (
             <p className="text-sm text-slate-400">
               Your role: {isGroupAdmin(myRole) ? 'Team Admin' : 'Contributor'}
@@ -94,7 +94,7 @@ export default function GroupManagementPage() {
           )}
         </div>
         {iAmAdmin ? (
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
               onClick={() => setIsRenaming(true)}
@@ -109,7 +109,7 @@ export default function GroupManagementPage() {
             </Button>
           </div>
         ) : (
-          <Button variant="dangerOutline" onClick={() => setIsConfirmingLeave(true)}>
+          <Button variant="dangerOutline" className="shrink-0" onClick={() => setIsConfirmingLeave(true)}>
             Leave team
           </Button>
         )}
@@ -118,8 +118,9 @@ export default function GroupManagementPage() {
       {iAmAdmin ? (
         // Stats + AI report stacked on the left (40%), members (with
         // add-member below the list, inside MemberManager) on the right
-        // (60%). Stacks below lg.
-        <div className="grid items-start gap-6 lg:grid-cols-[2fr_3fr]">
+        // (60%) at lg+. Below lg: a single centered column, same as the
+        // contributor layout.
+        <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 lg:mx-0 lg:grid lg:max-w-none lg:grid-cols-[2fr_3fr] lg:items-start">
           <div className="flex flex-col gap-6">
             <div className="flex flex-col gap-3">
               <h2 className="text-lg font-semibold text-white">Quick Stats</h2>
