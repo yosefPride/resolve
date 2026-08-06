@@ -133,6 +133,66 @@ impl AiGroupReport {
     }
 }
 
+// "assistant", not "ai" or "gemini": keeps the field provider-agnostic in
+// case the backing model ever changes, same reasoning as AiProvider being a
+// trait rather than a concrete GeminiClient type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChatRole {
+    User,
+    Assistant,
+}
+
+// One document per message, unlike AiTicketInsight's single upserted-in-place
+// doc — a conversation is inherently a sequence, not a single latest value.
+// Structurally close to comment::models::Comment (same group_id/ticket_id
+// scoping, same insert-only, oldest-first list shape) rather than anything
+// else in this module. user_id is None for an assistant message and Some for
+// a user message — see AiRepository::count_recent_user_messages, which
+// filters on both role and user_id being present to count one user's own
+// messages for the rate limit.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessage {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub group_id: ObjectId,
+    pub ticket_id: ObjectId,
+    pub role: ChatRole,
+    pub user_id: Option<ObjectId>,
+    pub content: String,
+    pub created_at: BsonDateTime,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SendChatMessageRequest {
+    pub message: String,
+}
+
+// user_name is enriched the same way CommentResponse's is (UserService
+// lookup) — None for an assistant message, same as user_id on the underlying
+// ChatMessage. The ticket's chat is a shared, group-visible thread like
+// comments, not a private per-user conversation, so who asked matters when
+// more than one member has used it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessageResponse {
+    pub id: String,
+    pub role: ChatRole,
+    pub user_id: Option<String>,
+    pub user_name: Option<String>,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+}
+
+// Returns both messages from a single POST rather than just the assistant's
+// reply: the frontend would otherwise have to fabricate an id/timestamp for
+// the user's own message to render it immediately, and that fabricated id
+// would never match the persisted one.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SendChatMessageResponse {
+    pub user_message: ChatMessageResponse,
+    pub assistant_message: ChatMessageResponse,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

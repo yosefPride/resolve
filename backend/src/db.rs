@@ -194,6 +194,27 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), Error> {
         )
         .await?;
 
+    // Serves list_chat_messages (every read is scoped to group_id + ticket_id,
+    // oldest-first) — same shape as the comments index above.
+    db.collection::<Document>("ai_chat_messages")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "ticket_id": 1, "created_at": 1 })
+                .build(),
+        )
+        .await?;
+
+    // Serves count_recent_user_messages, the chat rate-limit check: equality
+    // on role + user_id, range on created_at — this compound index covers
+    // that query directly instead of scanning every message ever sent.
+    db.collection::<Document>("ai_chat_messages")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "role": 1, "user_id": 1, "created_at": 1 })
+                .build(),
+        )
+        .await?;
+
     Ok(())
 }
 

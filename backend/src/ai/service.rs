@@ -6,8 +6,8 @@ use mongodb::{
 
 use crate::ai::client::{AiProvider, GeminiClient};
 use crate::ai::models::{
-    GroupReportResponse, PriorityBreakdown, ReportData, TicketAnalysisResponse,
-    TicketSummaryResponse,
+    ChatMessage, ChatMessageResponse, ChatRole, GroupReportResponse, PriorityBreakdown, ReportData,
+    SendChatMessageResponse, TicketAnalysisResponse, TicketSummaryResponse,
 };
 use crate::ai::repository::AiRepository;
 use crate::config::Config;
@@ -15,12 +15,25 @@ use crate::errors::ApiError;
 use crate::rbac::service::RbacService;
 use crate::ticket::models::{Ticket, TicketStatus};
 use crate::ticket::repository::TicketRepository;
+use crate::user::service::UserService;
 
 // Confirmed with user: reuse a generated report for up to an hour before
 // regenerating on request (docs/ai-integration.md: "Group reports are
 // cached for a period of time").
 const REPORT_TTL_MILLIS: i64 = 60 * 60 * 1000;
 const RECENT_WINDOW_MILLIS: i64 = 7 * 24 * 60 * 60 * 1000;
+
+// Confirmed with user: 10 messages per hour, scoped per user (see
+// AiRepository::count_recent_user_messages) rather than per ticket — a
+// guardrail against one person hammering the endpoint, not a
+// per-conversation quota.
+const CHAT_RATE_LIMIT: u64 = 10;
+const CHAT_RATE_WINDOW_MILLIS: i64 = 60 * 60 * 1000;
+// How many prior messages get fed back to Gemini as context on each turn.
+// Bounds prompt size/cost regardless of how long a conversation has run —
+// the full history still lists in the API response either way, this only
+// caps what the model sees.
+const CHAT_HISTORY_LIMIT: usize = 20;
 
 // Generic over the provider (default GeminiClient) rather than a concrete
 // GeminiClient field: production call sites (AiService::new) are unaffected
@@ -31,6 +44,7 @@ const RECENT_WINDOW_MILLIS: i64 = 7 * 24 * 60 * 60 * 1000;
 pub struct AiService<P: AiProvider = GeminiClient> {
     repo: AiRepository,
     ticket_repo: TicketRepository,
+    user_service: UserService,
     rbac: RbacService,
     provider: P,
 }
@@ -50,6 +64,7 @@ impl<P: AiProvider> AiService<P> {
         Self {
             repo: AiRepository::new(db),
             ticket_repo: TicketRepository::new(db),
+            user_service: UserService::new(db),
             rbac: RbacService::new(db),
             provider,
         }
@@ -75,7 +90,10 @@ impl<P: AiProvider> AiService<P> {
             && insight.is_summary_fresh(ticket.content_updated_at)
         {
             return Ok(TicketSummaryResponse {
-                summary: insight.summary.clone().expect("is_summary_fresh implies Some"),
+                summary: insight
+                    .summary
+                    .clone()
+                    .expect("is_summary_fresh implies Some"),
                 cached: true,
             });
         }
@@ -163,8 +181,8 @@ impl<P: AiProvider> AiService<P> {
         if let Some(report) = self.repo.find_latest_report(group_id).await?
             && report.is_fresh(now, REPORT_TTL_MILLIS)
         {
-            let data: ReportData = bson::from_document(report.report_data)
-                .map_err(|_| ApiError::Internal)?;
+            let data: ReportData =
+                bson::from_document(report.report_data).map_err(|_| ApiError::Internal)?;
             return Ok(GroupReportResponse {
                 data,
                 generated_at: to_chrono(report.generated_at),
@@ -172,7 +190,10 @@ impl<P: AiProvider> AiService<P> {
             });
         }
 
-        let tickets = self.ticket_repo.list_by_group(group_id, None, None, None).await?;
+        let tickets = self
+            .ticket_repo
+            .list_by_group(group_id, None, None, None)
+            .await?;
         let stats = aggregate_stats(&tickets, now);
         let narrative = self.provider.narrate_report(&stats_summary(&stats)).await?;
         let data = ReportData {
@@ -202,6 +223,139 @@ impl<P: AiProvider> AiService<P> {
             cached: false,
         })
     }
+
+    // Any group member may chat about a ticket, same as summarize/analyze —
+    // no admin-only gate. Unlike those two, this is never cacheable: each
+    // message is a genuinely new request, there's no "fresh iff unchanged"
+    // check to make. Message format validation (empty/over-length) lives in
+    // the handler only, same as comment content — see
+    // comment_handlers::validate_create's doc comment for why the split is
+    // there and not duplicated here.
+    pub async fn send_chat_message(
+        &self,
+        user_id: ObjectId,
+        group_id: ObjectId,
+        ticket_id: ObjectId,
+        message: String,
+    ) -> Result<SendChatMessageResponse, ApiError> {
+        self.rbac.require_member(group_id, user_id).await?;
+        let ticket = self
+            .ticket_repo
+            .find_by_id(group_id, ticket_id)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+
+        let since = BsonDateTime::from_millis(
+            BsonDateTime::now().timestamp_millis() - CHAT_RATE_WINDOW_MILLIS,
+        );
+        let recent_count = self.repo.count_recent_user_messages(user_id, since).await?;
+        if recent_count >= CHAT_RATE_LIMIT {
+            return Err(ApiError::RateLimited(format!(
+                "chat message limit reached ({CHAT_RATE_LIMIT} per hour) — try again later"
+            )));
+        }
+
+        let history = self.repo.list_chat_messages(group_id, ticket_id).await?;
+        let transcript = build_transcript(&history);
+        let reply = self
+            .provider
+            .chat(&ticket.title, &ticket.description, &transcript, &message)
+            .await?;
+
+        let user_message = self
+            .repo
+            .insert_chat_message(group_id, ticket_id, ChatRole::User, Some(user_id), &message)
+            .await?;
+        let assistant_message = self
+            .repo
+            .insert_chat_message(group_id, ticket_id, ChatRole::Assistant, None, &reply)
+            .await?;
+
+        Ok(SendChatMessageResponse {
+            user_message: self.enrich_chat_message(user_message).await?,
+            assistant_message: self.enrich_chat_message(assistant_message).await?,
+        })
+    }
+
+    // Whole thread, oldest-first, no pagination — same shape and reasoning as
+    // CommentService::list_comments (docs/implementation/backend/08-ai.md).
+    pub async fn list_chat_messages(
+        &self,
+        user_id: ObjectId,
+        group_id: ObjectId,
+        ticket_id: ObjectId,
+    ) -> Result<Vec<ChatMessageResponse>, ApiError> {
+        self.rbac.require_member(group_id, user_id).await?;
+        self.ticket_repo
+            .find_by_id(group_id, ticket_id)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+        let messages = self.repo.list_chat_messages(group_id, ticket_id).await?;
+        let mut result = Vec::with_capacity(messages.len());
+        for message in messages {
+            result.push(self.enrich_chat_message(message).await?);
+        }
+        Ok(result)
+    }
+
+    // "New chat": clears the ticket's one ongoing conversation. Any member
+    // may do this, same as any member may send a message — the thread is
+    // shared group-visible content like comments, not a private one owned by
+    // whoever started it, so there's no per-author ownership check here the
+    // way comment deletion has (RbacService::require_owner_or_group_admin).
+    pub async fn clear_chat(
+        &self,
+        user_id: ObjectId,
+        group_id: ObjectId,
+        ticket_id: ObjectId,
+    ) -> Result<(), ApiError> {
+        self.rbac.require_member(group_id, user_id).await?;
+        self.ticket_repo
+            .find_by_id(group_id, ticket_id)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+        self.repo.clear_chat_messages(group_id, ticket_id).await?;
+        Ok(())
+    }
+
+    // ChatMessageResponse needs the author's display name, which ChatMessage
+    // doesn't carry — mirrors CommentService::enrich_comment. None for an
+    // assistant message (no user_id to look up).
+    async fn enrich_chat_message(
+        &self,
+        message: ChatMessage,
+    ) -> Result<ChatMessageResponse, ApiError> {
+        let user_name = match message.user_id {
+            Some(uid) => self.user_service.find_by_id(uid).await?.map(|u| u.name),
+            None => None,
+        };
+        Ok(ChatMessageResponse {
+            id: message.id.map(|id| id.to_hex()).unwrap_or_default(),
+            role: message.role,
+            user_id: message.user_id.map(|id| id.to_hex()),
+            user_name,
+            content: message.content,
+            created_at: to_chrono(message.created_at),
+        })
+    }
+}
+
+// Last CHAT_HISTORY_LIMIT messages, oldest-first, rendered as plain text for
+// the prompt — kept as a free function so it's unit-testable without a
+// provider or DB (same reasoning as aggregate_stats/stats_summary below).
+fn build_transcript(history: &[ChatMessage]) -> String {
+    let start = history.len().saturating_sub(CHAT_HISTORY_LIMIT);
+    history[start..]
+        .iter()
+        .map(|message| {
+            let speaker = match message.role {
+                ChatRole::User => "User",
+                ChatRole::Assistant => "Assistant",
+            };
+            format!("{speaker}: {}", message.content)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn to_chrono(ts: BsonDateTime) -> DateTime<Utc> {
@@ -246,7 +400,11 @@ fn aggregate_stats(tickets: &[Ticket], now: BsonDateTime) -> Stats {
         total_tickets: tickets.len() as i64,
         open_tickets: open,
         closed_tickets: closed,
-        priority_breakdown: PriorityBreakdown { low, high, critical },
+        priority_breakdown: PriorityBreakdown {
+            low,
+            high,
+            critical,
+        },
         recent_tickets_7d: recent,
     }
 }
@@ -328,5 +486,51 @@ mod tests {
         let stats = aggregate_stats(&[], now);
         assert_eq!(stats.total_tickets, 0);
         assert_eq!(stats.recent_tickets_7d, 0);
+    }
+
+    fn message(role: ChatRole, content: &str) -> ChatMessage {
+        ChatMessage {
+            id: Some(ObjectId::new()),
+            group_id: ObjectId::new(),
+            ticket_id: ObjectId::new(),
+            role,
+            user_id: match role {
+                ChatRole::User => Some(ObjectId::new()),
+                ChatRole::Assistant => None,
+            },
+            content: content.to_string(),
+            created_at: BsonDateTime::now(),
+        }
+    }
+
+    #[test]
+    fn build_transcript_on_empty_history_is_empty_string() {
+        assert_eq!(build_transcript(&[]), "");
+    }
+
+    #[test]
+    fn build_transcript_renders_speaker_and_content_oldest_first() {
+        let history = vec![
+            message(ChatRole::User, "hi"),
+            message(ChatRole::Assistant, "hello"),
+        ];
+        assert_eq!(build_transcript(&history), "User: hi\nAssistant: hello");
+    }
+
+    #[test]
+    fn build_transcript_caps_to_last_chat_history_limit_messages() {
+        let history: Vec<ChatMessage> = (0..CHAT_HISTORY_LIMIT + 5)
+            .map(|i| message(ChatRole::User, &i.to_string()))
+            .collect();
+        let transcript = build_transcript(&history);
+        let lines: Vec<&str> = transcript.lines().collect();
+        assert_eq!(lines.len(), CHAT_HISTORY_LIMIT);
+        // Oldest of the kept messages is index 5 (the first 5 were dropped),
+        // newest is the very last one appended.
+        assert_eq!(lines.first(), Some(&"User: 5"));
+        assert_eq!(
+            *lines.last().unwrap(),
+            format!("User: {}", CHAT_HISTORY_LIMIT + 4)
+        );
     }
 }

@@ -1,12 +1,13 @@
 use std::fmt;
 
+use futures::TryStreamExt;
 use mongodb::{
     Collection, Database,
-    bson::{DateTime as BsonDateTime, Document, doc, oid::ObjectId},
+    bson::{self, DateTime as BsonDateTime, Document, doc, oid::ObjectId},
     options::ReturnDocument,
 };
 
-use crate::ai::models::{AiGroupReport, AiTicketInsight};
+use crate::ai::models::{AiGroupReport, AiTicketInsight, ChatMessage, ChatRole};
 
 #[derive(Debug)]
 pub enum AiRepoError {
@@ -32,6 +33,7 @@ impl From<mongodb::error::Error> for AiRepoError {
 pub struct AiRepository {
     insights: Collection<AiTicketInsight>,
     reports: Collection<AiGroupReport>,
+    chat_messages: Collection<ChatMessage>,
 }
 
 impl AiRepository {
@@ -39,6 +41,7 @@ impl AiRepository {
         Self {
             insights: db.collection("ai_ticket_insights"),
             reports: db.collection("ai_group_reports"),
+            chat_messages: db.collection("ai_chat_messages"),
         }
     }
 
@@ -131,26 +134,32 @@ impl AiRepository {
 
     // Cascade target for ticket deletion, mirroring
     // CommentRepository::delete_by_ticket. Called from
-    // TicketService::delete_ticket so an insight can't outlive the ticket it
-    // describes.
+    // TicketService::delete_ticket so an insight (or a chat thread) can't
+    // outlive the ticket it describes.
     pub async fn delete_by_ticket(
         &self,
         group_id: ObjectId,
         ticket_id: ObjectId,
     ) -> Result<u64, AiRepoError> {
-        let result = self
+        let insights_deleted = self
             .insights
             .delete_many(doc! { "group_id": group_id, "ticket_id": ticket_id })
-            .await?;
-        Ok(result.deleted_count)
+            .await?
+            .deleted_count;
+        let messages_deleted = self
+            .chat_messages
+            .delete_many(doc! { "group_id": group_id, "ticket_id": ticket_id })
+            .await?
+            .deleted_count;
+        Ok(insights_deleted + messages_deleted)
     }
 
     // Cascade target for group deletion, mirroring
     // CommentRepository::delete_by_group. Called from purge_group_data
-    // (group/service.rs). Returns the combined count across both
-    // collections — insights and reports are different documents but the
-    // same cascade concern, so callers get one number rather than needing to
-    // track two.
+    // (group/service.rs). Returns the combined count across all three
+    // collections — insights, reports, and chat messages are different
+    // documents but the same cascade concern, so callers get one number
+    // rather than needing to track three.
     pub async fn delete_by_group(&self, group_id: ObjectId) -> Result<u64, AiRepoError> {
         let insights_deleted = self
             .insights
@@ -162,7 +171,95 @@ impl AiRepository {
             .delete_many(doc! { "group_id": group_id })
             .await?
             .deleted_count;
-        Ok(insights_deleted + reports_deleted)
+        let messages_deleted = self
+            .chat_messages
+            .delete_many(doc! { "group_id": group_id })
+            .await?
+            .deleted_count;
+        Ok(insights_deleted + reports_deleted + messages_deleted)
+    }
+
+    // Oldest-first, same shape as CommentRepository::list_by_ticket — the
+    // service takes the tail of this for the transcript it sends to Gemini
+    // (see AiService::CHAT_HISTORY_LIMIT), and the frontend renders the whole
+    // thing top-to-bottom as-is.
+    pub async fn list_chat_messages(
+        &self,
+        group_id: ObjectId,
+        ticket_id: ObjectId,
+    ) -> Result<Vec<ChatMessage>, AiRepoError> {
+        let cursor = self
+            .chat_messages
+            .find(doc! { "group_id": group_id, "ticket_id": ticket_id })
+            .sort(doc! { "created_at": 1 })
+            .await?;
+        cursor.try_collect().await.map_err(Into::into)
+    }
+
+    pub async fn insert_chat_message(
+        &self,
+        group_id: ObjectId,
+        ticket_id: ObjectId,
+        role: ChatRole,
+        user_id: Option<ObjectId>,
+        content: &str,
+    ) -> Result<ChatMessage, AiRepoError> {
+        let message = ChatMessage {
+            id: None,
+            group_id,
+            ticket_id,
+            role,
+            user_id,
+            content: content.to_string(),
+            created_at: BsonDateTime::now(),
+        };
+        let result = self.chat_messages.insert_one(&message).await?;
+        let id = result
+            .inserted_id
+            .as_object_id()
+            .expect("insert_one always returns an ObjectId");
+        Ok(ChatMessage {
+            id: Some(id),
+            ..message
+        })
+    }
+
+    // "New chat": unconditional hard delete of every message on this ticket's
+    // thread. There's only ever one ongoing conversation per ticket (no
+    // thread/conversation id to scope by), so clearing it is just emptying
+    // the whole collection for this (group_id, ticket_id) pair.
+    pub async fn clear_chat_messages(
+        &self,
+        group_id: ObjectId,
+        ticket_id: ObjectId,
+    ) -> Result<u64, AiRepoError> {
+        let result = self
+            .chat_messages
+            .delete_many(doc! { "group_id": group_id, "ticket_id": ticket_id })
+            .await?;
+        Ok(result.deleted_count)
+    }
+
+    // Counts this user's own chat messages sent since `since`, across every
+    // ticket — the rate limit (AiService::CHAT_RATE_LIMIT) is scoped per
+    // user, not per ticket, so one person can't dodge it by spreading
+    // messages across tickets. role is filtered explicitly rather than
+    // relying on user_id alone being absent on assistant messages, so the
+    // query stays correct even if that invariant ever changes.
+    pub async fn count_recent_user_messages(
+        &self,
+        user_id: ObjectId,
+        since: BsonDateTime,
+    ) -> Result<u64, AiRepoError> {
+        let role = bson::to_bson(&ChatRole::User).expect("ChatRole always serializes");
+        Ok(self
+            .chat_messages
+            .count_documents(doc! {
+                "role": role,
+                "user_id": user_id,
+                "created_at": { "$gte": since },
+            })
+            .await?)
     }
 
     // Most recent report for the group, or None if one has never been

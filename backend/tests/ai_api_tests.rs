@@ -11,7 +11,10 @@
 //   cargo test --test ai_api_tests -- --ignored --test-threads=1
 use actix_web::{App, test as actix_test, web};
 use mongodb::{Database, IndexModel, bson::doc, bson::oid::ObjectId, options::IndexOptions};
-use resolve::ai::models::{GroupReportResponse, TicketAnalysisResponse, TicketSummaryResponse};
+use resolve::ai::models::{
+    ChatMessageResponse, ChatRole, GroupReportResponse, SendChatMessageRequest,
+    SendChatMessageResponse, TicketAnalysisResponse, TicketSummaryResponse,
+};
 use resolve::auth::models::{AuthResponse, RegisterRequest};
 use resolve::group::models::{AddMemberRequest, CreateGroupRequest, GroupResponse, Role};
 use resolve::group::repository::GroupRepository;
@@ -480,6 +483,232 @@ fn test_report_contributor_forbidden() {
         )
         .await;
         assert_eq!(resp.status(), 403);
+
+        cleanup(
+            &group_repo,
+            &user_repo,
+            ObjectId::parse_str(&group_id).unwrap(),
+            &[&owner, &contributor],
+        )
+        .await;
+    });
+}
+
+// 9. A member can send a chat message; the real Gemini call succeeds, both
+// messages land in the list in order, and "New chat" clears the thread.
+#[test]
+#[ignore]
+fn test_chat_member_succeeds_then_lists_and_clears() {
+    support::runtime().block_on(async {
+        let (db, uri) = setup_db().await;
+        let group_repo = GroupRepository::new(&db);
+        let user_repo = UserRepository::new(&db);
+        let app = test_app!(build_app_state(db, uri));
+
+        let (group_id, ticket_id, owner, contributor) = seed!(app);
+
+        let resp = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!("/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/chat"))
+                .insert_header(auth_header(&contributor.jwt))
+                .set_json(&SendChatMessageRequest {
+                    message: "Any workaround for this?".to_string(),
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 201);
+        let body: SendChatMessageResponse = actix_test::read_body_json(resp).await;
+        assert_eq!(body.user_message.role, ChatRole::User);
+        assert_eq!(body.user_message.content, "Any workaround for this?");
+        assert_eq!(body.user_message.user_id, Some(contributor.user.id.clone()));
+        assert_eq!(body.assistant_message.role, ChatRole::Assistant);
+        assert!(!body.assistant_message.content.trim().is_empty());
+
+        let list_resp = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::get()
+                .uri(&format!("/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/chat"))
+                .insert_header(auth_header(&contributor.jwt))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(list_resp.status(), 200);
+        let messages: Vec<ChatMessageResponse> = actix_test::read_body_json(list_resp).await;
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, ChatRole::User);
+        assert_eq!(messages[1].role, ChatRole::Assistant);
+
+        let clear_resp = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::delete()
+                .uri(&format!("/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/chat"))
+                .insert_header(auth_header(&contributor.jwt))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(clear_resp.status(), 204);
+
+        let after_clear = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::get()
+                .uri(&format!("/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/chat"))
+                .insert_header(auth_header(&contributor.jwt))
+                .to_request(),
+        )
+        .await;
+        let messages_after_clear: Vec<ChatMessageResponse> =
+            actix_test::read_body_json(after_clear).await;
+        assert!(messages_after_clear.is_empty());
+
+        cleanup(
+            &group_repo,
+            &user_repo,
+            ObjectId::parse_str(&group_id).unwrap(),
+            &[&owner, &contributor],
+        )
+        .await;
+    });
+}
+
+// 10. A non-member is forbidden, and never reaches the Gemini call.
+#[test]
+#[ignore]
+fn test_chat_non_member_forbidden() {
+    support::runtime().block_on(async {
+        let (db, uri) = setup_db().await;
+        let group_repo = GroupRepository::new(&db);
+        let user_repo = UserRepository::new(&db);
+        let app = test_app!(build_app_state(db, uri));
+
+        let (group_id, ticket_id, owner, contributor) = seed!(app);
+        let outsider: AuthResponse = actix_test::read_body_json(
+            actix_test::call_service(&app, register_request("ai-chat-outsider").to_request()).await,
+        )
+        .await;
+
+        let resp = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!("/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/chat"))
+                .insert_header(auth_header(&outsider.jwt))
+                .set_json(&SendChatMessageRequest {
+                    message: "hi".to_string(),
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 403);
+
+        cleanup(
+            &group_repo,
+            &user_repo,
+            ObjectId::parse_str(&group_id).unwrap(),
+            &[&owner, &contributor, &outsider],
+        )
+        .await;
+    });
+}
+
+// 11. No Authorization header at all is rejected before any RBAC or provider
+// logic runs.
+#[test]
+#[ignore]
+fn test_chat_requires_authentication() {
+    support::runtime().block_on(async {
+        let (db, uri) = setup_db().await;
+        let group_repo = GroupRepository::new(&db);
+        let user_repo = UserRepository::new(&db);
+        let app = test_app!(build_app_state(db, uri));
+
+        let (group_id, ticket_id, owner, contributor) = seed!(app);
+
+        let resp = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!("/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/chat"))
+                .set_json(&SendChatMessageRequest {
+                    message: "hi".to_string(),
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 401);
+
+        cleanup(
+            &group_repo,
+            &user_repo,
+            ObjectId::parse_str(&group_id).unwrap(),
+            &[&owner, &contributor],
+        )
+        .await;
+    });
+}
+
+// 12. A ticket_id that doesn't belong to the group 404s.
+#[test]
+#[ignore]
+fn test_chat_unknown_ticket_not_found() {
+    support::runtime().block_on(async {
+        let (db, uri) = setup_db().await;
+        let group_repo = GroupRepository::new(&db);
+        let user_repo = UserRepository::new(&db);
+        let app = test_app!(build_app_state(db, uri));
+
+        let (group_id, _ticket_id, owner, contributor) = seed!(app);
+
+        let resp = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!(
+                    "/api/v1/ai/groups/{group_id}/tickets/{}/chat",
+                    ObjectId::new()
+                ))
+                .insert_header(auth_header(&contributor.jwt))
+                .set_json(&SendChatMessageRequest {
+                    message: "hi".to_string(),
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 404);
+
+        cleanup(
+            &group_repo,
+            &user_repo,
+            ObjectId::parse_str(&group_id).unwrap(),
+            &[&owner, &contributor],
+        )
+        .await;
+    });
+}
+
+// 13. An empty message is rejected before the provider is ever called — no
+// Gemini quota spent proving this one.
+#[test]
+#[ignore]
+fn test_chat_empty_message_is_bad_request() {
+    support::runtime().block_on(async {
+        let (db, uri) = setup_db().await;
+        let group_repo = GroupRepository::new(&db);
+        let user_repo = UserRepository::new(&db);
+        let app = test_app!(build_app_state(db, uri));
+
+        let (group_id, ticket_id, owner, contributor) = seed!(app);
+
+        let resp = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!("/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/chat"))
+                .insert_header(auth_header(&contributor.jwt))
+                .set_json(&SendChatMessageRequest {
+                    message: "   ".to_string(),
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 400);
 
         cleanup(
             &group_repo,

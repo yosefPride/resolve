@@ -48,6 +48,19 @@ pub trait AiProvider {
         &self,
         stats_summary: &str,
     ) -> impl Future<Output = Result<String, ApiError>> + Send;
+
+    // transcript is a pre-formatted "User: ...\nAssistant: ...\n..." string
+    // built by AiService from the last CHAT_HISTORY_LIMIT stored messages
+    // (empty string if this is the first message) — same reasoning as
+    // stats_summary above: the service builds plain text from its own data,
+    // this trait only ever takes/returns strings.
+    fn chat(
+        &self,
+        title: &str,
+        description: &str,
+        transcript: &str,
+        message: &str,
+    ) -> impl Future<Output = Result<String, ApiError>> + Send;
 }
 
 pub struct GeminiClient {
@@ -127,6 +140,19 @@ impl AiProvider for GeminiClient {
         let body = self.generate(&report_prompt(stats_summary), None).await?;
         parse_summary_response(&body)
     }
+
+    async fn chat(
+        &self,
+        title: &str,
+        description: &str,
+        transcript: &str,
+        message: &str,
+    ) -> Result<String, ApiError> {
+        let body = self
+            .generate(&chat_prompt(title, description, transcript, message), None)
+            .await?;
+        parse_summary_response(&body)
+    }
 }
 
 fn summarize_prompt(title: &str, description: &str) -> String {
@@ -144,6 +170,33 @@ fn analyze_prompt(title: &str, description: &str) -> String {
          \"high\", \"critical\"), a short actionable suggested fix, and a \
          short classification label (e.g. \"bug\", \"feature request\", \
          \"performance\", \"security\").\n\nTitle: {title}\nDescription: {description}"
+    )
+}
+
+// Confirmed with user: the chat is scoped to this ticket (and bug-tracking
+// work generally) — not a general-purpose assistant. This instruction is the
+// entire enforcement mechanism (there's no separate classifier/filter step),
+// so it's stated up front, before the ticket context, and repeated as the
+// last line right before the new message so it isn't lost to recency bias
+// on a long transcript.
+fn chat_prompt(title: &str, description: &str, transcript: &str, message: &str) -> String {
+    let history_section = if transcript.is_empty() {
+        String::new()
+    } else {
+        format!("\n\nConversation so far:\n{transcript}")
+    };
+    format!(
+        "You are a support assistant helping with ONE bug ticket in a bug-\
+         tracking tool. Only answer questions about this ticket or about \
+         triaging/resolving it. If the new message is unrelated to this \
+         ticket or to bug-tracking work in general, do not answer it — \
+         instead reply that you're here to help with this issue and can't \
+         assist with unrelated requests. Use the ticket's title and \
+         description as context, and the conversation so far (if any) for \
+         continuity. Keep the reply short and conversational, a few \
+         sentences at most.\n\n\
+         Title: {title}\nDescription: {description}{history_section}\n\n\
+         New message (stay in scope): {message}"
     )
 }
 
@@ -242,6 +295,35 @@ mod tests {
     fn report_prompt_includes_stats_summary() {
         let prompt = report_prompt("Total tickets: 12, Open: 5, Closed: 7");
         assert!(prompt.contains("Total tickets: 12, Open: 5, Closed: 7"));
+    }
+
+    #[test]
+    fn chat_prompt_includes_ticket_context_and_new_message() {
+        let prompt = chat_prompt("Login broken", "Button does nothing", "", "Any workaround?");
+        assert!(prompt.contains("Login broken"));
+        assert!(prompt.contains("Button does nothing"));
+        assert!(prompt.contains("Any workaround?"));
+    }
+
+    #[test]
+    fn chat_prompt_omits_history_section_when_transcript_empty() {
+        let prompt = chat_prompt("Title", "Desc", "", "Hi");
+        assert!(!prompt.contains("Conversation so far"));
+    }
+
+    #[test]
+    fn chat_prompt_instructs_model_to_stay_in_ticket_scope() {
+        let prompt = chat_prompt("Title", "Desc", "", "What's the weather today?");
+        assert!(prompt.to_lowercase().contains("unrelated"));
+        assert!(prompt.contains("stay in scope"));
+    }
+
+    #[test]
+    fn chat_prompt_includes_history_section_when_transcript_present() {
+        let prompt = chat_prompt("Title", "Desc", "User: hi\nAssistant: hello", "Anything else?");
+        assert!(prompt.contains("Conversation so far"));
+        assert!(prompt.contains("User: hi"));
+        assert!(prompt.contains("Assistant: hello"));
     }
 
     #[test]
