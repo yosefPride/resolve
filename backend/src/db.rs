@@ -196,3 +196,20 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), Error> {
 
     Ok(())
 }
+
+// One-time backfill for tickets created before content_updated_at existed
+// (see Ticket's doc comment in ticket/models.rs) — without this, those
+// documents have no such field and fail to deserialize entirely, 500ing any
+// list/get that touches them. A plain `$set` can't copy another field's
+// value, so this needs a pipeline update. Idempotent: the filter only
+// matches documents still missing the field, so re-running at the next boot
+// is a no-op.
+pub async fn backfill_ticket_content_updated_at(db: &Database) -> Result<(), Error> {
+    db.collection::<Document>("tickets")
+        .update_many(
+            doc! { "content_updated_at": { "$exists": false } },
+            vec![doc! { "$set": { "content_updated_at": "$updated_at" } }],
+        )
+        .await?;
+    Ok(())
+}

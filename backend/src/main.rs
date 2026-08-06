@@ -36,6 +36,9 @@ async fn main() -> std::io::Result<()> {
     db::ensure_indexes(&database)
         .await
         .map_err(|error| std::io::Error::other(format!("Failed to create indexes: {error}")))?;
+    db::backfill_ticket_content_updated_at(&database)
+        .await
+        .map_err(|error| std::io::Error::other(format!("Ticket backfill failed: {error}")))?;
     let bind_address = config.bind_address();
     let app_state = web::Data::new(AppState {
         db: database,
