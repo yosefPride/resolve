@@ -11,6 +11,13 @@ const PILL =
 // Chatbot-shaped rail for the issue detail page. Summarize/Analyze are wired
 // to the AI endpoints (docs/implementation/backend/08-ai.md); chat
 // (input/Send/New chat) has no backend endpoint yet and stays disabled.
+// Fixed height (h-132 = 33rem: the gap-4 plus the h-128 Details/Comments
+// panel in TicketDetail, so the rail bottom lines up with that panel's
+// bottom) rather than flex-1 stretch-to-sibling: a long summary or analysis
+// result scrolls inside the panel instead of growing it, and the height
+// stays constant instead of depending on TicketMeta's height (which only
+// exists as a stretch target at lg+ anyway — there's no sibling to stretch
+// against once the layout stacks on mobile).
 export default function AiPanel({ ticket, groupId }) {
   const summaryQuery = useTicketSummary(groupId, ticket.id);
   const analysisQuery = useTicketAnalysis(groupId, ticket.id);
@@ -24,7 +31,7 @@ export default function AiPanel({ ticket, groupId }) {
     analysisQuery.isFetching;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-white/10 bg-white/5">
+    <div className="flex h-132 flex-col rounded-xl border border-white/10 bg-white/5">
       <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
         <span className="text-sm font-semibold text-slate-300">Chats</span>
         <div className="flex items-center gap-1">

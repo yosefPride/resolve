@@ -125,8 +125,9 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
           pushing content past the frame on mobile. flex-col doesn't have
           that problem: it stretches children down to its own width instead
           of letting one grow the container. items-stretch (the grid
-          default) at lg+ so the rail matches the main column's height —
-          AiPanel below grows to fill what TicketMeta leaves over. */}
+          default) at lg+ so the rail's cards align with the main column;
+          AiPanel has its own fixed height now (see AiPanel.jsx) rather than
+          stretching to match it. */}
       <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-stretch">
         <div className="flex flex-col gap-6">
           <div className="break-words rounded-xl border border-white/10 bg-white/5 p-6">
