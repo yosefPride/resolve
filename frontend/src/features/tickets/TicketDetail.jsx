@@ -207,7 +207,7 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
 
         <aside className="flex min-h-0 flex-col gap-6">
           <TicketMeta ticket={ticket} teamName={teamName} groupId={groupId} isAdmin={isAdmin} />
-          <AiPanel ticket={ticket} />
+          <AiPanel ticket={ticket} groupId={groupId} />
         </aside>
       </div>
 
