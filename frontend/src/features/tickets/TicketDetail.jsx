@@ -16,6 +16,7 @@ import { errorMessage } from '../../utils/errors';
 import { formatDateTime, formatRelativeTime } from '../../utils/format';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
+import ActivityList from '../activity/ActivityList';
 import AiPanel from '../ai/AiPanel';
 import CommentList from '../comments/CommentList';
 import DescriptionMarkdown from './DescriptionMarkdown';
@@ -169,13 +170,16 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
                   </span>
                 )}
               </TabButton>
-              {/* No ticket-relation or per-ticket event-log data yet —
-                  placeholders hold these tabs' spots until backend support
-                  exists. */}
+              {/* No ticket-relation/reference data wired up yet — placeholder
+                  holds this tab's spot until the Links tab is built. */}
               <TabButton icon={Link2} isActive={false} disabled>
                 Links
               </TabButton>
-              <TabButton icon={Activity} isActive={false} disabled>
+              <TabButton
+                icon={Activity}
+                isActive={activeTab === 'activity'}
+                onClick={() => setActiveTab('activity')}
+              >
                 Activity
               </TabButton>
             </div>
@@ -207,6 +211,15 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
                 isClosed={isClosed}
                 isVisible={activeTab === 'comments'}
               />
+            </div>
+            <div
+              className={
+                activeTab === 'activity'
+                  ? 'h-128 overflow-y-auto rounded-xl border border-white/10 bg-white/5 p-6'
+                  : 'hidden'
+              }
+            >
+              <ActivityList groupId={groupId} ticketId={ticket.id} />
             </div>
           </div>
         </div>
