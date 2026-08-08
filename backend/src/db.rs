@@ -149,6 +149,18 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), Error> {
         )
         .await?;
 
+    // Serves ActivityRepository::list_by_ticket (equality on group_id +
+    // ticket_id, sorted descending on occurred_at) and both cascade deletes
+    // (delete_by_ticket on the (group_id, ticket_id) prefix, delete_by_group
+    // on group_id alone).
+    db.collection::<Document>("ticket_activity")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "ticket_id": 1, "occurred_at": -1 })
+                .build(),
+        )
+        .await?;
+
     // One insight document per ticket (AiRepository::upsert_summary /
     // upsert_analysis upsert against this pair), so it's unique as well as
     // the lookup path for find_insight.

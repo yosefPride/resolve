@@ -1,5 +1,6 @@
 use actix_web::web;
 
+use crate::activity::handlers as activity_handlers;
 use crate::admin::handlers as admin_handlers;
 use crate::ai::handlers as ai_handlers;
 use crate::auth::handlers as auth_handlers;
@@ -71,6 +72,10 @@ pub fn configure(config: &mut web::ServiceConfig) {
                 .route(
                     "/{id}/tickets/{ticket_id}/comments/{comment_id}",
                     web::delete().to(comment_handlers::delete_comment),
+                )
+                .route(
+                    "/{id}/tickets/{ticket_id}/activity",
+                    web::get().to(activity_handlers::list_activity),
                 ),
         )
         .service(

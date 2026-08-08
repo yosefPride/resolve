@@ -1,4 +1,5 @@
 use mongodb::bson::{DateTime as BsonDateTime, doc, oid::ObjectId};
+use resolve::activity::repository::ActivityRepository;
 use resolve::ai::models::ChatRole;
 use resolve::ai::repository::AiRepository;
 use resolve::comment::repository::CommentRepository;
@@ -93,13 +94,23 @@ fn test_upsert_analysis_preserves_existing_summary() {
             .await
             .expect("upsert_summary failed");
         let insight = repo
-            .upsert_analysis(group_id, ticket_id, "high", "restart the service", "bug", ts)
+            .upsert_analysis(
+                group_id,
+                ticket_id,
+                "high",
+                "restart the service",
+                "bug",
+                ts,
+            )
             .await
             .expect("upsert_analysis failed");
 
         assert_eq!(insight.summary.as_deref(), Some("summary text"));
         assert_eq!(insight.severity_prediction.as_deref(), Some("high"));
-        assert_eq!(insight.suggested_fix.as_deref(), Some("restart the service"));
+        assert_eq!(
+            insight.suggested_fix.as_deref(),
+            Some("restart the service")
+        );
         assert_eq!(insight.classification.as_deref(), Some("bug"));
         assert!(insight.is_summary_fresh(ts));
         assert!(insight.is_analysis_fresh(ts));
@@ -539,12 +550,26 @@ fn test_delete_conversation_removes_only_that_conversation() {
             .id
             .unwrap();
 
-        repo.insert_chat_message(to_delete, group_id, ticket_id, ChatRole::User, Some(oid()), "hi")
-            .await
-            .expect("insert_chat_message failed");
-        repo.insert_chat_message(to_keep, group_id, ticket_id, ChatRole::User, Some(oid()), "hi")
-            .await
-            .expect("insert_chat_message failed");
+        repo.insert_chat_message(
+            to_delete,
+            group_id,
+            ticket_id,
+            ChatRole::User,
+            Some(oid()),
+            "hi",
+        )
+        .await
+        .expect("insert_chat_message failed");
+        repo.insert_chat_message(
+            to_keep,
+            group_id,
+            ticket_id,
+            ChatRole::User,
+            Some(oid()),
+            "hi",
+        )
+        .await
+        .expect("insert_chat_message failed");
 
         repo.delete_conversation(to_delete)
             .await
@@ -630,7 +655,8 @@ fn test_count_recent_user_messages_filters_role_user_and_window() {
             .expect("count_recent_user_messages failed");
         assert_eq!(count, 1);
 
-        let since_future = BsonDateTime::from_millis(BsonDateTime::now().timestamp_millis() + 60_000);
+        let since_future =
+            BsonDateTime::from_millis(BsonDateTime::now().timestamp_millis() + 60_000);
         let count_after_window = repo
             .count_recent_user_messages(user_id, since_future)
             .await
@@ -654,7 +680,16 @@ fn test_count_recent_user_messages_filters_role_user_and_window() {
 fn test_ticket_delete_cascades_to_ai_insight() {
     support::runtime().block_on(async {
         let db = support::shared_client().await.database("resolve_test");
-        for collection in ["ai_ticket_insights", "ai_group_reports", "ai_chat_messages", "ai_conversations", "groups", "group_members", "tickets", "counters"] {
+        for collection in [
+            "ai_ticket_insights",
+            "ai_group_reports",
+            "ai_chat_messages",
+            "ai_conversations",
+            "groups",
+            "group_members",
+            "tickets",
+            "counters",
+        ] {
             db.collection::<mongodb::bson::Document>(collection)
                 .drop()
                 .await
@@ -764,7 +799,16 @@ fn test_ticket_delete_cascades_to_ai_insight() {
 fn test_group_delete_cascades_to_ai_data() {
     support::runtime().block_on(async {
         let db = support::shared_client().await.database("resolve_test");
-        for collection in ["ai_ticket_insights", "ai_group_reports", "ai_chat_messages", "ai_conversations", "groups", "group_members", "tickets", "counters"] {
+        for collection in [
+            "ai_ticket_insights",
+            "ai_group_reports",
+            "ai_chat_messages",
+            "ai_conversations",
+            "groups",
+            "group_members",
+            "tickets",
+            "counters",
+        ] {
             db.collection::<mongodb::bson::Document>(collection)
                 .drop()
                 .await
@@ -775,6 +819,7 @@ fn test_group_delete_cascades_to_ai_data() {
         let group_repo = GroupRepository::new(&db);
         let ticket_repo = TicketRepository::new(&db);
         let comment_repo = CommentRepository::new(&db);
+        let activity_repo = ActivityRepository::new(&db);
 
         let owner_id = oid();
         let group = group_repo
@@ -829,9 +874,16 @@ fn test_group_delete_cascades_to_ai_data() {
             .await
             .expect("insert_chat_message failed");
 
-        purge_group_data(&group_repo, &ticket_repo, &comment_repo, &ai_repo, group_id)
-            .await
-            .expect("purge_group_data failed");
+        purge_group_data(
+            &group_repo,
+            &ticket_repo,
+            &comment_repo,
+            &ai_repo,
+            &activity_repo,
+            group_id,
+        )
+        .await
+        .expect("purge_group_data failed");
 
         assert!(
             ai_repo

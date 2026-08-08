@@ -1,3 +1,4 @@
+mod activity;
 mod admin;
 mod ai;
 mod auth;
