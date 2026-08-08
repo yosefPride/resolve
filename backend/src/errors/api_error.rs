@@ -6,6 +6,7 @@ use crate::admin::repository::AdminRepoError;
 use crate::ai::repository::AiRepoError;
 use crate::comment::repository::CommentRepoError;
 use crate::group::repository::GroupRepoError;
+use crate::link::repository::LinkRepoError;
 use crate::ticket::repository::TicketRepoError;
 use crate::user::repository::UserRepoError;
 
@@ -166,6 +167,15 @@ impl From<AiRepoError> for ApiError {
 impl From<ActivityRepoError> for ApiError {
     fn from(_: ActivityRepoError) -> Self {
         ApiError::Internal
+    }
+}
+
+impl From<LinkRepoError> for ApiError {
+    fn from(err: LinkRepoError) -> Self {
+        match err {
+            LinkRepoError::Duplicate => ApiError::Conflict("this link already exists".to_string()),
+            LinkRepoError::Database(_) => ApiError::Internal,
+        }
     }
 }
 

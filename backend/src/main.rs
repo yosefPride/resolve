@@ -7,6 +7,7 @@ mod config;
 mod db;
 mod errors;
 mod group;
+mod link;
 mod rbac;
 mod server;
 mod state;

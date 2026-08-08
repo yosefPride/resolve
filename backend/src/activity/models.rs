@@ -18,6 +18,8 @@ pub enum ActivityEventType {
     DescriptionChanged,
     CommentAdded,
     CommentDeleted,
+    LinkAdded,
+    LinkRemoved,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,6 +83,10 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&ActivityEventType::CommentDeleted).unwrap(),
             "\"comment_deleted\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ActivityEventType::LinkAdded).unwrap(),
+            "\"link_added\""
         );
     }
 }

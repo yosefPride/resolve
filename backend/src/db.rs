@@ -161,6 +161,33 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), Error> {
         )
         .await?;
 
+    // Enforces at most one link per (group, source, target, relation_type) —
+    // duplicate protection at the DB level, same belt-and-braces pattern as
+    // group_members' compound unique index (LinkRepository::exists is the
+    // app-level pre-check). Its (group_id, source_ticket_id) prefix also
+    // serves list_by_ticket's source-side branch and delete_by_ticket.
+    db.collection::<Document>("ticket_links")
+        .create_index(
+            IndexModel::builder()
+                .keys(
+                    doc! { "group_id": 1, "source_ticket_id": 1, "target_ticket_id": 1, "relation_type": 1 },
+                )
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+        )
+        .await?;
+
+    // Serves list_by_ticket's target-side branch (a ticket_id can appear on
+    // either side of a link) and delete_by_ticket/delete_by_group's cascade
+    // deletes.
+    db.collection::<Document>("ticket_links")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "target_ticket_id": 1 })
+                .build(),
+        )
+        .await?;
+
     // One insight document per ticket (AiRepository::upsert_summary /
     // upsert_analysis upsert against this pair), so it's unique as well as
     // the lookup path for find_insight.

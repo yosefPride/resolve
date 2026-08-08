@@ -5,6 +5,7 @@ use crate::activity::repository::ActivityRepository;
 use crate::ai::repository::AiRepository;
 use crate::comment::repository::CommentRepository;
 use crate::errors::ApiError;
+use crate::link::repository::LinkRepository;
 use crate::group::models::{
     CreateGroupInput, GroupMember, GroupResponse, GroupSummaryResponse, MemberResponse, Role,
     UserLookupResponse,
@@ -39,6 +40,7 @@ pub async fn purge_group_data(
     comment_repo: &CommentRepository,
     ai_repo: &AiRepository,
     activity_repo: &ActivityRepository,
+    link_repo: &LinkRepository,
     group_id: ObjectId,
 ) -> Result<bool, ApiError> {
     repo.delete_members_by_group(group_id).await?;
@@ -46,6 +48,7 @@ pub async fn purge_group_data(
     comment_repo.delete_by_group(group_id).await?;
     ai_repo.delete_by_group(group_id).await?;
     activity_repo.delete_by_group(group_id).await?;
+    link_repo.delete_by_group(group_id).await?;
     Ok(repo.delete_group(group_id).await?)
 }
 
@@ -55,6 +58,7 @@ pub struct GroupService {
     comment_repo: CommentRepository,
     ai_repo: AiRepository,
     activity_repo: ActivityRepository,
+    link_repo: LinkRepository,
     user_service: UserService,
     rbac: RbacService,
 }
@@ -67,6 +71,7 @@ impl GroupService {
             comment_repo: CommentRepository::new(db),
             ai_repo: AiRepository::new(db),
             activity_repo: ActivityRepository::new(db),
+            link_repo: LinkRepository::new(db),
             user_service: UserService::new(db),
             rbac: RbacService::new(db),
         }
@@ -164,6 +169,7 @@ impl GroupService {
             &self.comment_repo,
             &self.ai_repo,
             &self.activity_repo,
+            &self.link_repo,
             group_id,
         )
         .await?;

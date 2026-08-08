@@ -9,6 +9,7 @@ use crate::activity::repository::ActivityRepository;
 use crate::ai::repository::AiRepository;
 use crate::comment::repository::CommentRepository;
 use crate::errors::ApiError;
+use crate::link::repository::LinkRepository;
 use crate::rbac::service::RbacService;
 use crate::ticket::models::{
     CreateTicketInput, CreateTicketRequest, ListTicketsQuery, Ticket, TicketListResponse,
@@ -26,6 +27,7 @@ pub struct TicketService {
     comment_repo: CommentRepository,
     ai_repo: AiRepository,
     activity_repo: ActivityRepository,
+    link_repo: LinkRepository,
     user_service: UserService,
     rbac: RbacService,
 }
@@ -37,6 +39,7 @@ impl TicketService {
             comment_repo: CommentRepository::new(db),
             ai_repo: AiRepository::new(db),
             activity_repo: ActivityRepository::new(db),
+            link_repo: LinkRepository::new(db),
             user_service: UserService::new(db),
             rbac: RbacService::new(db),
         }
@@ -245,8 +248,8 @@ impl TicketService {
     ) -> Result<(), ApiError> {
         self.rbac.require_group_admin(group_id, user_id).await?;
         // Existence check first (so a bogus ticket_id 404s before any write),
-        // then the comment/AI-insight/activity cascades, then the ticket
-        // document last — same child-before-parent ordering as
+        // then the comment/AI-insight/activity/link cascades, then the
+        // ticket document last — same child-before-parent ordering as
         // purge_group_data, so a mid-failure leaves the ticket still
         // resolvable and this call re-runnable.
         self.repo
@@ -260,6 +263,9 @@ impl TicketService {
         self.activity_repo
             .delete_by_ticket(group_id, ticket_id)
             .await?;
+        // Removes links on either side, so a deleted ticket never leaves a
+        // dangling relation on the other end (LinkRepository::delete_by_ticket).
+        self.link_repo.delete_by_ticket(group_id, ticket_id).await?;
         self.repo.delete_ticket(group_id, ticket_id).await?;
         Ok(())
     }

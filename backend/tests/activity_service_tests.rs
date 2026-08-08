@@ -444,7 +444,7 @@ fn test_list_activity_with_ticket_from_another_group_is_rejected() {
 #[test]
 fn test_delete_ticket_cascades_activity() {
     support::runtime().block_on(async {
-        let (groups, tickets, _comments, activity) = setup().await;
+        let (groups, tickets, _comments, _activity) = setup().await;
         let owner = oid();
         let group = groups
             .create_group(owner, "G".to_string())
