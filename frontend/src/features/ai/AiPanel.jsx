@@ -2,8 +2,16 @@ import { Maximize2, Send, SquarePen } from 'lucide-react';
 import { useState } from 'react';
 import brandMark from '../../assets/brand-mark.svg';
 import Avatar from '../../components/ui/Avatar';
+import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { useChatMessages, useSendChatMessage, useTicketAnalysis, useTicketSummary } from '../../hooks/useAI';
+import Modal from '../../components/ui/Modal';
+import {
+  useChatMessages,
+  useClearChat,
+  useSendChatMessage,
+  useTicketAnalysis,
+  useTicketSummary,
+} from '../../hooks/useAI';
 import { errorMessage } from '../../utils/errors';
 import { formatDateTime, formatRelativeTime } from '../../utils/format';
 import AiInsightCard from './AiInsightCard';
@@ -49,10 +57,9 @@ function ChatMessageBubble({ message }) {
 const PILL =
   'rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60';
 
-// Chatbot-shaped rail for the issue detail page. Summarize/Analyze/chat
-// history/sending a message are wired to the AI endpoints
-// (docs/implementation/backend/08-ai.md); starting a new chat isn't yet — the
-// New chat control stays disabled until that stage lands.
+// Chatbot-shaped rail for the issue detail page. Summarize, Analyze, chat
+// history, sending a message, and starting a new chat are all wired to the AI
+// endpoints (docs/implementation/backend/08-ai.md).
 // Fixed height (h-132 = 33rem: the gap-4 plus the h-128 Details/Comments
 // panel in TicketDetail, so the rail bottom lines up with that panel's
 // bottom) rather than flex-1 stretch-to-sibling: a long summary or analysis
@@ -65,9 +72,12 @@ export default function AiPanel({ ticket, groupId }) {
   const summaryQuery = useTicketSummary(groupId, ticket.id);
   const analysisQuery = useTicketAnalysis(groupId, ticket.id);
   const sendMessage = useSendChatMessage(groupId, ticket.id);
+  const clearChat = useClearChat(groupId, ticket.id);
 
   const [draft, setDraft] = useState('');
   const [sendError, setSendError] = useState('');
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const [clearError, setClearError] = useState('');
 
   const messages = chatQuery.data ?? [];
   // [...draft].length, not draft.length, to count Unicode code points like
@@ -84,6 +94,16 @@ export default function AiPanel({ ticket, groupId }) {
       setDraft('');
     } catch (err) {
       setSendError(errorMessage(err, "Couldn't send that message."));
+    }
+  }
+
+  async function handleClearChat() {
+    setClearError('');
+    try {
+      await clearChat.mutateAsync();
+      setConfirmingClear(false);
+    } catch (err) {
+      setClearError(errorMessage(err, "Couldn't start a new chat."));
     }
   }
 
@@ -111,9 +131,10 @@ export default function AiPanel({ ticket, groupId }) {
           </button>
           <button
             type="button"
-            disabled
+            disabled={messages.length === 0 || clearChat.isPending}
+            onClick={() => setConfirmingClear(true)}
             aria-label="New chat"
-            title="Chat isn't available yet"
+            title="Start a new chat"
             className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             <SquarePen className="h-4 w-4" />
@@ -211,6 +232,37 @@ export default function AiPanel({ ticket, groupId }) {
           </button>
         </div>
       </form>
+
+      <Modal
+        isOpen={confirmingClear}
+        onClose={() => {
+          setConfirmingClear(false);
+          setClearError('');
+        }}
+        title="Start a new chat"
+      >
+        <p className="text-sm text-slate-300">
+          This clears the chat history for this issue for everyone in the group. This cannot be
+          undone.
+        </p>
+
+        {clearError && <p className="mt-3 text-sm text-red-500">{clearError}</p>}
+
+        <div className="mt-6 flex justify-end gap-3">
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setConfirmingClear(false);
+              setClearError('');
+            }}
+          >
+            Cancel
+          </Button>
+          <Button variant="danger" disabled={clearChat.isPending} onClick={handleClearChat}>
+            {clearChat.isPending ? 'Clearing…' : 'Start new chat'}
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }
