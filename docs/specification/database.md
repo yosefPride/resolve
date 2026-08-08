@@ -218,20 +218,6 @@ Fields:
 
 ---
 
-## ai_group_reports
-
-Stores aggregated AI reports (Group Admin only).
-
-Fields:
-
-- \_id
-- group_id
-- report_data
-- generated_at
-- generated_by (user_id)
-
----
-
 ## admin_audit_log
 
 Records System Admin's scoped exception to group self-governance: naming a Group Admin successor (or auto-deleting a group with no possible successor) as part of deleting a user — see docs/rbac.md ("Group Admin Succession") and docs/api.md (`POST /admin/users/:id/delete`).
@@ -270,7 +256,6 @@ Like refresh_tokens, this is system-level data tied to an admin action, not grou
 - tickets ↔ tickets → many-to-many via ticket_links
 - tickets → ticket_references (1-to-many)
 - tickets → ai_ticket_insights (1-to-1 or 1-to-many over time)
-- groups → ai_group_reports (1-to-many)
 - users → admin_audit_log (deleted_user_id, performed_by) (1-to-many)
 - groups → admin_audit_log (1-to-many)
 

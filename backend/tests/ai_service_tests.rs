@@ -22,11 +22,9 @@ mod support;
 struct FakeProvider {
     summarize_calls: Arc<AtomicUsize>,
     analyze_calls: Arc<AtomicUsize>,
-    narrate_calls: Arc<AtomicUsize>,
     chat_calls: Arc<AtomicUsize>,
     summary: Arc<Mutex<String>>,
     analysis: Arc<Mutex<AnalysisResult>>,
-    narrative: Arc<Mutex<String>>,
     chat_reply: Arc<Mutex<String>>,
     // Captures the transcript seen on the most recent chat() call, so tests
     // can assert prior history was actually threaded through rather than
@@ -39,11 +37,9 @@ impl FakeProvider {
         Self {
             summarize_calls: Arc::new(AtomicUsize::new(0)),
             analyze_calls: Arc::new(AtomicUsize::new(0)),
-            narrate_calls: Arc::new(AtomicUsize::new(0)),
             chat_calls: Arc::new(AtomicUsize::new(0)),
             summary: Arc::new(Mutex::new(summary.to_string())),
             analysis: Arc::new(Mutex::new(analysis)),
-            narrative: Arc::new(Mutex::new("a narrative".to_string())),
             chat_reply: Arc::new(Mutex::new("a chat reply".to_string())),
             last_chat_transcript: Arc::new(Mutex::new(String::new())),
         }
@@ -69,15 +65,6 @@ impl AiProvider for FakeProvider {
         self.analyze_calls.fetch_add(1, Ordering::SeqCst);
         let analysis = self.analysis.lock().unwrap().clone();
         async move { Ok(analysis) }
-    }
-
-    fn narrate_report(
-        &self,
-        _stats_summary: &str,
-    ) -> impl Future<Output = Result<String, ApiError>> + Send {
-        self.narrate_calls.fetch_add(1, Ordering::SeqCst);
-        let narrative = self.narrative.lock().unwrap().clone();
-        async move { Ok(narrative) }
     }
 
     fn chat(
@@ -110,7 +97,6 @@ async fn setup() -> (mongodb::Database, ObjectId, ObjectId, ObjectId) {
 
     for collection in [
         "ai_ticket_insights",
-        "ai_group_reports",
         "ai_chat_messages",
         "ai_conversations",
         "groups",
@@ -161,94 +147,6 @@ async fn setup() -> (mongodb::Database, ObjectId, ObjectId, ObjectId) {
     let ticket_id = ticket.id.expect("created ticket has an id");
 
     (db, group_id, member_id, ticket_id)
-}
-
-// Returns (db, owner_id, member_id, group_id): a group with one Group Admin
-// (owner_id) and one Contributor (member_id), seeded with three tickets —
-// open/low, open/high, closed/critical — so report tests can assert exact
-// counts.
-async fn setup_for_report() -> (mongodb::Database, ObjectId, ObjectId, ObjectId) {
-    let db = support::shared_client().await.database("resolve_test");
-
-    for collection in [
-        "ai_ticket_insights",
-        "ai_group_reports",
-        "ai_chat_messages",
-        "ai_conversations",
-        "groups",
-        "group_members",
-        "tickets",
-        "counters",
-    ] {
-        db.collection::<Document>(collection)
-            .drop()
-            .await
-            .unwrap_or_else(|_| panic!("failed to drop {collection} collection"));
-    }
-
-    let group_repo = GroupRepository::new(&db);
-    let ticket_repo = TicketRepository::new(&db);
-
-    let owner_id = ObjectId::new();
-    let group = group_repo
-        .create_group(CreateGroupInput {
-            name: "Report Test Group".to_string(),
-            owner_id,
-        })
-        .await
-        .expect("create_group failed");
-    let group_id = group.id.expect("created group has an id");
-
-    // GroupRepository::create_group only inserts the group document — the
-    // creator's own membership row is a separate insert_member call that
-    // GroupService::create_group normally does alongside it (see its doc
-    // comment). Going through the repo directly here means that has to be
-    // done explicitly, or owner_id has no membership at all and
-    // require_group_admin rejects it.
-    group_repo
-        .insert_member(group_id, owner_id, Role::GroupAdmin)
-        .await
-        .expect("insert_member (owner) failed");
-
-    let member_id = ObjectId::new();
-    group_repo
-        .insert_member(group_id, member_id, Role::Contributor)
-        .await
-        .expect("insert_member failed");
-
-    for (priority, close) in [
-        (TicketPriority::Low, false),
-        (TicketPriority::High, false),
-        (TicketPriority::Critical, true),
-    ] {
-        let ticket_number = ticket_repo
-            .next_ticket_number(group_id)
-            .await
-            .expect("next_ticket_number failed");
-        let ticket = ticket_repo
-            .insert_ticket(CreateTicketInput {
-                group_id,
-                ticket_number,
-                title: "a ticket".to_string(),
-                description: "a description".to_string(),
-                priority,
-                created_by: owner_id,
-            })
-            .await
-            .expect("insert_ticket failed");
-        if close {
-            ticket_repo
-                .update_ticket(
-                    group_id,
-                    ticket.id.unwrap(),
-                    doc! { "status": "closed", "updated_at": BsonDateTime::now() },
-                )
-                .await
-                .expect("update_ticket failed");
-        }
-    }
-
-    (db, owner_id, member_id, group_id)
 }
 
 // 1. First summarize call has nothing cached, so it calls the provider.
@@ -454,72 +352,6 @@ fn test_summarize_ticket_404s_on_unknown_ticket() {
     });
 }
 
-// 8. First report call has nothing cached, so it computes real stats from
-// the seeded tickets and calls the provider for the narrative.
-#[test]
-fn test_generate_group_report_computes_stats_and_calls_provider() {
-    support::runtime().block_on(async {
-        let (db, owner_id, _member_id, group_id) = setup_for_report().await;
-        let provider = FakeProvider::new("summary", default_analysis());
-        let service = AiService::with_provider(&db, provider.clone());
-
-        let report = service
-            .generate_group_report(owner_id, group_id)
-            .await
-            .expect("generate_group_report failed");
-
-        assert!(!report.cached);
-        assert_eq!(report.data.total_tickets, 3);
-        assert_eq!(report.data.open_tickets, 2);
-        assert_eq!(report.data.closed_tickets, 1);
-        assert_eq!(report.data.priority_breakdown.low, 1);
-        assert_eq!(report.data.priority_breakdown.high, 1);
-        assert_eq!(report.data.priority_breakdown.critical, 1);
-        assert_eq!(report.data.narrative, "a narrative");
-        assert_eq!(provider.narrate_calls.load(Ordering::SeqCst), 1);
-    });
-}
-
-// 9. A second call within the TTL is served from cache; the provider isn't
-// called again.
-#[test]
-fn test_generate_group_report_uses_cache_within_ttl() {
-    support::runtime().block_on(async {
-        let (db, owner_id, _member_id, group_id) = setup_for_report().await;
-        let provider = FakeProvider::new("summary", default_analysis());
-        let service = AiService::with_provider(&db, provider.clone());
-
-        let first = service
-            .generate_group_report(owner_id, group_id)
-            .await
-            .expect("first generate_group_report failed");
-        let second = service
-            .generate_group_report(owner_id, group_id)
-            .await
-            .expect("second generate_group_report failed");
-
-        assert!(second.cached);
-        assert_eq!(second.data, first.data);
-        assert_eq!(provider.narrate_calls.load(Ordering::SeqCst), 1);
-    });
-}
-
-// 10. A Contributor (non-Group-Admin) is rejected before the provider is
-// ever called.
-#[test]
-fn test_generate_group_report_requires_group_admin() {
-    support::runtime().block_on(async {
-        let (db, _owner_id, member_id, group_id) = setup_for_report().await;
-        let provider = FakeProvider::new("summary", default_analysis());
-        let service = AiService::with_provider(&db, provider.clone());
-
-        let result = service.generate_group_report(member_id, group_id).await;
-
-        assert!(matches!(result, Err(ApiError::Forbidden)), "{result:?}");
-        assert_eq!(provider.narrate_calls.load(Ordering::SeqCst), 0);
-    });
-}
-
 // Creates a conversation and returns its id as an ObjectId, so tests can go
 // straight to send/list/delete without repeating the parse_str boilerplate.
 async fn new_conversation<P: AiProvider>(
@@ -535,7 +367,7 @@ async fn new_conversation<P: AiProvider>(
     ObjectId::parse_str(&conversation.id).expect("conversation id is a valid ObjectId")
 }
 
-// 11. A freshly created conversation has no title yet and shows up in the
+// 8. A freshly created conversation has no title yet and shows up in the
 // caller's own list.
 #[test]
 fn test_create_conversation_starts_untitled_and_listed() {
@@ -559,7 +391,7 @@ fn test_create_conversation_starts_untitled_and_listed() {
     });
 }
 
-// 12. Sending a message calls the provider, persists both the user's message
+// 9. Sending a message calls the provider, persists both the user's message
 // and the assistant's reply (correctly attributed), and sets the
 // conversation's title from that first message.
 #[test]
@@ -603,7 +435,7 @@ fn test_send_conversation_message_persists_both_messages_and_sets_title() {
     });
 }
 
-// 13. A second message doesn't overwrite the title set by the first.
+// 10. A second message doesn't overwrite the title set by the first.
 #[test]
 fn test_send_conversation_message_does_not_overwrite_existing_title() {
     support::runtime().block_on(async {
@@ -641,7 +473,7 @@ fn test_send_conversation_message_does_not_overwrite_existing_title() {
     });
 }
 
-// 14. A second message includes the first exchange in the transcript sent to
+// 11. A second message includes the first exchange in the transcript sent to
 // the provider — history isn't dropped between turns.
 #[test]
 fn test_send_conversation_message_includes_prior_history_in_transcript() {
@@ -681,7 +513,7 @@ fn test_send_conversation_message_includes_prior_history_in_transcript() {
     });
 }
 
-// 15. A non-member is rejected before the provider is ever called.
+// 12. A non-member is rejected before the provider is ever called.
 #[test]
 fn test_send_conversation_message_rejects_non_member() {
     support::runtime().block_on(async {
@@ -706,7 +538,7 @@ fn test_send_conversation_message_rejects_non_member() {
     });
 }
 
-// 16. An unknown ticket_id 404s.
+// 13. An unknown ticket_id 404s.
 #[test]
 fn test_send_conversation_message_404s_on_unknown_ticket() {
     support::runtime().block_on(async {
@@ -729,7 +561,7 @@ fn test_send_conversation_message_404s_on_unknown_ticket() {
     });
 }
 
-// 17. A group member who isn't the conversation's creator is rejected, even
+// 14. A group member who isn't the conversation's creator is rejected, even
 // though they're a real member of the group — ownership is strict, no
 // owner-or-group-admin fallback (confirmed with user).
 #[test]
@@ -761,7 +593,7 @@ fn test_send_conversation_message_rejects_non_owner_member() {
     });
 }
 
-// 18. The 11th message within an hour from the same user is rejected —
+// 15. The 11th message within an hour from the same user is rejected —
 // confirmed with user: 10 messages/hour.
 #[test]
 fn test_send_conversation_message_enforces_rate_limit() {
@@ -801,7 +633,7 @@ fn test_send_conversation_message_enforces_rate_limit() {
     });
 }
 
-// 19. The rate limit is scoped per user, globally — not per conversation, and
+// 16. The rate limit is scoped per user, globally — not per conversation, and
 // not per ticket: a second conversation started by the same user shares the
 // same budget as the first.
 #[test]
@@ -840,7 +672,7 @@ fn test_send_conversation_message_rate_limit_is_shared_across_a_users_conversati
     });
 }
 
-// 20. A different member of the same group has their own rate-limit budget.
+// 17. A different member of the same group has their own rate-limit budget.
 #[test]
 fn test_send_conversation_message_rate_limit_is_scoped_per_user() {
     support::runtime().block_on(async {
@@ -884,7 +716,7 @@ fn test_send_conversation_message_rate_limit_is_scoped_per_user() {
     });
 }
 
-// 21. list_conversation_messages returns the full conversation oldest-first.
+// 18. list_conversation_messages returns the full conversation oldest-first.
 #[test]
 fn test_list_conversation_messages_returns_oldest_first() {
     support::runtime().block_on(async {
@@ -925,7 +757,7 @@ fn test_list_conversation_messages_returns_oldest_first() {
     });
 }
 
-// 22. A non-owner (even a real group member) can't read another user's
+// 19. A non-owner (even a real group member) can't read another user's
 // conversation.
 #[test]
 fn test_list_conversation_messages_rejects_non_owner() {
@@ -949,7 +781,7 @@ fn test_list_conversation_messages_rejects_non_owner() {
     });
 }
 
-// 23. list_conversations only ever returns the caller's own conversations,
+// 20. list_conversations only ever returns the caller's own conversations,
 // even when another member has some on the same ticket.
 #[test]
 fn test_list_conversations_only_returns_callers_own() {
@@ -975,7 +807,7 @@ fn test_list_conversations_only_returns_callers_own() {
     });
 }
 
-// 24. Deleting a conversation removes it and its messages; a non-owner can't
+// 21. Deleting a conversation removes it and its messages; a non-owner can't
 // delete someone else's conversation.
 #[test]
 fn test_delete_conversation_removes_conversation_and_messages() {
@@ -1013,7 +845,7 @@ fn test_delete_conversation_removes_conversation_and_messages() {
     });
 }
 
-// 25. A non-owner (even a real group member) can't delete another user's
+// 22. A non-owner (even a real group member) can't delete another user's
 // conversation.
 #[test]
 fn test_delete_conversation_rejects_non_owner() {

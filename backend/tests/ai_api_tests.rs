@@ -1,6 +1,6 @@
 // Full-HTTP-stack tests for the /ai routes. Every test here is #[ignore]'d:
 // unlike every other *_api_tests.rs file, the happy-path tests
-// (summarize/analyze/report actually succeeding) go through the real
+// (summarize/analyze actually succeeding) go through the real
 // GeminiClient — real network calls, dependent on GEMINI_API_KEY and
 // Gemini's own quota/rate limits — so this file can't run as part of the
 // default `cargo test` without making the whole suite's success depend on
@@ -12,9 +12,8 @@
 use actix_web::{App, test as actix_test, web};
 use mongodb::{Database, IndexModel, bson::doc, bson::oid::ObjectId, options::IndexOptions};
 use resolve::ai::models::{
-    AiConversationResponse, ChatMessageResponse, ChatRole, GroupReportResponse,
-    SendChatMessageRequest, SendChatMessageResponse, TicketAnalysisResponse,
-    TicketSummaryResponse,
+    AiConversationResponse, ChatMessageResponse, ChatRole, SendChatMessageRequest,
+    SendChatMessageResponse, TicketAnalysisResponse, TicketSummaryResponse,
 };
 use resolve::auth::models::{AuthResponse, RegisterRequest};
 use resolve::group::models::{AddMemberRequest, CreateGroupRequest, GroupResponse, Role};
@@ -55,8 +54,8 @@ async fn setup_db() -> (Database, String) {
 }
 
 // Unlike the other *_api_tests.rs files, this one needs a real GEMINI_API_KEY
-// for its happy-path tests (member calls summarize/analyze/report and
-// actually gets a result), same as ai_client_live_test.rs. support::test_config
+// for its happy-path tests (member calls summarize/analyze and actually gets
+// a result), same as ai_client_live_test.rs. support::test_config
 // reads the real key from the environment, so nothing special is needed here
 // — if it's unset, those specific tests fail with a 500 rather than this
 // function panicking at setup.
@@ -413,89 +412,7 @@ fn test_summarize_invalid_ticket_id_is_bad_request() {
     });
 }
 
-// 7. A Group Admin can generate a group report; the real Gemini call
-// succeeds and a second call within the TTL is served from cache.
-#[test]
-#[ignore]
-fn test_report_group_admin_succeeds_then_caches() {
-    support::runtime().block_on(async {
-        let (db, uri) = setup_db().await;
-        let group_repo = GroupRepository::new(&db);
-        let user_repo = UserRepository::new(&db);
-        let app = test_app!(build_app_state(db, uri));
-
-        let (group_id, _ticket_id, owner, contributor) = seed!(app);
-
-        let resp = actix_test::call_service(
-            &app,
-            actix_test::TestRequest::post()
-                .uri(&format!("/api/v1/ai/groups/{group_id}/report"))
-                .insert_header(auth_header(&owner.jwt))
-                .to_request(),
-        )
-        .await;
-        assert_eq!(resp.status(), 200);
-        let body: GroupReportResponse = actix_test::read_body_json(resp).await;
-        assert_eq!(body.data.total_tickets, 1);
-        assert!(!body.data.narrative.trim().is_empty());
-        assert!(!body.cached);
-
-        let second = actix_test::call_service(
-            &app,
-            actix_test::TestRequest::post()
-                .uri(&format!("/api/v1/ai/groups/{group_id}/report"))
-                .insert_header(auth_header(&owner.jwt))
-                .to_request(),
-        )
-        .await;
-        assert_eq!(second.status(), 200);
-        let second_body: GroupReportResponse = actix_test::read_body_json(second).await;
-        assert!(second_body.cached);
-        assert_eq!(second_body.data, body.data);
-
-        cleanup(
-            &group_repo,
-            &user_repo,
-            ObjectId::parse_str(&group_id).unwrap(),
-            &[&owner, &contributor],
-        )
-        .await;
-    });
-}
-
-// 8. A Contributor is forbidden from generating a group report.
-#[test]
-#[ignore]
-fn test_report_contributor_forbidden() {
-    support::runtime().block_on(async {
-        let (db, uri) = setup_db().await;
-        let group_repo = GroupRepository::new(&db);
-        let user_repo = UserRepository::new(&db);
-        let app = test_app!(build_app_state(db, uri));
-
-        let (group_id, _ticket_id, owner, contributor) = seed!(app);
-
-        let resp = actix_test::call_service(
-            &app,
-            actix_test::TestRequest::post()
-                .uri(&format!("/api/v1/ai/groups/{group_id}/report"))
-                .insert_header(auth_header(&contributor.jwt))
-                .to_request(),
-        )
-        .await;
-        assert_eq!(resp.status(), 403);
-
-        cleanup(
-            &group_repo,
-            &user_repo,
-            ObjectId::parse_str(&group_id).unwrap(),
-            &[&owner, &contributor],
-        )
-        .await;
-    });
-}
-
-// 9. A member can create a conversation, send a message in it (the real
+// 7. A member can create a conversation, send a message in it (the real
 // Gemini call succeeds), see it listed, and delete it — after which it's
 // gone from both the list and direct lookup.
 #[test]
@@ -616,7 +533,7 @@ fn test_conversation_member_succeeds_then_lists_and_deletes() {
     });
 }
 
-// 10. A group member who didn't create the conversation is forbidden from
+// 8. A group member who didn't create the conversation is forbidden from
 // reading, sending to, or deleting it — even a Group Admin. Ownership is
 // strict (confirmed with user), no owner-or-group-admin fallback.
 #[test]
@@ -694,7 +611,7 @@ fn test_conversation_non_owner_forbidden() {
     });
 }
 
-// 11. A non-member is forbidden from even creating a conversation, and never
+// 9. A non-member is forbidden from even creating a conversation, and never
 // reaches the Gemini call.
 #[test]
 #[ignore]
@@ -733,7 +650,7 @@ fn test_conversation_non_member_forbidden() {
     });
 }
 
-// 12. No Authorization header at all is rejected before any RBAC or provider
+// 10. No Authorization header at all is rejected before any RBAC or provider
 // logic runs.
 #[test]
 #[ignore]
@@ -767,7 +684,7 @@ fn test_conversation_requires_authentication() {
     });
 }
 
-// 13. A ticket_id that doesn't belong to the group 404s.
+// 11. A ticket_id that doesn't belong to the group 404s.
 #[test]
 #[ignore]
 fn test_conversation_unknown_ticket_not_found() {
@@ -802,7 +719,7 @@ fn test_conversation_unknown_ticket_not_found() {
     });
 }
 
-// 14. An empty message is rejected before the provider is ever called — no
+// 12. An empty message is rejected before the provider is ever called — no
 // Gemini quota spent proving this one.
 #[test]
 #[ignore]

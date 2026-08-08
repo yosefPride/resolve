@@ -130,10 +130,6 @@ pub fn configure(config: &mut web::ServiceConfig) {
                             "/conversations/{conversation_id}",
                             web::delete().to(ai_handlers::delete_conversation),
                         ),
-                )
-                .route(
-                    "/groups/{id}/report",
-                    web::post().to(ai_handlers::generate_group_report),
                 ),
         )
         .service(

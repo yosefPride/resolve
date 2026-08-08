@@ -3,11 +3,11 @@ use std::fmt;
 use futures::TryStreamExt;
 use mongodb::{
     Collection, Database,
-    bson::{self, DateTime as BsonDateTime, Document, doc, oid::ObjectId},
+    bson::{self, DateTime as BsonDateTime, doc, oid::ObjectId},
     options::ReturnDocument,
 };
 
-use crate::ai::models::{AiConversation, AiGroupReport, AiTicketInsight, ChatMessage, ChatRole};
+use crate::ai::models::{AiConversation, AiTicketInsight, ChatMessage, ChatRole};
 
 #[derive(Debug)]
 pub enum AiRepoError {
@@ -32,7 +32,6 @@ impl From<mongodb::error::Error> for AiRepoError {
 
 pub struct AiRepository {
     insights: Collection<AiTicketInsight>,
-    reports: Collection<AiGroupReport>,
     chat_messages: Collection<ChatMessage>,
     conversations: Collection<AiConversation>,
 }
@@ -41,7 +40,6 @@ impl AiRepository {
     pub fn new(db: &Database) -> Self {
         Self {
             insights: db.collection("ai_ticket_insights"),
-            reports: db.collection("ai_group_reports"),
             chat_messages: db.collection("ai_chat_messages"),
             conversations: db.collection("ai_conversations"),
         }
@@ -166,18 +164,13 @@ impl AiRepository {
 
     // Cascade target for group deletion, mirroring
     // CommentRepository::delete_by_group. Called from purge_group_data
-    // (group/service.rs). Returns the combined count across all four
-    // collections — insights, reports, chat messages, and conversations are
-    // different documents but the same cascade concern, so callers get one
-    // number rather than needing to track four.
+    // (group/service.rs). Returns the combined count across all three
+    // collections — insights, chat messages, and conversations are different
+    // documents but the same cascade concern, so callers get one number
+    // rather than needing to track three.
     pub async fn delete_by_group(&self, group_id: ObjectId) -> Result<u64, AiRepoError> {
         let insights_deleted = self
             .insights
-            .delete_many(doc! { "group_id": group_id })
-            .await?
-            .deleted_count;
-        let reports_deleted = self
-            .reports
             .delete_many(doc! { "group_id": group_id })
             .await?
             .deleted_count;
@@ -191,7 +184,7 @@ impl AiRepository {
             .delete_many(doc! { "group_id": group_id })
             .await?
             .deleted_count;
-        Ok(insights_deleted + reports_deleted + messages_deleted + conversations_deleted)
+        Ok(insights_deleted + messages_deleted + conversations_deleted)
     }
 
     // Ownership isn't checked here — the service layer already fetched and
@@ -367,43 +360,5 @@ impl AiRepository {
                 "created_at": { "$gte": since },
             })
             .await?)
-    }
-
-    // Most recent report for the group, or None if one has never been
-    // generated — used by AiService::generate_group_report's TTL check
-    // (AiGroupReport::is_fresh).
-    pub async fn find_latest_report(
-        &self,
-        group_id: ObjectId,
-    ) -> Result<Option<AiGroupReport>, AiRepoError> {
-        Ok(self
-            .reports
-            .find_one(doc! { "group_id": group_id })
-            .sort(doc! { "generated_at": -1 })
-            .await?)
-    }
-
-    pub async fn insert_report(
-        &self,
-        group_id: ObjectId,
-        report_data: Document,
-        generated_by: ObjectId,
-    ) -> Result<AiGroupReport, AiRepoError> {
-        let report = AiGroupReport {
-            id: None,
-            group_id,
-            report_data,
-            generated_at: BsonDateTime::now(),
-            generated_by,
-        };
-        let result = self.reports.insert_one(&report).await?;
-        let id = result
-            .inserted_id
-            .as_object_id()
-            .expect("insert_one always returns an ObjectId");
-        Ok(AiGroupReport {
-            id: Some(id),
-            ..report
-        })
     }
 }

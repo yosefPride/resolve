@@ -22,15 +22,12 @@ It enhances the system but does not control any business logic.
 - Severity prediction
 - Suggested fixes
 - Bug grouping (light clustering within a group)
-- Group analytics reports
 
 ---
 
 # Execution Model
 
-AI runs in two modes:
-
-## 1. Sync (real-time)
+AI runs synchronously, in real time:
 
 - ticket summarization
 - ticket analysis
@@ -38,19 +35,12 @@ AI runs in two modes:
 
 Triggered by user actions or ticket creation.
 
-## 2. Async (background)
-
-- group analytics reports
-
-Generated periodically or on request.
-
 ---
 
 # Caching Strategy
 
 - AI results are cached per ticket
 - If ticket does not change, AI is not re-run
-- Group reports are cached for a period of time
 
 ---
 

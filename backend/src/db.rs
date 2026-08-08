@@ -223,39 +223,6 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), Error> {
         )
         .await?;
 
-    // Serves find_latest_report's per-group "most recent" query (sorted
-    // descending on generated_at).
-    db.collection::<Document>("ai_group_reports")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "group_id": 1, "generated_at": -1 })
-                .build(),
-        )
-        .await?;
-
-    // TTL index: auto-expires a report 30 days after it was generated, same
-    // reaper mechanism as refresh_tokens (mongodb's background process drops
-    // it once expired), but relative to generated_at rather than an
-    // absolute expires_at field. Reports are insert-only, one new document
-    // per regeneration (docs/database.md: groups -> ai_group_reports is
-    // 1-to-many) — without this, an actively-used group regenerating hourly
-    // accumulates history that nothing ever reads (find_latest_report only
-    // ever wants the newest one), unbounded. Must be a separate single-field
-    // index from the compound one above: MongoDB TTL indexes can't be
-    // compound.
-    db.collection::<Document>("ai_group_reports")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "generated_at": 1 })
-                .options(
-                    IndexOptions::builder()
-                        .expire_after(std::time::Duration::from_secs(30 * 24 * 60 * 60))
-                        .build(),
-                )
-                .build(),
-        )
-        .await?;
-
     // Serves list_conversation_messages (every read is scoped to a single
     // conversation, oldest-first).
     db.collection::<Document>("ai_chat_messages")

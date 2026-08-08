@@ -641,18 +641,6 @@ Returns:
 
 ---
 
-## POST /ai/groups/{id}/report
-
-Group Admin only
-
-Returns:
-
-- group-wide analytics
-- ticket trends
-- workload distribution
-
----
-
 ### AI Rules:
 
 - All AI results are cached when possible
