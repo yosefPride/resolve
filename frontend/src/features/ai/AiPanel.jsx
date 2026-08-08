@@ -1,11 +1,17 @@
 import { Maximize2, Send, SquarePen } from 'lucide-react';
+import { useState } from 'react';
 import brandMark from '../../assets/brand-mark.svg';
 import Avatar from '../../components/ui/Avatar';
 import Input from '../../components/ui/Input';
-import { useChatMessages, useTicketAnalysis, useTicketSummary } from '../../hooks/useAI';
+import { useChatMessages, useSendChatMessage, useTicketAnalysis, useTicketSummary } from '../../hooks/useAI';
 import { errorMessage } from '../../utils/errors';
 import { formatDateTime, formatRelativeTime } from '../../utils/format';
 import AiInsightCard from './AiInsightCard';
+
+// Same cap as the backend's MAX_MESSAGE_LEN in ai/handlers.rs — used here only
+// to block obviously-too-long input client-side; the backend remains the
+// source of truth and still validates on submit.
+const MAX_MESSAGE_LEN = 2000;
 
 // Flat, oldest-first list like CommentList — no left/right split by
 // "ownership", since the thread is shared across the group and who asked
@@ -44,9 +50,9 @@ const PILL =
   'rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60';
 
 // Chatbot-shaped rail for the issue detail page. Summarize/Analyze/chat
-// history are wired to the AI endpoints (docs/implementation/backend/08-ai.md);
-// sending a message and starting a new chat aren't yet — the input, Send, and
-// New chat controls stay disabled until those stages land.
+// history/sending a message are wired to the AI endpoints
+// (docs/implementation/backend/08-ai.md); starting a new chat isn't yet — the
+// New chat control stays disabled until that stage lands.
 // Fixed height (h-132 = 33rem: the gap-4 plus the h-128 Details/Comments
 // panel in TicketDetail, so the rail bottom lines up with that panel's
 // bottom) rather than flex-1 stretch-to-sibling: a long summary or analysis
@@ -58,8 +64,28 @@ export default function AiPanel({ ticket, groupId }) {
   const chatQuery = useChatMessages(groupId, ticket.id);
   const summaryQuery = useTicketSummary(groupId, ticket.id);
   const analysisQuery = useTicketAnalysis(groupId, ticket.id);
+  const sendMessage = useSendChatMessage(groupId, ticket.id);
+
+  const [draft, setDraft] = useState('');
+  const [sendError, setSendError] = useState('');
 
   const messages = chatQuery.data ?? [];
+  // [...draft].length, not draft.length, to count Unicode code points like
+  // the backend's .chars().count() — see CommentForm's contentLength.
+  const isTooLong = [...draft].length > MAX_MESSAGE_LEN;
+  const canSend = draft.trim() !== '' && !isTooLong && !sendMessage.isPending;
+
+  async function handleSend(event) {
+    event.preventDefault();
+    if (!canSend) return;
+    setSendError('');
+    try {
+      await sendMessage.mutateAsync(draft.trim());
+      setDraft('');
+    } catch (err) {
+      setSendError(errorMessage(err, "Couldn't send that message."));
+    }
+  }
 
   const hasActivity =
     messages.length > 0 ||
@@ -165,23 +191,26 @@ export default function AiPanel({ ticket, groupId }) {
         <p className="truncate text-xs text-slate-400">{ticket.title}</p>
       </div>
 
-      <div className="flex items-center gap-2 border-t border-white/10 p-4">
-        <Input
-          disabled
-          placeholder="Ask about this issue…"
-          title="Chat isn't available yet"
-          className="flex-1 text-sm"
-        />
-        <button
-          type="button"
-          disabled
-          aria-label="Send message"
-          title="Chat isn't available yet"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-slate-400 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Send className="h-4 w-4" />
-        </button>
-      </div>
+      <form onSubmit={handleSend} className="border-t border-white/10 p-4">
+        {sendError && <p className="mb-2 text-xs text-red-400">{sendError}</p>}
+        <div className="flex items-center gap-2">
+          <Input
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            disabled={sendMessage.isPending}
+            placeholder="Ask about this issue…"
+            className="flex-1 text-sm"
+          />
+          <button
+            type="submit"
+            disabled={!canSend}
+            aria-label="Send message"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-slate-400 transition-colors hover:bg-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white/10 disabled:hover:text-slate-400"
+          >
+            <Send className="h-4 w-4" />
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
