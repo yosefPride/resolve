@@ -93,6 +93,10 @@ export default function AiPanel({ ticket, groupId }) {
       await sendMessage.mutateAsync(draft.trim());
       setDraft('');
     } catch (err) {
+      // No special-casing for 429: ApiError::RateLimited's message ("chat
+      // message limit reached (N per hour) — try again later") is already
+      // specific, and errorMessage surfaces it as-is — see errors/api_error.rs
+      // and ai/service.rs's CHAT_RATE_LIMIT check.
       setSendError(errorMessage(err, "Couldn't send that message."));
     }
   }
@@ -115,6 +119,7 @@ export default function AiPanel({ ticket, groupId }) {
 
   const hasActivity =
     messages.length > 0 ||
+    chatQuery.isError ||
     summaryQuery.data ||
     summaryQuery.error ||
     summaryQuery.isFetching ||
@@ -162,6 +167,12 @@ export default function AiPanel({ ticket, groupId }) {
 
         {!isChatLoading && hasActivity && (
           <div className="flex w-full flex-col gap-3 text-left">
+            {chatQuery.isError && (
+              <p className="text-xs text-red-400">
+                {errorMessage(chatQuery.error, "Couldn't load chat history.")}
+              </p>
+            )}
+
             {messages.map((message) => (
               <ChatMessageBubble key={message.id} message={message} />
             ))}
