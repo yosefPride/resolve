@@ -116,6 +116,7 @@ fn test_create_and_list_groups() {
         assert_eq!(groups[0].member_count, 1);
         // Brand-new group has no tickets yet.
         assert_eq!(groups[0].open_ticket_count, 0);
+        assert!(groups[0].last_activity_at.is_none());
 
         let group_id = ObjectId::parse_str(&group.id).unwrap();
         group_repo.delete_members_by_group(group_id).await.ok();
@@ -127,7 +128,8 @@ fn test_create_and_list_groups() {
     });
 }
 
-// 1b. Creating a ticket makes it show up in the group's open_ticket_count.
+// 1b. Creating a ticket makes it show up in the group's open_ticket_count,
+// and sets its last_activity_at.
 #[test]
 fn test_list_groups_reports_open_ticket_count() {
     support::runtime().block_on(async {
@@ -183,6 +185,9 @@ fn test_list_groups_reports_open_ticket_count() {
             .find(|g| g.id == group.id)
             .expect("created group should be listed");
         assert_eq!(listed.open_ticket_count, 2);
+        // Each created ticket writes a ticket_created activity entry, so a
+        // group with tickets always has a non-null last_activity_at.
+        assert!(listed.last_activity_at.is_some());
 
         // Leftover ticket docs are keyed to this now-deleted group's unique id,
         // so no other test in the shared db can observe them (same tolerance the

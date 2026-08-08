@@ -82,6 +82,23 @@ impl ActivityRepository {
         cursor.try_collect().await.map_err(Into::into)
     }
 
+    // The single most recent entry across every ticket in the group — backs
+    // the group list's "Last Activity" stat (GroupService::list_my_groups).
+    // Needs its own (group_id, occurred_at) index (db.rs): the
+    // (group_id, ticket_id, occurred_at) compound index used by
+    // list_by_ticket can't serve a sort on occurred_at without also
+    // constraining ticket_id, since ticket_id sits between the two fields.
+    pub async fn find_latest_for_group(
+        &self,
+        group_id: ObjectId,
+    ) -> Result<Option<TicketActivity>, ActivityRepoError> {
+        Ok(self
+            .activity
+            .find_one(doc! { "group_id": group_id })
+            .sort(doc! { "occurred_at": -1 })
+            .await?)
+    }
+
     // Cascade target for a single ticket's deletion (TicketService::
     // delete_ticket) — same pattern as CommentRepository::delete_by_ticket.
     pub async fn delete_by_ticket(

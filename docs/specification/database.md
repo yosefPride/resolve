@@ -390,6 +390,9 @@ informational only and never filtered on).
 - group_id + ticket_id + occurred_at (compound, descending on occurred_at —
   serves the newest-first feed; its (group_id, ticket_id) prefix also serves
   both cascade deletes)
+- group_id + occurred_at (descending — serves find_latest_for_group, the
+  group list's `last_activity_at` stat; the compound index above can't
+  satisfy this sort since ticket_id sits between the two fields)
 
 ## ticket_links
 

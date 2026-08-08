@@ -88,17 +88,25 @@ export function useConversationMessages(groupId, ticketId, conversationId) {
 // conversation is simpler than reasoning about where two new entries land.
 // Also invalidates the conversations list: sending sets the title on a
 // conversation's first message and always bumps its updated_at (list order).
+//
+// onSuccess returns (awaits) both invalidations rather than firing them and
+// moving on: ChatPanel shows an optimistic "sending" bubble until
+// mutateAsync resolves, then clears it — if mutateAsync resolved before the
+// refetch actually landed, that clear would briefly flash an empty gap
+// before the real messages appeared. Awaiting here means the cache is
+// already fresh by the time the caller's await returns.
 export function useSendConversationMessage(groupId, ticketId) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ conversationId, message }) =>
       sendConversationMessage(groupId, ticketId, conversationId, message),
-    onSuccess: (_data, { conversationId }) => {
-      queryClient.invalidateQueries({
-        queryKey: ['ai-conversation-messages', groupId, ticketId, conversationId],
-      });
-      queryClient.invalidateQueries({ queryKey: ['ai-conversations', groupId, ticketId] });
-    },
+    onSuccess: (_data, { conversationId }) =>
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ['ai-conversation-messages', groupId, ticketId, conversationId],
+        }),
+        queryClient.invalidateQueries({ queryKey: ['ai-conversations', groupId, ticketId] }),
+      ]),
   });
 }
 

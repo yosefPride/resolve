@@ -181,6 +181,9 @@ Response, per group (list-view shape, distinct from the plain group metadata ret
 - role — caller's role in that group
 - member_count
 - open_ticket_count — number of tickets in the group with status `open`
+- last_activity_at — the `occurred_at` of the group's most recent activity
+  entry (see "Activity Endpoint"), across every ticket in the group; `null`
+  for a brand-new group with no tickets yet
 
 ---
 

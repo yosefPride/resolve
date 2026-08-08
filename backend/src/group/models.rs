@@ -65,6 +65,11 @@ pub struct GroupSummaryResponse {
     pub role: Role,
     pub member_count: u64,
     pub open_ticket_count: u64,
+    // Null for a brand-new group with no tickets yet — every ticket mutation
+    // (create/edit/comment/link/reference) writes a ticket_activity entry, so
+    // this is the most recent occurred_at across the whole group, not just
+    // ticket creation/edit timestamps.
+    pub last_activity_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
 }
 

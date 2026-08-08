@@ -161,6 +161,18 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), Error> {
         )
         .await?;
 
+    // Serves ActivityRepository::find_latest_for_group (equality on group_id
+    // alone, sorted descending on occurred_at) — the compound index above
+    // can't satisfy that sort since ticket_id sits between group_id and
+    // occurred_at in it.
+    db.collection::<Document>("ticket_activity")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "occurred_at": -1 })
+                .build(),
+        )
+        .await?;
+
     // Enforces at most one link per (group, source, target, relation_type) —
     // duplicate protection at the DB level, same belt-and-braces pattern as
     // group_members' compound unique index (LinkRepository::exists is the

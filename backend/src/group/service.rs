@@ -119,12 +119,21 @@ impl GroupService {
                 .ticket_repo
                 .count_open_by_group(membership.group_id)
                 .await?;
+            let last_activity_at = self
+                .activity_repo
+                .find_latest_for_group(membership.group_id)
+                .await?
+                .map(|entry| {
+                    DateTime::from_timestamp_millis(entry.occurred_at.timestamp_millis())
+                        .unwrap_or_default()
+                });
             result.push(GroupSummaryResponse {
                 id: group.id.map(|id| id.to_hex()).unwrap_or_default(),
                 name: group.name,
                 role: membership.role,
                 member_count,
                 open_ticket_count,
+                last_activity_at,
                 created_at: DateTime::from_timestamp_millis(group.created_at.timestamp_millis())
                     .unwrap_or_default(),
             });

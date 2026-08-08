@@ -7,6 +7,7 @@ import Avatar from '../../components/ui/Avatar';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
+import { useAuth } from '../../hooks/useAuth';
 import {
   useConversationMessages,
   useConversations,
@@ -54,6 +55,26 @@ function ChatMessageBubble({ message }) {
       >
         {message.content}
       </p>
+    </div>
+  );
+}
+
+// Shown in place of the assistant's reply between send and response — the
+// same brand mark used for a real assistant message, animated so it reads
+// as "working" rather than a static/frozen icon, plus a classic three-dot
+// typing indicator inside the bubble.
+function PendingAssistantBubble() {
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="flex items-center gap-2 text-xs text-slate-500">
+        <img src={brandMark} alt="" className="h-5 w-5 animate-pulse opacity-70" />
+        <span>Assistant</span>
+      </p>
+      <div className="flex w-fit items-center gap-1 rounded-lg bg-black/30 px-3 py-2.5">
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-500 [animation-delay:-0.3s]" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-500 [animation-delay:-0.15s]" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-500" />
+      </div>
     </div>
   );
 }
@@ -136,6 +157,7 @@ function ChatPanel({
   activeConversationId,
   onSelectConversation,
 }) {
+  const { user } = useAuth();
   const conversationsQuery = useConversations(groupId, ticket.id);
   const chatQuery = useConversationMessages(groupId, ticket.id, activeConversationId);
   const summaryQuery = useTicketSummary(groupId, ticket.id);
@@ -148,6 +170,15 @@ function ChatPanel({
   const [sendError, setSendError] = useState('');
   const [confirmingDeleteId, setConfirmingDeleteId] = useState(null);
   const [deleteError, setDeleteError] = useState('');
+  // The just-sent message, shown as its own bubble (plus a pending-assistant
+  // placeholder) the instant Send is clicked — otherwise nothing on screen
+  // changes until the whole round trip (persist + Gemini call) resolves,
+  // which reads as the UI being unresponsive. Cleared once
+  // sendMessage.mutateAsync settles; useSendConversationMessage's onSuccess
+  // awaits its cache invalidation, so the real messages are already in the
+  // cache by then and there's no gap between this disappearing and them
+  // appearing.
+  const [pendingMessage, setPendingMessage] = useState(null);
 
   const conversations = conversationsQuery.data ?? [];
   const messages = chatQuery.data ?? [];
@@ -164,6 +195,11 @@ function ChatPanel({
     event.preventDefault();
     if (!canSend) return;
     setSendError('');
+    const content = draft.trim();
+    // Cleared and shown as a pending bubble immediately, before the request
+    // even starts — see pendingMessage's doc comment.
+    setDraft('');
+    setPendingMessage(content);
     try {
       let conversationId = activeConversationId;
       if (!conversationId) {
@@ -171,14 +207,17 @@ function ChatPanel({
         conversationId = created.id;
         onSelectConversation(conversationId);
       }
-      await sendMessage.mutateAsync({ conversationId, message: draft.trim() });
-      setDraft('');
+      await sendMessage.mutateAsync({ conversationId, message: content });
     } catch (err) {
       // No special-casing for 429: ApiError::RateLimited's message ("chat
       // message limit reached (N per hour) — try again later") is already
       // specific, and errorMessage surfaces it as-is — see errors/api_error.rs
       // and ai/service.rs's CHAT_RATE_LIMIT check.
       setSendError(errorMessage(err, "Couldn't send that message."));
+      // Restore the draft so a failed send doesn't lose what was typed.
+      setDraft(content);
+    } finally {
+      setPendingMessage(null);
     }
   }
 
@@ -218,6 +257,7 @@ function ChatPanel({
 
   const hasActivity =
     messages.length > 0 ||
+    pendingMessage !== null ||
     chatQuery.isError ||
     summaryQuery.data ||
     summaryQuery.error ||
@@ -292,6 +332,22 @@ function ChatPanel({
             {messages.map((message) => (
               <ChatMessageBubble key={message.id} message={message} />
             ))}
+
+            {pendingMessage !== null && (
+              <>
+                <ChatMessageBubble
+                  message={{
+                    id: 'pending',
+                    role: 'user',
+                    content: pendingMessage,
+                    user_name: user.name,
+                    user_id: user.id,
+                    created_at: new Date().toISOString(),
+                  }}
+                />
+                <PendingAssistantBubble />
+              </>
+            )}
 
             {(summaryQuery.data || summaryQuery.error || summaryQuery.isFetching) && (
               <AiInsightCard
