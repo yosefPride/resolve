@@ -1,4 +1,5 @@
-import { Maximize2, Send, SquarePen } from 'lucide-react';
+import * as Dialog from '@radix-ui/react-dialog';
+import { Maximize2, Minimize2, Send, SquarePen } from 'lucide-react';
 import { useState } from 'react';
 import brandMark from '../../assets/brand-mark.svg';
 import Avatar from '../../components/ui/Avatar';
@@ -57,17 +58,14 @@ function ChatMessageBubble({ message }) {
 const PILL =
   'rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60';
 
-// Chatbot-shaped rail for the issue detail page. Summarize, Analyze, chat
-// history, sending a message, and starting a new chat are all wired to the AI
-// endpoints (docs/implementation/backend/08-ai.md).
-// Fixed height (h-132 = 33rem: the gap-4 plus the h-128 Details/Comments
-// panel in TicketDetail, so the rail bottom lines up with that panel's
-// bottom) rather than flex-1 stretch-to-sibling: a long summary or analysis
-// result scrolls inside the panel instead of growing it, and the height
-// stays constant instead of depending on TicketMeta's height (which only
-// exists as a stretch target at lg+ anyway — there's no sibling to stretch
-// against once the layout stacks on mobile).
-export default function AiPanel({ ticket, groupId }) {
+// The full chat UI, mounted independently by AiPanel for the inline rail and
+// (when expanded) again inside a Dialog. The two mounts don't share any local
+// state — each gets its own draft/confirm/error state — but useChatMessages,
+// useTicketSummary, and useTicketAnalysis key on the same [name, groupId,
+// ticketId] tuples, so React Query's cache keeps the actual data (messages,
+// summary, analysis) in sync between them for free: send from the expanded
+// view and the rail updates too, no prop-drilling required.
+function ChatPanel({ ticket, groupId, containerClassName, isExpandedView = false, onToggleExpand }) {
   const chatQuery = useChatMessages(groupId, ticket.id);
   const summaryQuery = useTicketSummary(groupId, ticket.id);
   const analysisQuery = useTicketAnalysis(groupId, ticket.id);
@@ -128,17 +126,18 @@ export default function AiPanel({ ticket, groupId }) {
     analysisQuery.isFetching;
 
   return (
-    <div className="flex h-132 flex-col rounded-xl border border-white/10 bg-white/5">
+    <div className={containerClassName}>
       <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
         <span className="text-sm font-semibold text-slate-300">Chats</span>
         <div className="flex items-center gap-1">
           <button
             type="button"
-            disabled
-            aria-label="Expand"
+            onClick={onToggleExpand}
+            aria-label={isExpandedView ? 'Collapse' : 'Expand'}
+            title={isExpandedView ? 'Collapse' : 'Expand'}
             className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Maximize2 className="h-4 w-4" />
+            {isExpandedView ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
           </button>
           <button
             type="button"
@@ -153,7 +152,18 @@ export default function AiPanel({ ticket, groupId }) {
         </div>
       </div>
 
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 overflow-y-auto px-6 py-6 text-center">
+      {/* items-center/justify-center only while there's nothing that can
+          overflow (loading or empty). Centering a flex column that *can*
+          overflow makes the browser split the overflow evenly above and
+          below the content, and an overflow-y-auto container can only ever
+          scroll toward the end — so the portion pushed above the visible
+          area becomes permanently unreachable. Once real content exists,
+          top-align instead so scrolling reaches the actual first message. */}
+      <div
+        className={`flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-6 text-center ${
+          isChatLoading || !hasActivity ? 'items-center justify-center' : ''
+        }`}
+      >
         {isChatLoading && <p className="text-xs text-slate-500">Loading chat…</p>}
 
         {!isChatLoading && !hasActivity && (
@@ -290,5 +300,53 @@ export default function AiPanel({ ticket, groupId }) {
         </div>
       </Modal>
     </div>
+  );
+}
+
+// Fixed rail height (h-132 = 33rem: the gap-4 plus the h-128 Details/Comments
+// panel in TicketDetail, so the rail bottom lines up with that panel's
+// bottom) rather than flex-1 stretch-to-sibling: a long summary or analysis
+// result scrolls inside the panel instead of growing it, and the height
+// stays constant instead of depending on TicketMeta's height (which only
+// exists as a stretch target at lg+ anyway — there's no sibling to stretch
+// against once the layout stacks on mobile).
+//
+// The expanded view is a plain Dialog (not the shared Modal component) since
+// Modal is built for a centered, text-only confirmation (fixed max-w-md, p-6
+// padding, title-first layout) and this needs a large flex column that ChatPanel
+// itself controls the inside of — header, scrolling thread, and composer
+// pinned top/bottom. Overlay/content styling is kept visually consistent with
+// Modal's rather than factored out, since it's the only other Dialog user.
+export default function AiPanel({ ticket, groupId }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  return (
+    <>
+      <ChatPanel
+        ticket={ticket}
+        groupId={groupId}
+        containerClassName="flex h-132 flex-col rounded-xl border border-white/10 bg-white/5"
+        onToggleExpand={() => setIsExpanded(true)}
+      />
+
+      <Dialog.Root open={isExpanded} onOpenChange={setIsExpanded}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm" />
+          <Dialog.Content
+            aria-describedby={undefined}
+            className="fixed left-1/2 top-1/2 z-50 flex h-[calc(100%-4rem)] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-white/10 bg-neutral-950 shadow-2xl shadow-black/50"
+          >
+            <Dialog.Title className="sr-only">Chat</Dialog.Title>
+            <ChatPanel
+              ticket={ticket}
+              groupId={groupId}
+              containerClassName="flex h-full flex-col"
+              isExpandedView
+              onToggleExpand={() => setIsExpanded(false)}
+            />
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+    </>
   );
 }
