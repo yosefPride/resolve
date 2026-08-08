@@ -12,8 +12,9 @@
 use actix_web::{App, test as actix_test, web};
 use mongodb::{Database, IndexModel, bson::doc, bson::oid::ObjectId, options::IndexOptions};
 use resolve::ai::models::{
-    ChatMessageResponse, ChatRole, GroupReportResponse, SendChatMessageRequest,
-    SendChatMessageResponse, TicketAnalysisResponse, TicketSummaryResponse,
+    AiConversationResponse, ChatMessageResponse, ChatRole, GroupReportResponse,
+    SendChatMessageRequest, SendChatMessageResponse, TicketAnalysisResponse,
+    TicketSummaryResponse,
 };
 use resolve::auth::models::{AuthResponse, RegisterRequest};
 use resolve::group::models::{AddMemberRequest, CreateGroupRequest, GroupResponse, Role};
@@ -494,11 +495,12 @@ fn test_report_contributor_forbidden() {
     });
 }
 
-// 9. A member can send a chat message; the real Gemini call succeeds, both
-// messages land in the list in order, and "New chat" clears the thread.
+// 9. A member can create a conversation, send a message in it (the real
+// Gemini call succeeds), see it listed, and delete it — after which it's
+// gone from both the list and direct lookup.
 #[test]
 #[ignore]
-fn test_chat_member_succeeds_then_lists_and_clears() {
+fn test_conversation_member_succeeds_then_lists_and_deletes() {
     support::runtime().block_on(async {
         let (db, uri) = setup_db().await;
         let group_repo = GroupRepository::new(&db);
@@ -507,10 +509,27 @@ fn test_chat_member_succeeds_then_lists_and_clears() {
 
         let (group_id, ticket_id, owner, contributor) = seed!(app);
 
+        let create_resp = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!(
+                    "/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/conversations"
+                ))
+                .insert_header(auth_header(&contributor.jwt))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(create_resp.status(), 201);
+        let conversation: AiConversationResponse = actix_test::read_body_json(create_resp).await;
+        assert_eq!(conversation.title, None);
+
         let resp = actix_test::call_service(
             &app,
             actix_test::TestRequest::post()
-                .uri(&format!("/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/chat"))
+                .uri(&format!(
+                    "/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/conversations/{}/messages",
+                    conversation.id
+                ))
                 .insert_header(auth_header(&contributor.jwt))
                 .set_json(&SendChatMessageRequest {
                     message: "Any workaround for this?".to_string(),
@@ -529,7 +548,10 @@ fn test_chat_member_succeeds_then_lists_and_clears() {
         let list_resp = actix_test::call_service(
             &app,
             actix_test::TestRequest::get()
-                .uri(&format!("/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/chat"))
+                .uri(&format!(
+                    "/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/conversations/{}/messages",
+                    conversation.id
+                ))
                 .insert_header(auth_header(&contributor.jwt))
                 .to_request(),
         )
@@ -540,27 +562,49 @@ fn test_chat_member_succeeds_then_lists_and_clears() {
         assert_eq!(messages[0].role, ChatRole::User);
         assert_eq!(messages[1].role, ChatRole::Assistant);
 
-        let clear_resp = actix_test::call_service(
-            &app,
-            actix_test::TestRequest::delete()
-                .uri(&format!("/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/chat"))
-                .insert_header(auth_header(&contributor.jwt))
-                .to_request(),
-        )
-        .await;
-        assert_eq!(clear_resp.status(), 204);
-
-        let after_clear = actix_test::call_service(
+        let conversations_resp = actix_test::call_service(
             &app,
             actix_test::TestRequest::get()
-                .uri(&format!("/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/chat"))
+                .uri(&format!(
+                    "/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/conversations"
+                ))
                 .insert_header(auth_header(&contributor.jwt))
                 .to_request(),
         )
         .await;
-        let messages_after_clear: Vec<ChatMessageResponse> =
-            actix_test::read_body_json(after_clear).await;
-        assert!(messages_after_clear.is_empty());
+        let conversations: Vec<AiConversationResponse> =
+            actix_test::read_body_json(conversations_resp).await;
+        assert_eq!(conversations.len(), 1);
+        assert_eq!(
+            conversations[0].title,
+            Some("Any workaround for this?".to_string())
+        );
+
+        let delete_resp = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::delete()
+                .uri(&format!(
+                    "/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/conversations/{}",
+                    conversation.id
+                ))
+                .insert_header(auth_header(&contributor.jwt))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(delete_resp.status(), 204);
+
+        let after_delete = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::get()
+                .uri(&format!(
+                    "/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/conversations/{}/messages",
+                    conversation.id
+                ))
+                .insert_header(auth_header(&contributor.jwt))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(after_delete.status(), 404);
 
         cleanup(
             &group_repo,
@@ -572,10 +616,89 @@ fn test_chat_member_succeeds_then_lists_and_clears() {
     });
 }
 
-// 10. A non-member is forbidden, and never reaches the Gemini call.
+// 10. A group member who didn't create the conversation is forbidden from
+// reading, sending to, or deleting it — even a Group Admin. Ownership is
+// strict (confirmed with user), no owner-or-group-admin fallback.
 #[test]
 #[ignore]
-fn test_chat_non_member_forbidden() {
+fn test_conversation_non_owner_forbidden() {
+    support::runtime().block_on(async {
+        let (db, uri) = setup_db().await;
+        let group_repo = GroupRepository::new(&db);
+        let user_repo = UserRepository::new(&db);
+        let app = test_app!(build_app_state(db, uri));
+
+        let (group_id, ticket_id, owner, contributor) = seed!(app);
+
+        let create_resp = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!(
+                    "/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/conversations"
+                ))
+                .insert_header(auth_header(&contributor.jwt))
+                .to_request(),
+        )
+        .await;
+        let conversation: AiConversationResponse = actix_test::read_body_json(create_resp).await;
+
+        let send_resp = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!(
+                    "/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/conversations/{}/messages",
+                    conversation.id
+                ))
+                .insert_header(auth_header(&owner.jwt))
+                .set_json(&SendChatMessageRequest {
+                    message: "hi".to_string(),
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(send_resp.status(), 403);
+
+        let read_resp = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::get()
+                .uri(&format!(
+                    "/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/conversations/{}/messages",
+                    conversation.id
+                ))
+                .insert_header(auth_header(&owner.jwt))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(read_resp.status(), 403);
+
+        let delete_resp = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::delete()
+                .uri(&format!(
+                    "/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/conversations/{}",
+                    conversation.id
+                ))
+                .insert_header(auth_header(&owner.jwt))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(delete_resp.status(), 403);
+
+        cleanup(
+            &group_repo,
+            &user_repo,
+            ObjectId::parse_str(&group_id).unwrap(),
+            &[&owner, &contributor],
+        )
+        .await;
+    });
+}
+
+// 11. A non-member is forbidden from even creating a conversation, and never
+// reaches the Gemini call.
+#[test]
+#[ignore]
+fn test_conversation_non_member_forbidden() {
     support::runtime().block_on(async {
         let (db, uri) = setup_db().await;
         let group_repo = GroupRepository::new(&db);
@@ -591,11 +714,10 @@ fn test_chat_non_member_forbidden() {
         let resp = actix_test::call_service(
             &app,
             actix_test::TestRequest::post()
-                .uri(&format!("/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/chat"))
+                .uri(&format!(
+                    "/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/conversations"
+                ))
                 .insert_header(auth_header(&outsider.jwt))
-                .set_json(&SendChatMessageRequest {
-                    message: "hi".to_string(),
-                })
                 .to_request(),
         )
         .await;
@@ -611,11 +733,11 @@ fn test_chat_non_member_forbidden() {
     });
 }
 
-// 11. No Authorization header at all is rejected before any RBAC or provider
+// 12. No Authorization header at all is rejected before any RBAC or provider
 // logic runs.
 #[test]
 #[ignore]
-fn test_chat_requires_authentication() {
+fn test_conversation_requires_authentication() {
     support::runtime().block_on(async {
         let (db, uri) = setup_db().await;
         let group_repo = GroupRepository::new(&db);
@@ -627,10 +749,9 @@ fn test_chat_requires_authentication() {
         let resp = actix_test::call_service(
             &app,
             actix_test::TestRequest::post()
-                .uri(&format!("/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/chat"))
-                .set_json(&SendChatMessageRequest {
-                    message: "hi".to_string(),
-                })
+                .uri(&format!(
+                    "/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/conversations"
+                ))
                 .to_request(),
         )
         .await;
@@ -646,10 +767,10 @@ fn test_chat_requires_authentication() {
     });
 }
 
-// 12. A ticket_id that doesn't belong to the group 404s.
+// 13. A ticket_id that doesn't belong to the group 404s.
 #[test]
 #[ignore]
-fn test_chat_unknown_ticket_not_found() {
+fn test_conversation_unknown_ticket_not_found() {
     support::runtime().block_on(async {
         let (db, uri) = setup_db().await;
         let group_repo = GroupRepository::new(&db);
@@ -662,13 +783,10 @@ fn test_chat_unknown_ticket_not_found() {
             &app,
             actix_test::TestRequest::post()
                 .uri(&format!(
-                    "/api/v1/ai/groups/{group_id}/tickets/{}/chat",
+                    "/api/v1/ai/groups/{group_id}/tickets/{}/conversations",
                     ObjectId::new()
                 ))
                 .insert_header(auth_header(&contributor.jwt))
-                .set_json(&SendChatMessageRequest {
-                    message: "hi".to_string(),
-                })
                 .to_request(),
         )
         .await;
@@ -684,11 +802,11 @@ fn test_chat_unknown_ticket_not_found() {
     });
 }
 
-// 13. An empty message is rejected before the provider is ever called — no
+// 14. An empty message is rejected before the provider is ever called — no
 // Gemini quota spent proving this one.
 #[test]
 #[ignore]
-fn test_chat_empty_message_is_bad_request() {
+fn test_conversation_empty_message_is_bad_request() {
     support::runtime().block_on(async {
         let (db, uri) = setup_db().await;
         let group_repo = GroupRepository::new(&db);
@@ -697,10 +815,25 @@ fn test_chat_empty_message_is_bad_request() {
 
         let (group_id, ticket_id, owner, contributor) = seed!(app);
 
+        let create_resp = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!(
+                    "/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/conversations"
+                ))
+                .insert_header(auth_header(&contributor.jwt))
+                .to_request(),
+        )
+        .await;
+        let conversation: AiConversationResponse = actix_test::read_body_json(create_resp).await;
+
         let resp = actix_test::call_service(
             &app,
             actix_test::TestRequest::post()
-                .uri(&format!("/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/chat"))
+                .uri(&format!(
+                    "/api/v1/ai/groups/{group_id}/tickets/{ticket_id}/conversations/{}/messages",
+                    conversation.id
+                ))
                 .insert_header(auth_header(&contributor.jwt))
                 .set_json(&SendChatMessageRequest {
                     message: "   ".to_string(),

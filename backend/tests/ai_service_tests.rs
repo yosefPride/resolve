@@ -112,6 +112,7 @@ async fn setup() -> (mongodb::Database, ObjectId, ObjectId, ObjectId) {
         "ai_ticket_insights",
         "ai_group_reports",
         "ai_chat_messages",
+        "ai_conversations",
         "groups",
         "group_members",
         "tickets",
@@ -173,6 +174,7 @@ async fn setup_for_report() -> (mongodb::Database, ObjectId, ObjectId, ObjectId)
         "ai_ticket_insights",
         "ai_group_reports",
         "ai_chat_messages",
+        "ai_conversations",
         "groups",
         "group_members",
         "tickets",
@@ -518,19 +520,66 @@ fn test_generate_group_report_requires_group_admin() {
     });
 }
 
-// 11. Sending a message calls the provider and persists both the user's
-// message and the assistant's reply, correctly attributed.
+// Creates a conversation and returns its id as an ObjectId, so tests can go
+// straight to send/list/delete without repeating the parse_str boilerplate.
+async fn new_conversation<P: AiProvider>(
+    service: &AiService<P>,
+    user_id: ObjectId,
+    group_id: ObjectId,
+    ticket_id: ObjectId,
+) -> ObjectId {
+    let conversation = service
+        .create_conversation(user_id, group_id, ticket_id)
+        .await
+        .expect("create_conversation failed");
+    ObjectId::parse_str(&conversation.id).expect("conversation id is a valid ObjectId")
+}
+
+// 11. A freshly created conversation has no title yet and shows up in the
+// caller's own list.
 #[test]
-fn test_send_chat_message_persists_both_messages() {
+fn test_create_conversation_starts_untitled_and_listed() {
+    support::runtime().block_on(async {
+        let (db, group_id, member_id, ticket_id) = setup().await;
+        let provider = FakeProvider::new("summary", default_analysis());
+        let service = AiService::with_provider(&db, provider);
+
+        let created = service
+            .create_conversation(member_id, group_id, ticket_id)
+            .await
+            .expect("create_conversation failed");
+        assert_eq!(created.title, None);
+
+        let listed = service
+            .list_conversations(member_id, group_id, ticket_id)
+            .await
+            .expect("list_conversations failed");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, created.id);
+    });
+}
+
+// 12. Sending a message calls the provider, persists both the user's message
+// and the assistant's reply (correctly attributed), and sets the
+// conversation's title from that first message.
+#[test]
+fn test_send_conversation_message_persists_both_messages_and_sets_title() {
     support::runtime().block_on(async {
         let (db, group_id, member_id, ticket_id) = setup().await;
         let provider = FakeProvider::new("summary", default_analysis());
         let service = AiService::with_provider(&db, provider.clone());
+        let conversation_id = new_conversation(&service, member_id, group_id, ticket_id).await;
 
         let response = service
-            .send_chat_message(member_id, group_id, ticket_id, "Any workaround?".to_string())
+            .send_conversation_message(
+                member_id,
+                group_id,
+                ticket_id,
+                conversation_id,
+                "Any workaround?".to_string(),
+            )
             .await
-            .expect("send_chat_message failed");
+            .expect("send_conversation_message failed");
 
         assert_eq!(response.user_message.role, ChatRole::User);
         assert_eq!(response.user_message.content, "Any workaround?");
@@ -541,33 +590,90 @@ fn test_send_chat_message_persists_both_messages() {
         assert_eq!(provider.chat_calls.load(Ordering::SeqCst), 1);
 
         let stored = service
-            .list_chat_messages(member_id, group_id, ticket_id)
+            .list_conversation_messages(member_id, group_id, ticket_id, conversation_id)
             .await
-            .expect("list_chat_messages failed");
+            .expect("list_conversation_messages failed");
         assert_eq!(stored.len(), 2);
+
+        let listed = service
+            .list_conversations(member_id, group_id, ticket_id)
+            .await
+            .expect("list_conversations failed");
+        assert_eq!(listed[0].title, Some("Any workaround?".to_string()));
     });
 }
 
-// 12. A second message includes the first exchange in the transcript sent to
-// the provider — history isn't dropped between turns.
+// 13. A second message doesn't overwrite the title set by the first.
 #[test]
-fn test_send_chat_message_includes_prior_history_in_transcript() {
+fn test_send_conversation_message_does_not_overwrite_existing_title() {
     support::runtime().block_on(async {
         let (db, group_id, member_id, ticket_id) = setup().await;
         let provider = FakeProvider::new("summary", default_analysis());
         let service = AiService::with_provider(&db, provider.clone());
+        let conversation_id = new_conversation(&service, member_id, group_id, ticket_id).await;
 
         service
-            .send_chat_message(member_id, group_id, ticket_id, "First question".to_string())
+            .send_conversation_message(
+                member_id,
+                group_id,
+                ticket_id,
+                conversation_id,
+                "First question".to_string(),
+            )
             .await
-            .expect("first send_chat_message failed");
+            .expect("first send_conversation_message failed");
+        service
+            .send_conversation_message(
+                member_id,
+                group_id,
+                ticket_id,
+                conversation_id,
+                "Follow-up".to_string(),
+            )
+            .await
+            .expect("second send_conversation_message failed");
+
+        let listed = service
+            .list_conversations(member_id, group_id, ticket_id)
+            .await
+            .expect("list_conversations failed");
+        assert_eq!(listed[0].title, Some("First question".to_string()));
+    });
+}
+
+// 14. A second message includes the first exchange in the transcript sent to
+// the provider — history isn't dropped between turns.
+#[test]
+fn test_send_conversation_message_includes_prior_history_in_transcript() {
+    support::runtime().block_on(async {
+        let (db, group_id, member_id, ticket_id) = setup().await;
+        let provider = FakeProvider::new("summary", default_analysis());
+        let service = AiService::with_provider(&db, provider.clone());
+        let conversation_id = new_conversation(&service, member_id, group_id, ticket_id).await;
+
+        service
+            .send_conversation_message(
+                member_id,
+                group_id,
+                ticket_id,
+                conversation_id,
+                "First question".to_string(),
+            )
+            .await
+            .expect("first send_conversation_message failed");
         // First call's transcript is empty — nothing happened yet.
         assert_eq!(*provider.last_chat_transcript.lock().unwrap(), "");
 
         service
-            .send_chat_message(member_id, group_id, ticket_id, "Follow-up".to_string())
+            .send_conversation_message(
+                member_id,
+                group_id,
+                ticket_id,
+                conversation_id,
+                "Follow-up".to_string(),
+            )
             .await
-            .expect("second send_chat_message failed");
+            .expect("second send_conversation_message failed");
 
         let transcript = provider.last_chat_transcript.lock().unwrap().clone();
         assert!(transcript.contains("First question"));
@@ -575,17 +681,24 @@ fn test_send_chat_message_includes_prior_history_in_transcript() {
     });
 }
 
-// 13. A non-member is rejected before the provider is ever called.
+// 15. A non-member is rejected before the provider is ever called.
 #[test]
-fn test_send_chat_message_rejects_non_member() {
+fn test_send_conversation_message_rejects_non_member() {
     support::runtime().block_on(async {
-        let (db, group_id, _member_id, ticket_id) = setup().await;
+        let (db, group_id, member_id, ticket_id) = setup().await;
         let provider = FakeProvider::new("summary", default_analysis());
         let service = AiService::with_provider(&db, provider.clone());
+        let conversation_id = new_conversation(&service, member_id, group_id, ticket_id).await;
         let outsider_id = ObjectId::new();
 
         let result = service
-            .send_chat_message(outsider_id, group_id, ticket_id, "hi".to_string())
+            .send_conversation_message(
+                outsider_id,
+                group_id,
+                ticket_id,
+                conversation_id,
+                "hi".to_string(),
+            )
             .await;
 
         assert!(matches!(result, Err(ApiError::Forbidden)), "{result:?}");
@@ -593,41 +706,93 @@ fn test_send_chat_message_rejects_non_member() {
     });
 }
 
-// 14. An unknown ticket_id 404s.
+// 16. An unknown ticket_id 404s.
 #[test]
-fn test_send_chat_message_404s_on_unknown_ticket() {
+fn test_send_conversation_message_404s_on_unknown_ticket() {
     support::runtime().block_on(async {
-        let (db, group_id, member_id, _ticket_id) = setup().await;
+        let (db, group_id, member_id, ticket_id) = setup().await;
         let provider = FakeProvider::new("summary", default_analysis());
         let service = AiService::with_provider(&db, provider);
+        let conversation_id = new_conversation(&service, member_id, group_id, ticket_id).await;
 
         let result = service
-            .send_chat_message(member_id, group_id, ObjectId::new(), "hi".to_string())
+            .send_conversation_message(
+                member_id,
+                group_id,
+                ObjectId::new(),
+                conversation_id,
+                "hi".to_string(),
+            )
             .await;
 
         assert!(matches!(result, Err(ApiError::NotFound)), "{result:?}");
     });
 }
 
-// 15. The 11th message within an hour from the same user is rejected —
-// confirmed with user: 10 messages/hour.
+// 17. A group member who isn't the conversation's creator is rejected, even
+// though they're a real member of the group — ownership is strict, no
+// owner-or-group-admin fallback (confirmed with user).
 #[test]
-fn test_send_chat_message_enforces_rate_limit() {
+fn test_send_conversation_message_rejects_non_owner_member() {
     support::runtime().block_on(async {
         let (db, group_id, member_id, ticket_id) = setup().await;
         let provider = FakeProvider::new("summary", default_analysis());
         let service = AiService::with_provider(&db, provider.clone());
+        let conversation_id = new_conversation(&service, member_id, group_id, ticket_id).await;
+
+        let other_member_id = ObjectId::new();
+        GroupRepository::new(&db)
+            .insert_member(group_id, other_member_id, Role::Contributor)
+            .await
+            .expect("insert_member failed");
+
+        let result = service
+            .send_conversation_message(
+                other_member_id,
+                group_id,
+                ticket_id,
+                conversation_id,
+                "hi".to_string(),
+            )
+            .await;
+
+        assert!(matches!(result, Err(ApiError::Forbidden)), "{result:?}");
+        assert_eq!(provider.chat_calls.load(Ordering::SeqCst), 0);
+    });
+}
+
+// 18. The 11th message within an hour from the same user is rejected —
+// confirmed with user: 10 messages/hour.
+#[test]
+fn test_send_conversation_message_enforces_rate_limit() {
+    support::runtime().block_on(async {
+        let (db, group_id, member_id, ticket_id) = setup().await;
+        let provider = FakeProvider::new("summary", default_analysis());
+        let service = AiService::with_provider(&db, provider.clone());
+        let conversation_id = new_conversation(&service, member_id, group_id, ticket_id).await;
 
         for i in 0..10 {
             service
-                .send_chat_message(member_id, group_id, ticket_id, format!("message {i}"))
+                .send_conversation_message(
+                    member_id,
+                    group_id,
+                    ticket_id,
+                    conversation_id,
+                    format!("message {i}"),
+                )
                 .await
                 .unwrap_or_else(|_| panic!("message {i} should be within the rate limit"));
         }
         assert_eq!(provider.chat_calls.load(Ordering::SeqCst), 10);
 
         let result = service
-            .send_chat_message(member_id, group_id, ticket_id, "one too many".to_string())
+            .send_conversation_message(
+                member_id,
+                group_id,
+                ticket_id,
+                conversation_id,
+                "one too many".to_string(),
+            )
             .await;
 
         assert!(matches!(result, Err(ApiError::RateLimited(_))), "{result:?}");
@@ -636,57 +801,123 @@ fn test_send_chat_message_enforces_rate_limit() {
     });
 }
 
-// 16. The rate limit is scoped per user, not per ticket: a different member
-// of the same group has their own budget.
+// 19. The rate limit is scoped per user, globally — not per conversation, and
+// not per ticket: a second conversation started by the same user shares the
+// same budget as the first.
 #[test]
-fn test_send_chat_message_rate_limit_is_scoped_per_user() {
+fn test_send_conversation_message_rate_limit_is_shared_across_a_users_conversations() {
     support::runtime().block_on(async {
         let (db, group_id, member_id, ticket_id) = setup().await;
         let provider = FakeProvider::new("summary", default_analysis());
         let service = AiService::with_provider(&db, provider.clone());
+        let first_conversation = new_conversation(&service, member_id, group_id, ticket_id).await;
+
+        for i in 0..10 {
+            service
+                .send_conversation_message(
+                    member_id,
+                    group_id,
+                    ticket_id,
+                    first_conversation,
+                    format!("message {i}"),
+                )
+                .await
+                .unwrap_or_else(|_| panic!("message {i} should be within the rate limit"));
+        }
+
+        let second_conversation = new_conversation(&service, member_id, group_id, ticket_id).await;
+        let result = service
+            .send_conversation_message(
+                member_id,
+                group_id,
+                ticket_id,
+                second_conversation,
+                "hi from a new conversation".to_string(),
+            )
+            .await;
+
+        assert!(matches!(result, Err(ApiError::RateLimited(_))), "{result:?}");
+    });
+}
+
+// 20. A different member of the same group has their own rate-limit budget.
+#[test]
+fn test_send_conversation_message_rate_limit_is_scoped_per_user() {
+    support::runtime().block_on(async {
+        let (db, group_id, member_id, ticket_id) = setup().await;
+        let provider = FakeProvider::new("summary", default_analysis());
+        let service = AiService::with_provider(&db, provider.clone());
+        let conversation_id = new_conversation(&service, member_id, group_id, ticket_id).await;
+
         let other_member_id = ObjectId::new();
-        let group_repo = GroupRepository::new(&db);
-        group_repo
+        GroupRepository::new(&db)
             .insert_member(group_id, other_member_id, Role::Contributor)
             .await
             .expect("insert_member failed");
 
         for i in 0..10 {
             service
-                .send_chat_message(member_id, group_id, ticket_id, format!("message {i}"))
+                .send_conversation_message(
+                    member_id,
+                    group_id,
+                    ticket_id,
+                    conversation_id,
+                    format!("message {i}"),
+                )
                 .await
                 .unwrap_or_else(|_| panic!("message {i} should be within the rate limit"));
         }
 
+        let other_conversation =
+            new_conversation(&service, other_member_id, group_id, ticket_id).await;
         let result = service
-            .send_chat_message(other_member_id, group_id, ticket_id, "hi".to_string())
+            .send_conversation_message(
+                other_member_id,
+                group_id,
+                ticket_id,
+                other_conversation,
+                "hi".to_string(),
+            )
             .await;
 
         assert!(result.is_ok(), "{result:?}");
     });
 }
 
-// 17. list_chat_messages returns the full thread oldest-first.
+// 21. list_conversation_messages returns the full conversation oldest-first.
 #[test]
-fn test_list_chat_messages_returns_oldest_first() {
+fn test_list_conversation_messages_returns_oldest_first() {
     support::runtime().block_on(async {
         let (db, group_id, member_id, ticket_id) = setup().await;
         let provider = FakeProvider::new("summary", default_analysis());
         let service = AiService::with_provider(&db, provider.clone());
+        let conversation_id = new_conversation(&service, member_id, group_id, ticket_id).await;
 
         service
-            .send_chat_message(member_id, group_id, ticket_id, "first".to_string())
+            .send_conversation_message(
+                member_id,
+                group_id,
+                ticket_id,
+                conversation_id,
+                "first".to_string(),
+            )
             .await
-            .expect("first send_chat_message failed");
+            .expect("first send_conversation_message failed");
         service
-            .send_chat_message(member_id, group_id, ticket_id, "second".to_string())
+            .send_conversation_message(
+                member_id,
+                group_id,
+                ticket_id,
+                conversation_id,
+                "second".to_string(),
+            )
             .await
-            .expect("second send_chat_message failed");
+            .expect("second send_conversation_message failed");
 
         let messages = service
-            .list_chat_messages(member_id, group_id, ticket_id)
+            .list_conversation_messages(member_id, group_id, ticket_id, conversation_id)
             .await
-            .expect("list_chat_messages failed");
+            .expect("list_conversation_messages failed");
 
         assert_eq!(messages.len(), 4);
         assert_eq!(messages[0].content, "first");
@@ -694,28 +925,120 @@ fn test_list_chat_messages_returns_oldest_first() {
     });
 }
 
-// 18. "New chat" clears every message on the ticket's thread.
+// 22. A non-owner (even a real group member) can't read another user's
+// conversation.
 #[test]
-fn test_clear_chat_removes_all_messages() {
+fn test_list_conversation_messages_rejects_non_owner() {
     support::runtime().block_on(async {
         let (db, group_id, member_id, ticket_id) = setup().await;
         let provider = FakeProvider::new("summary", default_analysis());
-        let service = AiService::with_provider(&db, provider.clone());
+        let service = AiService::with_provider(&db, provider);
+        let conversation_id = new_conversation(&service, member_id, group_id, ticket_id).await;
+
+        let other_member_id = ObjectId::new();
+        GroupRepository::new(&db)
+            .insert_member(group_id, other_member_id, Role::Contributor)
+            .await
+            .expect("insert_member failed");
+
+        let result = service
+            .list_conversation_messages(other_member_id, group_id, ticket_id, conversation_id)
+            .await;
+
+        assert!(matches!(result, Err(ApiError::Forbidden)), "{result:?}");
+    });
+}
+
+// 23. list_conversations only ever returns the caller's own conversations,
+// even when another member has some on the same ticket.
+#[test]
+fn test_list_conversations_only_returns_callers_own() {
+    support::runtime().block_on(async {
+        let (db, group_id, member_id, ticket_id) = setup().await;
+        let provider = FakeProvider::new("summary", default_analysis());
+        let service = AiService::with_provider(&db, provider);
+        new_conversation(&service, member_id, group_id, ticket_id).await;
+
+        let other_member_id = ObjectId::new();
+        GroupRepository::new(&db)
+            .insert_member(group_id, other_member_id, Role::Contributor)
+            .await
+            .expect("insert_member failed");
+        new_conversation(&service, other_member_id, group_id, ticket_id).await;
+        new_conversation(&service, other_member_id, group_id, ticket_id).await;
+
+        let listed = service
+            .list_conversations(other_member_id, group_id, ticket_id)
+            .await
+            .expect("list_conversations failed");
+        assert_eq!(listed.len(), 2);
+    });
+}
+
+// 24. Deleting a conversation removes it and its messages; a non-owner can't
+// delete someone else's conversation.
+#[test]
+fn test_delete_conversation_removes_conversation_and_messages() {
+    support::runtime().block_on(async {
+        let (db, group_id, member_id, ticket_id) = setup().await;
+        let provider = FakeProvider::new("summary", default_analysis());
+        let service = AiService::with_provider(&db, provider);
+        let conversation_id = new_conversation(&service, member_id, group_id, ticket_id).await;
+        service
+            .send_conversation_message(
+                member_id,
+                group_id,
+                ticket_id,
+                conversation_id,
+                "hi".to_string(),
+            )
+            .await
+            .expect("send_conversation_message failed");
 
         service
-            .send_chat_message(member_id, group_id, ticket_id, "hi".to_string())
+            .delete_conversation(member_id, group_id, ticket_id, conversation_id)
             .await
-            .expect("send_chat_message failed");
+            .expect("delete_conversation failed");
 
-        service
-            .clear_chat(member_id, group_id, ticket_id)
+        let listed = service
+            .list_conversations(member_id, group_id, ticket_id)
             .await
-            .expect("clear_chat failed");
+            .expect("list_conversations failed");
+        assert!(listed.is_empty());
 
-        let messages = service
-            .list_chat_messages(member_id, group_id, ticket_id)
+        let result = service
+            .list_conversation_messages(member_id, group_id, ticket_id, conversation_id)
+            .await;
+        assert!(matches!(result, Err(ApiError::NotFound)), "{result:?}");
+    });
+}
+
+// 25. A non-owner (even a real group member) can't delete another user's
+// conversation.
+#[test]
+fn test_delete_conversation_rejects_non_owner() {
+    support::runtime().block_on(async {
+        let (db, group_id, member_id, ticket_id) = setup().await;
+        let provider = FakeProvider::new("summary", default_analysis());
+        let service = AiService::with_provider(&db, provider);
+        let conversation_id = new_conversation(&service, member_id, group_id, ticket_id).await;
+
+        let other_member_id = ObjectId::new();
+        GroupRepository::new(&db)
+            .insert_member(group_id, other_member_id, Role::Contributor)
             .await
-            .expect("list_chat_messages failed");
-        assert!(messages.is_empty());
+            .expect("insert_member failed");
+
+        let result = service
+            .delete_conversation(other_member_id, group_id, ticket_id, conversation_id)
+            .await;
+        assert!(matches!(result, Err(ApiError::Forbidden)), "{result:?}");
+
+        // Untouched: still visible to its real owner.
+        let listed = service
+            .list_conversations(member_id, group_id, ticket_id)
+            .await
+            .expect("list_conversations failed");
+        assert_eq!(listed.len(), 1);
     });
 }

@@ -194,23 +194,49 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), Error> {
         )
         .await?;
 
-    // Serves list_chat_messages (every read is scoped to group_id + ticket_id,
-    // oldest-first) — same shape as the comments index above.
+    // Serves list_conversation_messages (every read is scoped to a single
+    // conversation, oldest-first).
     db.collection::<Document>("ai_chat_messages")
         .create_index(
             IndexModel::builder()
-                .keys(doc! { "group_id": 1, "ticket_id": 1, "created_at": 1 })
+                .keys(doc! { "conversation_id": 1, "created_at": 1 })
+                .build(),
+        )
+        .await?;
+
+    // Serves AiRepository::delete_by_ticket/delete_by_group's cascade deletes
+    // on this collection, which filter by group_id(+ticket_id) directly
+    // rather than going through conversation_id — group_id alone is a valid
+    // prefix match for the group-only case.
+    db.collection::<Document>("ai_chat_messages")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "ticket_id": 1 })
                 .build(),
         )
         .await?;
 
     // Serves count_recent_user_messages, the chat rate-limit check: equality
     // on role + user_id, range on created_at — this compound index covers
-    // that query directly instead of scanning every message ever sent.
+    // that query directly instead of scanning every message ever sent. Global
+    // per user (not scoped to conversation_id) — see the CHAT_RATE_LIMIT
+    // comment in ai::service.
     db.collection::<Document>("ai_chat_messages")
         .create_index(
             IndexModel::builder()
                 .keys(doc! { "role": 1, "user_id": 1, "created_at": 1 })
+                .build(),
+        )
+        .await?;
+
+    // Serves list_conversations directly (equality prefix group_id/ticket_id/
+    // user_id, sort field last) — also covers delete_by_ticket/delete_by_group's
+    // cascade deletes on this collection, since group_id(+ticket_id) is a
+    // prefix of this index.
+    db.collection::<Document>("ai_conversations")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "ticket_id": 1, "user_id": 1, "updated_at": -1 })
                 .build(),
         )
         .await?;
@@ -231,6 +257,20 @@ pub async fn backfill_ticket_content_updated_at(db: &Database) -> Result<(), Err
             doc! { "content_updated_at": { "$exists": false } },
             vec![doc! { "$set": { "content_updated_at": "$updated_at" } }],
         )
+        .await?;
+    Ok(())
+}
+
+// One-time wipe of chat messages from the old single-shared-thread-per-ticket
+// model (no conversation_id, multiple users' messages interleaved with no
+// owner). There's no principled way to split that into per-user
+// conversations after the fact (confirmed with user), so rather than migrate
+// it, this just drops it — new messages always carry conversation_id, so the
+// filter only ever matches leftover pre-migration documents. Idempotent: a
+// no-op on every boot after the first.
+pub async fn wipe_legacy_chat_messages(db: &Database) -> Result<(), Error> {
+    db.collection::<Document>("ai_chat_messages")
+        .delete_many(doc! { "conversation_id": { "$exists": false } })
         .await?;
     Ok(())
 }

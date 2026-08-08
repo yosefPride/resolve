@@ -7,7 +7,7 @@ use mongodb::{
     options::ReturnDocument,
 };
 
-use crate::ai::models::{AiGroupReport, AiTicketInsight, ChatMessage, ChatRole};
+use crate::ai::models::{AiConversation, AiGroupReport, AiTicketInsight, ChatMessage, ChatRole};
 
 #[derive(Debug)]
 pub enum AiRepoError {
@@ -34,6 +34,7 @@ pub struct AiRepository {
     insights: Collection<AiTicketInsight>,
     reports: Collection<AiGroupReport>,
     chat_messages: Collection<ChatMessage>,
+    conversations: Collection<AiConversation>,
 }
 
 impl AiRepository {
@@ -42,6 +43,7 @@ impl AiRepository {
             insights: db.collection("ai_ticket_insights"),
             reports: db.collection("ai_group_reports"),
             chat_messages: db.collection("ai_chat_messages"),
+            conversations: db.collection("ai_conversations"),
         }
     }
 
@@ -134,8 +136,11 @@ impl AiRepository {
 
     // Cascade target for ticket deletion, mirroring
     // CommentRepository::delete_by_ticket. Called from
-    // TicketService::delete_ticket so an insight (or a chat thread) can't
-    // outlive the ticket it describes.
+    // TicketService::delete_ticket so an insight (or a user's conversations)
+    // can't outlive the ticket it describes. chat_messages/conversations are
+    // both filtered by group_id+ticket_id directly (not by looking up
+    // conversation ids first) so a conversation belonging to a deleted user
+    // still gets cleaned up here.
     pub async fn delete_by_ticket(
         &self,
         group_id: ObjectId,
@@ -151,15 +156,20 @@ impl AiRepository {
             .delete_many(doc! { "group_id": group_id, "ticket_id": ticket_id })
             .await?
             .deleted_count;
-        Ok(insights_deleted + messages_deleted)
+        let conversations_deleted = self
+            .conversations
+            .delete_many(doc! { "group_id": group_id, "ticket_id": ticket_id })
+            .await?
+            .deleted_count;
+        Ok(insights_deleted + messages_deleted + conversations_deleted)
     }
 
     // Cascade target for group deletion, mirroring
     // CommentRepository::delete_by_group. Called from purge_group_data
-    // (group/service.rs). Returns the combined count across all three
-    // collections — insights, reports, and chat messages are different
-    // documents but the same cascade concern, so callers get one number
-    // rather than needing to track three.
+    // (group/service.rs). Returns the combined count across all four
+    // collections — insights, reports, chat messages, and conversations are
+    // different documents but the same cascade concern, so callers get one
+    // number rather than needing to track four.
     pub async fn delete_by_group(&self, group_id: ObjectId) -> Result<u64, AiRepoError> {
         let insights_deleted = self
             .insights
@@ -176,21 +186,111 @@ impl AiRepository {
             .delete_many(doc! { "group_id": group_id })
             .await?
             .deleted_count;
-        Ok(insights_deleted + reports_deleted + messages_deleted)
+        let conversations_deleted = self
+            .conversations
+            .delete_many(doc! { "group_id": group_id })
+            .await?
+            .deleted_count;
+        Ok(insights_deleted + reports_deleted + messages_deleted + conversations_deleted)
+    }
+
+    // Ownership isn't checked here — the service layer already fetched and
+    // verified the conversation before calling this, so this is a plain
+    // insert scoped by conversation_id/group_id/ticket_id.
+    pub async fn create_conversation(
+        &self,
+        group_id: ObjectId,
+        ticket_id: ObjectId,
+        user_id: ObjectId,
+    ) -> Result<AiConversation, AiRepoError> {
+        let now = BsonDateTime::now();
+        let conversation = AiConversation {
+            id: None,
+            group_id,
+            ticket_id,
+            user_id,
+            title: None,
+            created_at: now,
+            updated_at: now,
+        };
+        let result = self.conversations.insert_one(&conversation).await?;
+        let id = result
+            .inserted_id
+            .as_object_id()
+            .expect("insert_one always returns an ObjectId");
+        Ok(AiConversation {
+            id: Some(id),
+            ..conversation
+        })
+    }
+
+    // Filtered on user_id as well as group_id/ticket_id — ownership is
+    // enforced by this query itself, not a post-hoc check, since a
+    // conversation list is inherently "my conversations", not "the
+    // conversations on this ticket". Most-recently-active first.
+    pub async fn list_conversations(
+        &self,
+        group_id: ObjectId,
+        ticket_id: ObjectId,
+        user_id: ObjectId,
+    ) -> Result<Vec<AiConversation>, AiRepoError> {
+        let cursor = self
+            .conversations
+            .find(doc! { "group_id": group_id, "ticket_id": ticket_id, "user_id": user_id })
+            .sort(doc! { "updated_at": -1 })
+            .await?;
+        cursor.try_collect().await.map_err(Into::into)
+    }
+
+    // No ownership filter here — this is a single-document lookup by id; the
+    // caller (AiService) checks group_id/ticket_id/user_id against the
+    // returned conversation itself, the same "fetch then compare" shape as
+    // CommentService::delete_comment.
+    pub async fn find_conversation(
+        &self,
+        conversation_id: ObjectId,
+    ) -> Result<Option<AiConversation>, AiRepoError> {
+        Ok(self
+            .conversations
+            .find_one(doc! { "_id": conversation_id })
+            .await?)
+    }
+
+    // Bumps updated_at (drives list_conversations' sort) on every message,
+    // and fills in title only the first time — $currentDate/$set on a
+    // possibly-null field would overwrite a title on every message otherwise,
+    // so the "only if still None" guard lives in the query filter itself.
+    pub async fn touch_conversation(
+        &self,
+        conversation_id: ObjectId,
+        title_if_unset: &str,
+    ) -> Result<(), AiRepoError> {
+        self.conversations
+            .update_one(
+                doc! { "_id": conversation_id, "title": null },
+                doc! { "$set": { "title": title_if_unset } },
+            )
+            .await?;
+        self.conversations
+            .update_one(
+                doc! { "_id": conversation_id },
+                doc! { "$set": { "updated_at": BsonDateTime::now() } },
+            )
+            .await?;
+        Ok(())
     }
 
     // Oldest-first, same shape as CommentRepository::list_by_ticket — the
     // service takes the tail of this for the transcript it sends to Gemini
     // (see AiService::CHAT_HISTORY_LIMIT), and the frontend renders the whole
     // thing top-to-bottom as-is.
-    pub async fn list_chat_messages(
+    pub async fn list_conversation_messages(
         &self,
-        group_id: ObjectId,
-        ticket_id: ObjectId,
+        conversation_id: ObjectId,
     ) -> Result<Vec<ChatMessage>, AiRepoError> {
         let cursor = self
             .chat_messages
-            .find(doc! { "group_id": group_id, "ticket_id": ticket_id })
+            .find(doc! { "conversation_id": conversation_id })
             .sort(doc! { "created_at": 1 })
             .await?;
         cursor.try_collect().await.map_err(Into::into)
@@ -198,6 +298,7 @@ impl AiRepository {
 
     pub async fn insert_chat_message(
         &self,
+        conversation_id: ObjectId,
         group_id: ObjectId,
         ticket_id: ObjectId,
         role: ChatRole,
@@ -206,6 +307,7 @@ impl AiRepository {
     ) -> Result<ChatMessage, AiRepoError> {
         let message = ChatMessage {
             id: None,
+            conversation_id,
             group_id,
             ticket_id,
             role,
@@ -224,20 +326,25 @@ impl AiRepository {
         })
     }
 
-    // "New chat": unconditional hard delete of every message on this ticket's
-    // thread. There's only ever one ongoing conversation per ticket (no
-    // thread/conversation id to scope by), so clearing it is just emptying
-    // the whole collection for this (group_id, ticket_id) pair.
-    pub async fn clear_chat_messages(
+    // Deletes one conversation and its messages — unlike the old
+    // clear_chat_messages (which wiped every message on a ticket for
+    // everyone), this only ever touches a single conversation_id, already
+    // ownership-checked by the service layer before this is called.
+    pub async fn delete_conversation(
         &self,
-        group_id: ObjectId,
-        ticket_id: ObjectId,
+        conversation_id: ObjectId,
     ) -> Result<u64, AiRepoError> {
-        let result = self
+        let conversation_deleted = self
+            .conversations
+            .delete_one(doc! { "_id": conversation_id })
+            .await?
+            .deleted_count;
+        let messages_deleted = self
             .chat_messages
-            .delete_many(doc! { "group_id": group_id, "ticket_id": ticket_id })
-            .await?;
-        Ok(result.deleted_count)
+            .delete_many(doc! { "conversation_id": conversation_id })
+            .await?
+            .deleted_count;
+        Ok(conversation_deleted + messages_deleted)
     }
 
     // Counts this user's own chat messages sent since `since`, across every

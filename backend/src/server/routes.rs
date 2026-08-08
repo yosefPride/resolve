@@ -79,9 +79,26 @@ pub fn configure(config: &mut web::ServiceConfig) {
                     web::scope("/groups/{id}/tickets/{ticket_id}")
                         .route("/summarize", web::post().to(ai_handlers::summarize_ticket))
                         .route("/analyze", web::post().to(ai_handlers::analyze_ticket))
-                        .route("/chat", web::post().to(ai_handlers::send_chat_message))
-                        .route("/chat", web::get().to(ai_handlers::list_chat_messages))
-                        .route("/chat", web::delete().to(ai_handlers::clear_chat)),
+                        .route(
+                            "/conversations",
+                            web::post().to(ai_handlers::create_conversation),
+                        )
+                        .route(
+                            "/conversations",
+                            web::get().to(ai_handlers::list_conversations),
+                        )
+                        .route(
+                            "/conversations/{conversation_id}/messages",
+                            web::post().to(ai_handlers::send_conversation_message),
+                        )
+                        .route(
+                            "/conversations/{conversation_id}/messages",
+                            web::get().to(ai_handlers::list_conversation_messages),
+                        )
+                        .route(
+                            "/conversations/{conversation_id}",
+                            web::delete().to(ai_handlers::delete_conversation),
+                        ),
                 )
                 .route(
                     "/groups/{id}/report",

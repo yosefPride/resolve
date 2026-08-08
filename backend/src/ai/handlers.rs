@@ -73,50 +73,92 @@ pub async fn generate_group_report(
     Ok(HttpResponse::Ok().json(report))
 }
 
-pub async fn send_chat_message(
+pub async fn create_conversation(
     scoped: GroupScoped,
     state: web::Data<AppState>,
     path: web::Path<(String, String)>,
-    body: web::Json<SendChatMessageRequest>,
 ) -> Result<HttpResponse, ApiError> {
     let (_, ticket_id) = path.into_inner();
     let ticket_id = parse_id(&ticket_id)?;
+
+    let service = AiService::new(&state.db, &state.config)?;
+    let conversation = service
+        .create_conversation(scoped.user_id, scoped.group_id, ticket_id)
+        .await?;
+    Ok(HttpResponse::Created().json(conversation))
+}
+
+pub async fn list_conversations(
+    scoped: GroupScoped,
+    state: web::Data<AppState>,
+    path: web::Path<(String, String)>,
+) -> Result<HttpResponse, ApiError> {
+    let (_, ticket_id) = path.into_inner();
+    let ticket_id = parse_id(&ticket_id)?;
+
+    let service = AiService::new(&state.db, &state.config)?;
+    let conversations = service
+        .list_conversations(scoped.user_id, scoped.group_id, ticket_id)
+        .await?;
+    Ok(HttpResponse::Ok().json(conversations))
+}
+
+// GroupScoped only consumes the {id} segment, so the conversation_id segment
+// (unlike ticket_id above) is a real third path element here, not something
+// GroupScoped already resolved.
+pub async fn send_conversation_message(
+    scoped: GroupScoped,
+    state: web::Data<AppState>,
+    path: web::Path<(String, String, String)>,
+    body: web::Json<SendChatMessageRequest>,
+) -> Result<HttpResponse, ApiError> {
+    let (_, ticket_id, conversation_id) = path.into_inner();
+    let ticket_id = parse_id(&ticket_id)?;
+    let conversation_id = parse_id(&conversation_id)?;
     let input = body.into_inner();
     validate_message(&input.message)?;
 
     let service = AiService::new(&state.db, &state.config)?;
     let result = service
-        .send_chat_message(scoped.user_id, scoped.group_id, ticket_id, input.message)
+        .send_conversation_message(
+            scoped.user_id,
+            scoped.group_id,
+            ticket_id,
+            conversation_id,
+            input.message,
+        )
         .await?;
     Ok(HttpResponse::Created().json(result))
 }
 
-pub async fn list_chat_messages(
+pub async fn list_conversation_messages(
     scoped: GroupScoped,
     state: web::Data<AppState>,
-    path: web::Path<(String, String)>,
+    path: web::Path<(String, String, String)>,
 ) -> Result<HttpResponse, ApiError> {
-    let (_, ticket_id) = path.into_inner();
+    let (_, ticket_id, conversation_id) = path.into_inner();
     let ticket_id = parse_id(&ticket_id)?;
+    let conversation_id = parse_id(&conversation_id)?;
 
     let service = AiService::new(&state.db, &state.config)?;
     let messages = service
-        .list_chat_messages(scoped.user_id, scoped.group_id, ticket_id)
+        .list_conversation_messages(scoped.user_id, scoped.group_id, ticket_id, conversation_id)
         .await?;
     Ok(HttpResponse::Ok().json(messages))
 }
 
-pub async fn clear_chat(
+pub async fn delete_conversation(
     scoped: GroupScoped,
     state: web::Data<AppState>,
-    path: web::Path<(String, String)>,
+    path: web::Path<(String, String, String)>,
 ) -> Result<HttpResponse, ApiError> {
-    let (_, ticket_id) = path.into_inner();
+    let (_, ticket_id, conversation_id) = path.into_inner();
     let ticket_id = parse_id(&ticket_id)?;
+    let conversation_id = parse_id(&conversation_id)?;
 
     let service = AiService::new(&state.db, &state.config)?;
     service
-        .clear_chat(scoped.user_id, scoped.group_id, ticket_id)
+        .delete_conversation(scoped.user_id, scoped.group_id, ticket_id, conversation_id)
         .await?;
     Ok(HttpResponse::NoContent().finish())
 }

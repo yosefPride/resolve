@@ -143,18 +143,51 @@ pub enum ChatRole {
     Assistant,
 }
 
+// A private, per-user conversation on a ticket — the owner (user_id) is fixed
+// at creation and is the only caller who may ever read or delete it (see
+// AiService's inlined ownership check; there's no owner-or-group-admin
+// fallback here, unlike comment::service::delete_comment). title starts None
+// and is filled in once, from the first message, by AiRepository::
+// touch_conversation — no extra Gemini call just to name a conversation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiConversation {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub group_id: ObjectId,
+    pub ticket_id: ObjectId,
+    pub user_id: ObjectId,
+    pub title: Option<String>,
+    pub created_at: BsonDateTime,
+    pub updated_at: BsonDateTime,
+}
+
+// No group_id/ticket_id/user_id: the caller already knows those from the URL
+// and is always the owner, so echoing them back would be redundant.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiConversationResponse {
+    pub id: String,
+    pub title: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 // One document per message, unlike AiTicketInsight's single upserted-in-place
 // doc — a conversation is inherently a sequence, not a single latest value.
-// Structurally close to comment::models::Comment (same group_id/ticket_id
-// scoping, same insert-only, oldest-first list shape) rather than anything
-// else in this module. user_id is None for an assistant message and Some for
-// a user message — see AiRepository::count_recent_user_messages, which
-// filters on both role and user_id being present to count one user's own
-// messages for the rate limit.
+// Structurally close to comment::models::Comment (same insert-only,
+// oldest-first list shape) rather than anything else in this module.
+// user_id is None for an assistant message and Some for a user message — see
+// AiRepository::count_recent_user_messages, which filters on both role and
+// user_id being present to count one user's own messages for the rate limit
+// (that check is deliberately global per user, not scoped to conversation_id
+// — see the CHAT_RATE_LIMIT comment in ai::service). group_id/ticket_id stay
+// on the message (not just conversation_id) because AiRepository::
+// delete_by_ticket/delete_by_group cascade-delete messages by those fields
+// directly, without an extra lookup through conversations first.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
     pub id: Option<ObjectId>,
+    pub conversation_id: ObjectId,
     pub group_id: ObjectId,
     pub ticket_id: ObjectId,
     pub role: ChatRole,
@@ -170,9 +203,9 @@ pub struct SendChatMessageRequest {
 
 // user_name is enriched the same way CommentResponse's is (UserService
 // lookup) — None for an assistant message, same as user_id on the underlying
-// ChatMessage. The ticket's chat is a shared, group-visible thread like
-// comments, not a private per-user conversation, so who asked matters when
-// more than one member has used it.
+// ChatMessage. Even though a conversation is private to one user, user_name
+// is kept (rather than dropped as redundant) so the response shape doesn't
+// need to fork between "my own message" and "the assistant's" beyond role.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessageResponse {
     pub id: String,
