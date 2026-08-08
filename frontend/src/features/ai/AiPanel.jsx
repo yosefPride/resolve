@@ -1,16 +1,52 @@
 import { Maximize2, Send, SquarePen } from 'lucide-react';
 import brandMark from '../../assets/brand-mark.svg';
+import Avatar from '../../components/ui/Avatar';
 import Input from '../../components/ui/Input';
-import { useTicketAnalysis, useTicketSummary } from '../../hooks/useAI';
+import { useChatMessages, useTicketAnalysis, useTicketSummary } from '../../hooks/useAI';
 import { errorMessage } from '../../utils/errors';
+import { formatDateTime, formatRelativeTime } from '../../utils/format';
 import AiInsightCard from './AiInsightCard';
+
+// Flat, oldest-first list like CommentList — no left/right split by
+// "ownership", since the thread is shared across the group and who asked
+// matters as much for a teammate's message as for your own. The assistant
+// gets the brand mark in place of an Avatar and a tinted bubble so it reads
+// as distinct from any group member at a glance.
+function ChatMessageBubble({ message }) {
+  const isAssistant = message.role === 'assistant';
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="flex items-center gap-2 text-xs text-slate-500">
+        {isAssistant ? (
+          <img src={brandMark} alt="" className="h-5 w-5 opacity-70" />
+        ) : (
+          <Avatar name={message.user_name} seed={message.user_id} size="sm" />
+        )}
+        <span>
+          {isAssistant ? 'Assistant' : message.user_name} ·{' '}
+          <span title={formatDateTime(message.created_at)}>
+            {formatRelativeTime(message.created_at)}
+          </span>
+        </span>
+      </p>
+      <p
+        className={`whitespace-pre-wrap break-words rounded-lg px-3 py-2 text-xs leading-relaxed ${
+          isAssistant ? 'bg-black/30 text-slate-300' : 'bg-sky-500/10 text-slate-200'
+        }`}
+      >
+        {message.content}
+      </p>
+    </div>
+  );
+}
 
 const PILL =
   'rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60';
 
-// Chatbot-shaped rail for the issue detail page. Summarize/Analyze are wired
-// to the AI endpoints (docs/implementation/backend/08-ai.md); chat
-// (input/Send/New chat) has no backend endpoint yet and stays disabled.
+// Chatbot-shaped rail for the issue detail page. Summarize/Analyze/chat
+// history are wired to the AI endpoints (docs/implementation/backend/08-ai.md);
+// sending a message and starting a new chat aren't yet — the input, Send, and
+// New chat controls stay disabled until those stages land.
 // Fixed height (h-132 = 33rem: the gap-4 plus the h-128 Details/Comments
 // panel in TicketDetail, so the rail bottom lines up with that panel's
 // bottom) rather than flex-1 stretch-to-sibling: a long summary or analysis
@@ -19,10 +55,14 @@ const PILL =
 // exists as a stretch target at lg+ anyway — there's no sibling to stretch
 // against once the layout stacks on mobile).
 export default function AiPanel({ ticket, groupId }) {
+  const chatQuery = useChatMessages(groupId, ticket.id);
   const summaryQuery = useTicketSummary(groupId, ticket.id);
   const analysisQuery = useTicketAnalysis(groupId, ticket.id);
 
+  const messages = chatQuery.data ?? [];
+
   const hasActivity =
+    messages.length > 0 ||
     summaryQuery.data ||
     summaryQuery.error ||
     summaryQuery.isFetching ||
@@ -60,6 +100,10 @@ export default function AiPanel({ ticket, groupId }) {
 
         {hasActivity && (
           <div className="flex w-full flex-col gap-3 text-left">
+            {messages.map((message) => (
+              <ChatMessageBubble key={message.id} message={message} />
+            ))}
+
             {(summaryQuery.data || summaryQuery.error || summaryQuery.isFetching) && (
               <AiInsightCard
                 title="Summary"
