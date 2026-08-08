@@ -213,7 +213,10 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
 
         <aside className="flex min-h-0 flex-col gap-6">
           <TicketMeta ticket={ticket} teamName={teamName} groupId={groupId} isAdmin={isAdmin} />
-          <AiPanel ticket={ticket} groupId={groupId} />
+          {/* Keyed on ticket.id so AiPanel fully remounts on ticket-to-ticket
+              navigation — it resets its own activeConversationId selection
+              state that way instead of needing an effect to do it. */}
+          <AiPanel key={ticket.id} ticket={ticket} groupId={groupId} />
         </aside>
       </div>
 

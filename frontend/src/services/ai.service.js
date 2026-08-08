@@ -18,20 +18,41 @@ export function generateGroupReport(groupId) {
   return api.post(`/ai/groups/${groupId}/report`).then((res) => res.data);
 }
 
-// Oldest-first, full thread — like listComments, no pagination.
-export function listChatMessages(groupId, ticketId) {
-  return api.get(`/ai/groups/${groupId}/tickets/${ticketId}/chat`).then((res) => res.data);
+// AI chat is now private, per-user conversations (a ticket can have many),
+// not a single group-shared thread — these replace the old listChatMessages/
+// sendChatMessage/clearChat trio.
+
+export function createConversation(groupId, ticketId) {
+  return api
+    .post(`/ai/groups/${groupId}/tickets/${ticketId}/conversations`)
+    .then((res) => res.data);
+}
+
+// Most-recently-active first — the backend already sorts by updated_at desc.
+export function listConversations(groupId, ticketId) {
+  return api.get(`/ai/groups/${groupId}/tickets/${ticketId}/conversations`).then((res) => res.data);
+}
+
+// Oldest-first, full conversation — like listComments, no pagination.
+export function listConversationMessages(groupId, ticketId, conversationId) {
+  return api
+    .get(`/ai/groups/${groupId}/tickets/${ticketId}/conversations/${conversationId}/messages`)
+    .then((res) => res.data);
 }
 
 // Returns { user_message, assistant_message } (both persisted, with real ids
 // and timestamps) rather than just the assistant reply, so the caller never
 // has to fabricate the user's own message to render it immediately.
-export function sendChatMessage(groupId, ticketId, message) {
+export function sendConversationMessage(groupId, ticketId, conversationId, message) {
   return api
-    .post(`/ai/groups/${groupId}/tickets/${ticketId}/chat`, { message })
+    .post(`/ai/groups/${groupId}/tickets/${ticketId}/conversations/${conversationId}/messages`, {
+      message,
+    })
     .then((res) => res.data);
 }
 
-export function clearChat(groupId, ticketId) {
-  return api.delete(`/ai/groups/${groupId}/tickets/${ticketId}/chat`).then((res) => res.data);
+export function deleteConversation(groupId, ticketId, conversationId) {
+  return api
+    .delete(`/ai/groups/${groupId}/tickets/${ticketId}/conversations/${conversationId}`)
+    .then((res) => res.data);
 }

@@ -1,5 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { Maximize2, Minimize2, Send, SquarePen } from 'lucide-react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { ChevronDown, Maximize2, Minimize2, Send, SquarePen, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import brandMark from '../../assets/brand-mark.svg';
 import Avatar from '../../components/ui/Avatar';
@@ -7,9 +8,11 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
 import {
-  useChatMessages,
-  useClearChat,
-  useSendChatMessage,
+  useConversationMessages,
+  useConversations,
+  useCreateConversation,
+  useDeleteConversation,
+  useSendConversationMessage,
   useTicketAnalysis,
   useTicketSummary,
 } from '../../hooks/useAI';
@@ -23,10 +26,10 @@ import AiInsightCard from './AiInsightCard';
 const MAX_MESSAGE_LEN = 2000;
 
 // Flat, oldest-first list like CommentList — no left/right split by
-// "ownership", since the thread is shared across the group and who asked
-// matters as much for a teammate's message as for your own. The assistant
-// gets the brand mark in place of an Avatar and a tinted bubble so it reads
-// as distinct from any group member at a glance.
+// "ownership": a conversation is private to one user, so every user message
+// in it is the same person's, and only role (user vs. assistant) needs to
+// read visually distinct. The assistant gets the brand mark in place of an
+// Avatar and a tinted bubble so it reads as distinct at a glance.
 function ChatMessageBubble({ message }) {
   const isAssistant = message.role === 'assistant';
   return (
@@ -58,37 +61,117 @@ function ChatMessageBubble({ message }) {
 const PILL =
   'rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60';
 
+// Dropdown trigger + list for switching between the caller's own conversations
+// on this ticket. Each row's delete button is a plain sibling button next to
+// the DropdownMenu.Item, not nested inside it — nesting an interactive
+// element inside a Radix menu item means fighting its own click/keyboard
+// selection handling; keeping the Item to just the label sidesteps that
+// entirely.
+function ConversationSwitcher({
+  conversations,
+  activeConversationId,
+  onSelectConversation,
+  onRequestDelete,
+}) {
+  const activeConversation = conversations.find((c) => c.id === activeConversationId);
+
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger className="flex min-w-0 items-center gap-1 text-sm font-semibold text-slate-300 outline-none hover:text-white">
+        <span className="truncate">{activeConversation?.title || 'New chat'}</span>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+      </DropdownMenu.Trigger>
+
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="start"
+          sideOffset={8}
+          className="z-50 max-h-80 w-64 overflow-y-auto rounded-lg border border-white/10 bg-neutral-800 py-1 shadow-2xl shadow-black/50"
+        >
+          {conversations.length === 0 && (
+            <p className="px-4 py-3 text-xs text-slate-500">No conversations yet.</p>
+          )}
+
+          {conversations.map((conversation) => (
+            <div key={conversation.id} className="flex items-center gap-1 pr-1 pl-1">
+              <DropdownMenu.Item
+                onSelect={() => onSelectConversation(conversation.id)}
+                className={`flex-1 cursor-pointer truncate rounded px-3 py-2 text-sm outline-none transition-colors data-highlighted:bg-white/10 ${
+                  conversation.id === activeConversationId ? 'text-white' : 'text-slate-300'
+                }`}
+              >
+                {conversation.title || 'New chat'}
+              </DropdownMenu.Item>
+              <button
+                type="button"
+                onClick={() => onRequestDelete(conversation.id)}
+                aria-label="Delete conversation"
+                title="Delete conversation"
+                className="shrink-0 rounded p-1.5 text-slate-500 transition-colors hover:bg-white/10 hover:text-red-400"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
+
 // The full chat UI, mounted independently by AiPanel for the inline rail and
-// (when expanded) again inside a Dialog. The two mounts don't share any local
-// state — each gets its own draft/confirm/error state — but useChatMessages,
-// useTicketSummary, and useTicketAnalysis key on the same [name, groupId,
-// ticketId] tuples, so React Query's cache keeps the actual data (messages,
-// summary, analysis) in sync between them for free: send from the expanded
-// view and the rail updates too, no prop-drilling required.
-function ChatPanel({ ticket, groupId, containerClassName, isExpandedView = false, onToggleExpand }) {
-  const chatQuery = useChatMessages(groupId, ticket.id);
+// (when expanded) again inside a Dialog. The two mounts don't share local
+// draft/error/confirm state, but activeConversationId is lifted to AiPanel
+// (see its doc comment) so both mounts always show the same conversation, and
+// useConversations/useConversationMessages/useTicketSummary/useTicketAnalysis
+// key on the same tuples, so React Query's cache keeps the actual data in
+// sync between them for free: send from the expanded view and the rail
+// updates too, no prop-drilling of the data itself required.
+function ChatPanel({
+  ticket,
+  groupId,
+  containerClassName,
+  isExpandedView = false,
+  onToggleExpand,
+  activeConversationId,
+  onSelectConversation,
+}) {
+  const conversationsQuery = useConversations(groupId, ticket.id);
+  const chatQuery = useConversationMessages(groupId, ticket.id, activeConversationId);
   const summaryQuery = useTicketSummary(groupId, ticket.id);
   const analysisQuery = useTicketAnalysis(groupId, ticket.id);
-  const sendMessage = useSendChatMessage(groupId, ticket.id);
-  const clearChat = useClearChat(groupId, ticket.id);
+  const createConversation = useCreateConversation(groupId, ticket.id);
+  const sendMessage = useSendConversationMessage(groupId, ticket.id);
+  const deleteConversation = useDeleteConversation(groupId, ticket.id);
 
   const [draft, setDraft] = useState('');
   const [sendError, setSendError] = useState('');
-  const [confirmingClear, setConfirmingClear] = useState(false);
-  const [clearError, setClearError] = useState('');
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState(null);
+  const [deleteError, setDeleteError] = useState('');
 
+  const conversations = conversationsQuery.data ?? [];
   const messages = chatQuery.data ?? [];
   // [...draft].length, not draft.length, to count Unicode code points like
   // the backend's .chars().count() — see CommentForm's contentLength.
   const isTooLong = [...draft].length > MAX_MESSAGE_LEN;
   const canSend = draft.trim() !== '' && !isTooLong && !sendMessage.isPending;
 
+  // No active conversation yet (brand-new ticket, or nothing selected) isn't
+  // a blocked state — sending creates one first, then sends into it, so the
+  // composer stays enabled exactly like it already was before conversations
+  // existed at all.
   async function handleSend(event) {
     event.preventDefault();
     if (!canSend) return;
     setSendError('');
     try {
-      await sendMessage.mutateAsync(draft.trim());
+      let conversationId = activeConversationId;
+      if (!conversationId) {
+        const created = await createConversation.mutateAsync();
+        conversationId = created.id;
+        onSelectConversation(conversationId);
+      }
+      await sendMessage.mutateAsync({ conversationId, message: draft.trim() });
       setDraft('');
     } catch (err) {
       // No special-casing for 429: ApiError::RateLimited's message ("chat
@@ -99,20 +182,38 @@ function ChatPanel({ ticket, groupId, containerClassName, isExpandedView = false
     }
   }
 
-  async function handleClearChat() {
-    setClearError('');
+  // Unlike the old single-shared-thread's "New chat" (which destructively
+  // wiped the thread and needed a confirm modal), creating a conversation
+  // adds a new one alongside any existing ones — nothing to confirm.
+  async function handleNewChat() {
+    setSendError('');
     try {
-      await clearChat.mutateAsync();
-      setConfirmingClear(false);
+      const created = await createConversation.mutateAsync();
+      onSelectConversation(created.id);
     } catch (err) {
-      setClearError(errorMessage(err, "Couldn't start a new chat."));
+      setSendError(errorMessage(err, "Couldn't start a new chat."));
     }
   }
 
-  // isLoading (not isFetching): true only for the first fetch of a ticket that
-  // has no cached data yet, not for the background refetch that follows
-  // sending a message or clearing the chat — those keep showing the existing
-  // list until the new one lands, same as any other query-backed list here.
+  async function handleDeleteConversation() {
+    setDeleteError('');
+    try {
+      await deleteConversation.mutateAsync(confirmingDeleteId);
+      // Deleting the active conversation falls back to the empty state
+      // rather than guessing which other conversation the user meant next.
+      if (confirmingDeleteId === activeConversationId) {
+        onSelectConversation(null);
+      }
+      setConfirmingDeleteId(null);
+    } catch (err) {
+      setDeleteError(errorMessage(err, "Couldn't delete that conversation."));
+    }
+  }
+
+  // isLoading (not isFetching): true only for the first fetch of a
+  // conversation that has no cached data yet, not for the background refetch
+  // that follows sending a message — that keeps showing the existing list
+  // until the new one lands, same as any other query-backed list here.
   const isChatLoading = chatQuery.isLoading;
 
   const hasActivity =
@@ -127,8 +228,13 @@ function ChatPanel({ ticket, groupId, containerClassName, isExpandedView = false
 
   return (
     <div className={containerClassName}>
-      <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-        <span className="text-sm font-semibold text-slate-300">Chats</span>
+      <div className="flex items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
+        <ConversationSwitcher
+          conversations={conversations}
+          activeConversationId={activeConversationId}
+          onSelectConversation={onSelectConversation}
+          onRequestDelete={setConfirmingDeleteId}
+        />
         <div className="flex items-center gap-1">
           <button
             type="button"
@@ -141,8 +247,8 @@ function ChatPanel({ ticket, groupId, containerClassName, isExpandedView = false
           </button>
           <button
             type="button"
-            disabled={messages.length === 0 || clearChat.isPending}
-            onClick={() => setConfirmingClear(true)}
+            disabled={createConversation.isPending}
+            onClick={handleNewChat}
             aria-label="New chat"
             title="Start a new chat"
             className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
@@ -254,7 +360,7 @@ function ChatPanel({ ticket, groupId, containerClassName, isExpandedView = false
           <Input
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            disabled={sendMessage.isPending}
+            disabled={sendMessage.isPending || createConversation.isPending}
             placeholder="Ask about this issue…"
             className="flex-1 text-sm"
           />
@@ -270,32 +376,31 @@ function ChatPanel({ ticket, groupId, containerClassName, isExpandedView = false
       </form>
 
       <Modal
-        isOpen={confirmingClear}
+        isOpen={confirmingDeleteId !== null}
         onClose={() => {
-          setConfirmingClear(false);
-          setClearError('');
+          setConfirmingDeleteId(null);
+          setDeleteError('');
         }}
-        title="Start a new chat"
+        title="Delete conversation"
       >
         <p className="text-sm text-slate-300">
-          This clears the chat history for this issue for everyone in the group. This cannot be
-          undone.
+          This permanently deletes this conversation and its messages. This cannot be undone.
         </p>
 
-        {clearError && <p className="mt-3 text-sm text-red-500">{clearError}</p>}
+        {deleteError && <p className="mt-3 text-sm text-red-500">{deleteError}</p>}
 
         <div className="mt-6 flex justify-end gap-3">
           <Button
             variant="ghost"
             onClick={() => {
-              setConfirmingClear(false);
-              setClearError('');
+              setConfirmingDeleteId(null);
+              setDeleteError('');
             }}
           >
             Cancel
           </Button>
-          <Button variant="danger" disabled={clearChat.isPending} onClick={handleClearChat}>
-            {clearChat.isPending ? 'Clearing…' : 'Start new chat'}
+          <Button variant="danger" disabled={deleteConversation.isPending} onClick={handleDeleteConversation}>
+            {deleteConversation.isPending ? 'Deleting…' : 'Delete conversation'}
           </Button>
         </div>
       </Modal>
@@ -320,6 +425,26 @@ function ChatPanel({ ticket, groupId, containerClassName, isExpandedView = false
 export default function AiPanel({ ticket, groupId }) {
   const [isExpanded, setIsExpanded] = useState(false);
 
+  // activeConversationId is lifted here (rather than living inside ChatPanel)
+  // because it's "which conversation am I looking at", not in-progress input
+  // — a user who switches to an older conversation in the rail should see
+  // that same conversation on Expand, not silently jump back to most-recent.
+  // Everything else (draft text, send/delete errors, the delete-confirm
+  // modal) stays local to each ChatPanel mount, same as before.
+  //
+  // selection has three states, not two: undefined means "no explicit choice
+  // yet — auto-follow the most-recently-active conversation" (derived below,
+  // purely at render time, rather than synced via an effect); null means
+  // "explicitly no conversation" (e.g. right after deleting the active one —
+  // it should NOT immediately re-derive to the next-most-recent); an id means
+  // "the user picked this one". TicketDetail keys <AiPanel> on ticket.id, so
+  // navigating to a different ticket remounts this component and resets
+  // selection to undefined — no ticket-change effect needed either.
+  const [selection, setSelection] = useState(undefined);
+  const conversationsQuery = useConversations(groupId, ticket.id);
+  const activeConversationId =
+    selection === undefined ? (conversationsQuery.data?.[0]?.id ?? null) : selection;
+
   return (
     <>
       <ChatPanel
@@ -327,6 +452,8 @@ export default function AiPanel({ ticket, groupId }) {
         groupId={groupId}
         containerClassName="flex h-132 flex-col rounded-xl border border-white/10 bg-white/5"
         onToggleExpand={() => setIsExpanded(true)}
+        activeConversationId={activeConversationId}
+        onSelectConversation={setSelection}
       />
 
       <Dialog.Root open={isExpanded} onOpenChange={setIsExpanded}>
@@ -343,6 +470,8 @@ export default function AiPanel({ ticket, groupId }) {
               containerClassName="flex h-full flex-col"
               isExpandedView
               onToggleExpand={() => setIsExpanded(false)}
+              activeConversationId={activeConversationId}
+              onSelectConversation={setSelection}
             />
           </Dialog.Content>
         </Dialog.Portal>
