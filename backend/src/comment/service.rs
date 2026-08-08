@@ -92,6 +92,7 @@ impl CommentService {
                 old_value: None,
                 new_value: None,
                 comment_id: comment.id,
+                link_kind: None,
             })
             .await?;
         self.enrich_comment(comment).await
@@ -160,6 +161,7 @@ impl CommentService {
                 old_value: None,
                 new_value: None,
                 comment_id: Some(comment_id),
+                link_kind: None,
             })
             .await?;
         Ok(())

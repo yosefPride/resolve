@@ -69,6 +69,7 @@ impl ActivityService {
             old_value: entry.old_value,
             new_value: entry.new_value,
             comment_id: entry.comment_id.map(|id| id.to_hex()),
+            link_kind: entry.link_kind,
             occurred_at: DateTime::from_timestamp_millis(entry.occurred_at.timestamp_millis())
                 .unwrap_or_default(),
         })

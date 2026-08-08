@@ -11,6 +11,7 @@ use crate::comment::repository::CommentRepository;
 use crate::errors::ApiError;
 use crate::link::repository::LinkRepository;
 use crate::rbac::service::RbacService;
+use crate::reference::repository::ReferenceRepository;
 use crate::ticket::models::{
     CreateTicketInput, CreateTicketRequest, ListTicketsQuery, Ticket, TicketListResponse,
     TicketPriority, TicketResponse, TicketStatus, UpdateTicketRequest,
@@ -28,6 +29,7 @@ pub struct TicketService {
     ai_repo: AiRepository,
     activity_repo: ActivityRepository,
     link_repo: LinkRepository,
+    reference_repo: ReferenceRepository,
     user_service: UserService,
     rbac: RbacService,
 }
@@ -40,6 +42,7 @@ impl TicketService {
             ai_repo: AiRepository::new(db),
             activity_repo: ActivityRepository::new(db),
             link_repo: LinkRepository::new(db),
+            reference_repo: ReferenceRepository::new(db),
             user_service: UserService::new(db),
             rbac: RbacService::new(db),
         }
@@ -74,6 +77,7 @@ impl TicketService {
                 old_value: None,
                 new_value: None,
                 comment_id: None,
+                link_kind: None,
             })
             .await?;
         self.enrich_ticket(ticket).await
@@ -233,6 +237,7 @@ impl TicketService {
                     old_value,
                     new_value,
                     comment_id: None,
+                    link_kind: None,
                 })
                 .await?;
         }
@@ -266,6 +271,9 @@ impl TicketService {
         // Removes links on either side, so a deleted ticket never leaves a
         // dangling relation on the other end (LinkRepository::delete_by_ticket).
         self.link_repo.delete_by_ticket(group_id, ticket_id).await?;
+        self.reference_repo
+            .delete_by_ticket(group_id, ticket_id)
+            .await?;
         self.repo.delete_ticket(group_id, ticket_id).await?;
         Ok(())
     }

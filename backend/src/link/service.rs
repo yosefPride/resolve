@@ -1,7 +1,7 @@
 use chrono::DateTime;
 use mongodb::{Database, bson::oid::ObjectId};
 
-use crate::activity::models::{ActivityEventType, CreateActivityInput};
+use crate::activity::models::{ActivityEventType, CreateActivityInput, LinkKind};
 use crate::activity::repository::ActivityRepository;
 use crate::errors::ApiError;
 use crate::link::models::{
@@ -219,6 +219,7 @@ impl LinkService {
                 old_value: source_old,
                 new_value: source_new,
                 comment_id: None,
+                link_kind: Some(LinkKind::Relation),
             })
             .await?;
         self.activity_repo
@@ -230,6 +231,7 @@ impl LinkService {
                 old_value: target_old,
                 new_value: target_new,
                 comment_id: None,
+                link_kind: Some(LinkKind::Relation),
             })
             .await?;
         Ok(())

@@ -20,6 +20,7 @@ use crate::group::repository::GroupRepository;
 use crate::group::service::purge_group_data;
 use crate::link::repository::LinkRepository;
 use crate::rbac::service::RbacService;
+use crate::reference::repository::ReferenceRepository;
 use crate::ticket::repository::TicketRepository;
 use crate::user::models::UserResponse;
 use crate::user::service::UserService;
@@ -46,6 +47,8 @@ pub struct AdminService {
     activity_repo: ActivityRepository,
     // Held only to feed purge_group_data; admin has no other link concern.
     link_repo: LinkRepository,
+    // Held only to feed purge_group_data; admin has no other reference concern.
+    reference_repo: ReferenceRepository,
     user_service: UserService,
     admin_repo: AdminRepository,
     rbac: RbacService,
@@ -60,6 +63,7 @@ impl AdminService {
             ai_repo: AiRepository::new(db),
             activity_repo: ActivityRepository::new(db),
             link_repo: LinkRepository::new(db),
+            reference_repo: ReferenceRepository::new(db),
             user_service: UserService::new(db),
             admin_repo: AdminRepository::new(db),
             rbac: RbacService::new(db),
@@ -184,6 +188,7 @@ impl AdminService {
                 &self.ai_repo,
                 &self.activity_repo,
                 &self.link_repo,
+                &self.reference_repo,
                 *group_id,
             )
             .await?;
@@ -271,6 +276,7 @@ impl AdminService {
             &self.ai_repo,
             &self.activity_repo,
             &self.link_repo,
+            &self.reference_repo,
             group_id,
         )
         .await?;

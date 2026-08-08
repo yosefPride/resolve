@@ -188,6 +188,17 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), Error> {
         )
         .await?;
 
+    // Serves ReferenceRepository::list_by_ticket and both cascade deletes
+    // (delete_by_ticket on the (group_id, ticket_id) prefix, delete_by_group
+    // on group_id alone).
+    db.collection::<Document>("ticket_references")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "ticket_id": 1 })
+                .build(),
+        )
+        .await?;
+
     // One insight document per ticket (AiRepository::upsert_summary /
     // upsert_analysis upsert against this pair), so it's unique as well as
     // the lookup path for find_insight.

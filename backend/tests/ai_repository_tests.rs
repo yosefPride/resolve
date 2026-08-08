@@ -3,6 +3,7 @@ use resolve::activity::repository::ActivityRepository;
 use resolve::ai::models::ChatRole;
 use resolve::ai::repository::AiRepository;
 use resolve::link::repository::LinkRepository;
+use resolve::reference::repository::ReferenceRepository;
 use resolve::comment::repository::CommentRepository;
 use resolve::group::models::{CreateGroupInput, Role};
 use resolve::group::repository::GroupRepository;
@@ -822,6 +823,7 @@ fn test_group_delete_cascades_to_ai_data() {
         let comment_repo = CommentRepository::new(&db);
         let activity_repo = ActivityRepository::new(&db);
         let link_repo = LinkRepository::new(&db);
+        let reference_repo = ReferenceRepository::new(&db);
 
         let owner_id = oid();
         let group = group_repo
@@ -883,6 +885,7 @@ fn test_group_delete_cascades_to_ai_data() {
             &ai_repo,
             &activity_repo,
             &link_repo,
+            &reference_repo,
             group_id,
         )
         .await

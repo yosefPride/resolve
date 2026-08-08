@@ -53,6 +53,7 @@ impl ActivityRepository {
             old_value: input.old_value,
             new_value: input.new_value,
             comment_id: input.comment_id,
+            link_kind: input.link_kind,
             occurred_at: BsonDateTime::now(),
         };
         let result = self.activity.insert_one(&entry).await?;

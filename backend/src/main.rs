@@ -9,6 +9,7 @@ mod errors;
 mod group;
 mod link;
 mod rbac;
+mod reference;
 mod server;
 mod state;
 mod ticket;
