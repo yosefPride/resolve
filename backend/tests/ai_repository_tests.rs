@@ -1,4 +1,5 @@
 use mongodb::bson::{DateTime as BsonDateTime, doc, oid::ObjectId};
+use resolve::ai::models::ChatRole;
 use resolve::ai::repository::AiRepository;
 use resolve::comment::repository::CommentRepository;
 use resolve::group::models::{CreateGroupInput, Role};
@@ -23,6 +24,14 @@ async fn setup() -> AiRepository {
         .drop()
         .await
         .expect("failed to drop ai_group_reports collection");
+    db.collection::<mongodb::bson::Document>("ai_chat_messages")
+        .drop()
+        .await
+        .expect("failed to drop ai_chat_messages collection");
+    db.collection::<mongodb::bson::Document>("ai_conversations")
+        .drop()
+        .await
+        .expect("failed to drop ai_conversations collection");
 
     AiRepository::new(&db)
 }
@@ -287,6 +296,349 @@ fn test_delete_by_group_clears_insights_and_reports() {
     });
 }
 
+// 9. create_conversation + list_conversations + find_conversation round-trip.
+#[test]
+fn test_create_list_find_conversation_round_trip() {
+    support::runtime().block_on(async {
+        let repo = setup().await;
+        let group_id = oid();
+        let ticket_id = oid();
+        let user_id = oid();
+
+        let created = repo
+            .create_conversation(group_id, ticket_id, user_id)
+            .await
+            .expect("create_conversation failed");
+        assert!(created.id.is_some());
+        assert_eq!(created.title, None);
+
+        let listed = repo
+            .list_conversations(group_id, ticket_id, user_id)
+            .await
+            .expect("list_conversations failed");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, created.id);
+
+        let found = repo
+            .find_conversation(created.id.unwrap())
+            .await
+            .expect("find_conversation failed")
+            .expect("conversation should exist");
+        assert_eq!(found.user_id, user_id);
+    });
+}
+
+// 10. list_conversations only returns conversations owned by that user, even
+// when other users have conversations on the same ticket.
+#[test]
+fn test_list_conversations_is_scoped_to_user() {
+    support::runtime().block_on(async {
+        let repo = setup().await;
+        let group_id = oid();
+        let ticket_id = oid();
+        let user_id = oid();
+        let other_user_id = oid();
+
+        repo.create_conversation(group_id, ticket_id, user_id)
+            .await
+            .expect("create_conversation failed");
+        repo.create_conversation(group_id, ticket_id, other_user_id)
+            .await
+            .expect("create_conversation failed");
+
+        let listed = repo
+            .list_conversations(group_id, ticket_id, user_id)
+            .await
+            .expect("list_conversations failed");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].user_id, user_id);
+    });
+}
+
+// 11. list_conversations sorts most-recently-active first — touch_conversation
+// bumps updated_at on the older one, which should then sort ahead.
+#[test]
+fn test_list_conversations_orders_most_recently_active_first() {
+    support::runtime().block_on(async {
+        let repo = setup().await;
+        let group_id = oid();
+        let ticket_id = oid();
+        let user_id = oid();
+
+        let older = repo
+            .create_conversation(group_id, ticket_id, user_id)
+            .await
+            .expect("create_conversation failed");
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        let newer = repo
+            .create_conversation(group_id, ticket_id, user_id)
+            .await
+            .expect("create_conversation failed");
+
+        // Touch the older one after the newer one was created, so it should
+        // now sort first.
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        repo.touch_conversation(older.id.unwrap(), "a title")
+            .await
+            .expect("touch_conversation failed");
+
+        let listed = repo
+            .list_conversations(group_id, ticket_id, user_id)
+            .await
+            .expect("list_conversations failed");
+        assert_eq!(listed[0].id, older.id);
+        assert_eq!(listed[1].id, newer.id);
+    });
+}
+
+// 12. touch_conversation sets the title only the first time — a second call
+// with a different title leaves the first one in place — and bumps
+// updated_at every time.
+#[test]
+fn test_touch_conversation_sets_title_once_and_always_bumps_updated_at() {
+    support::runtime().block_on(async {
+        let repo = setup().await;
+        let group_id = oid();
+        let ticket_id = oid();
+        let user_id = oid();
+        let created = repo
+            .create_conversation(group_id, ticket_id, user_id)
+            .await
+            .expect("create_conversation failed");
+        let conversation_id = created.id.unwrap();
+
+        repo.touch_conversation(conversation_id, "first title")
+            .await
+            .expect("first touch_conversation failed");
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        repo.touch_conversation(conversation_id, "second title")
+            .await
+            .expect("second touch_conversation failed");
+
+        let found = repo
+            .find_conversation(conversation_id)
+            .await
+            .expect("find_conversation failed")
+            .expect("conversation should exist");
+        assert_eq!(found.title, Some("first title".to_string()));
+        assert!(found.updated_at > created.updated_at);
+    });
+}
+
+// 13. insert_chat_message + list_conversation_messages round-trip,
+// oldest-first.
+#[test]
+fn test_insert_and_list_conversation_messages_oldest_first() {
+    support::runtime().block_on(async {
+        let repo = setup().await;
+        let group_id = oid();
+        let ticket_id = oid();
+        let user_id = oid();
+        let conversation_id = repo
+            .create_conversation(group_id, ticket_id, user_id)
+            .await
+            .expect("create_conversation failed")
+            .id
+            .unwrap();
+
+        repo.insert_chat_message(
+            conversation_id,
+            group_id,
+            ticket_id,
+            ChatRole::User,
+            Some(user_id),
+            "hi",
+        )
+        .await
+        .expect("insert_chat_message (user) failed");
+        // Mongo's Date type has millisecond resolution — a real gap is
+        // needed for the two messages to sort deterministically.
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        repo.insert_chat_message(
+            conversation_id,
+            group_id,
+            ticket_id,
+            ChatRole::Assistant,
+            None,
+            "hello",
+        )
+        .await
+        .expect("insert_chat_message (assistant) failed");
+
+        let messages = repo
+            .list_conversation_messages(conversation_id)
+            .await
+            .expect("list_conversation_messages failed");
+
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, ChatRole::User);
+        assert_eq!(messages[0].content, "hi");
+        assert_eq!(messages[0].user_id, Some(user_id));
+        assert_eq!(messages[1].role, ChatRole::Assistant);
+        assert_eq!(messages[1].content, "hello");
+        assert_eq!(messages[1].user_id, None);
+    });
+}
+
+// 14. Messages are isolated per conversation_id, same idea as the old
+// group_id/ticket_id scoping guarantee.
+#[test]
+fn test_list_conversation_messages_is_scoped_to_conversation() {
+    support::runtime().block_on(async {
+        let repo = setup().await;
+        let group_id = oid();
+        let ticket_id = oid();
+        let user_id = oid();
+        let conversation_id = repo
+            .create_conversation(group_id, ticket_id, user_id)
+            .await
+            .expect("create_conversation failed")
+            .id
+            .unwrap();
+
+        repo.insert_chat_message(
+            conversation_id,
+            group_id,
+            ticket_id,
+            ChatRole::User,
+            Some(oid()),
+            "hi",
+        )
+        .await
+        .expect("insert_chat_message failed");
+
+        assert!(
+            repo.list_conversation_messages(oid())
+                .await
+                .expect("list_conversation_messages failed")
+                .is_empty()
+        );
+    });
+}
+
+// 15. delete_conversation removes only the matching conversation and its own
+// messages, leaving a different conversation (even on the same ticket)
+// untouched.
+#[test]
+fn test_delete_conversation_removes_only_that_conversation() {
+    support::runtime().block_on(async {
+        let repo = setup().await;
+        let group_id = oid();
+        let ticket_id = oid();
+        let user_id = oid();
+        let to_delete = repo
+            .create_conversation(group_id, ticket_id, user_id)
+            .await
+            .expect("create_conversation failed")
+            .id
+            .unwrap();
+        let to_keep = repo
+            .create_conversation(group_id, ticket_id, user_id)
+            .await
+            .expect("create_conversation failed")
+            .id
+            .unwrap();
+
+        repo.insert_chat_message(to_delete, group_id, ticket_id, ChatRole::User, Some(oid()), "hi")
+            .await
+            .expect("insert_chat_message failed");
+        repo.insert_chat_message(to_keep, group_id, ticket_id, ChatRole::User, Some(oid()), "hi")
+            .await
+            .expect("insert_chat_message failed");
+
+        repo.delete_conversation(to_delete)
+            .await
+            .expect("delete_conversation failed");
+
+        assert!(
+            repo.find_conversation(to_delete)
+                .await
+                .expect("find_conversation failed")
+                .is_none()
+        );
+        assert!(
+            repo.list_conversation_messages(to_delete)
+                .await
+                .expect("list_conversation_messages failed")
+                .is_empty()
+        );
+        assert!(repo.find_conversation(to_keep).await.unwrap().is_some());
+        assert_eq!(
+            repo.list_conversation_messages(to_keep)
+                .await
+                .expect("list_conversation_messages failed")
+                .len(),
+            1
+        );
+    });
+}
+
+// 16. count_recent_user_messages only counts role: user messages by that
+// user within the window — an assistant message and a different user's
+// message are both excluded, and a message before `since` doesn't count.
+// Global per user, not scoped to a conversation_id.
+#[test]
+fn test_count_recent_user_messages_filters_role_user_and_window() {
+    support::runtime().block_on(async {
+        let repo = setup().await;
+        let group_id = oid();
+        let ticket_id = oid();
+        let user_id = oid();
+        let other_user_id = oid();
+        let conversation_id = repo
+            .create_conversation(group_id, ticket_id, user_id)
+            .await
+            .expect("create_conversation failed")
+            .id
+            .unwrap();
+
+        repo.insert_chat_message(
+            conversation_id,
+            group_id,
+            ticket_id,
+            ChatRole::User,
+            Some(user_id),
+            "1",
+        )
+        .await
+        .expect("insert_chat_message failed");
+        repo.insert_chat_message(
+            conversation_id,
+            group_id,
+            ticket_id,
+            ChatRole::Assistant,
+            None,
+            "reply",
+        )
+        .await
+        .expect("insert_chat_message failed");
+        repo.insert_chat_message(
+            conversation_id,
+            group_id,
+            ticket_id,
+            ChatRole::User,
+            Some(other_user_id),
+            "1",
+        )
+        .await
+        .expect("insert_chat_message failed");
+
+        let since_start_of_test = BsonDateTime::from_millis(0);
+        let count = repo
+            .count_recent_user_messages(user_id, since_start_of_test)
+            .await
+            .expect("count_recent_user_messages failed");
+        assert_eq!(count, 1);
+
+        let since_future = BsonDateTime::from_millis(BsonDateTime::now().timestamp_millis() + 60_000);
+        let count_after_window = repo
+            .count_recent_user_messages(user_id, since_future)
+            .await
+            .expect("count_recent_user_messages failed");
+        assert_eq!(count_after_window, 0);
+    });
+}
+
 // The tests below prove the cascade wiring itself (TicketService::
 // delete_ticket, purge_group_data) actually calls through to AiRepository —
 // distinct from the delete_by_ticket/delete_by_group tests above, which only
@@ -296,12 +648,13 @@ fn test_delete_by_group_clears_insights_and_reports() {
 // ai_repo.delete_by_ticket call from TicketService::delete_ticket) would be
 // caught.
 
-// 9. Deleting a ticket removes its AI insight.
+// 17. Deleting a ticket removes its AI insight, chat messages, and
+// conversations.
 #[test]
 fn test_ticket_delete_cascades_to_ai_insight() {
     support::runtime().block_on(async {
         let db = support::shared_client().await.database("resolve_test");
-        for collection in ["ai_ticket_insights", "ai_group_reports", "groups", "group_members", "tickets", "counters"] {
+        for collection in ["ai_ticket_insights", "ai_group_reports", "ai_chat_messages", "ai_conversations", "groups", "group_members", "tickets", "counters"] {
             db.collection::<mongodb::bson::Document>(collection)
                 .drop()
                 .await
@@ -351,6 +704,23 @@ fn test_ticket_delete_cascades_to_ai_insight() {
             .upsert_summary(group_id, ticket_id, "a summary", BsonDateTime::now())
             .await
             .expect("upsert_summary failed");
+        let conversation_id = ai_repo
+            .create_conversation(group_id, ticket_id, owner_id)
+            .await
+            .expect("create_conversation failed")
+            .id
+            .unwrap();
+        ai_repo
+            .insert_chat_message(
+                conversation_id,
+                group_id,
+                ticket_id,
+                ChatRole::User,
+                Some(owner_id),
+                "hi",
+            )
+            .await
+            .expect("insert_chat_message failed");
         assert!(
             ai_repo
                 .find_insight(group_id, ticket_id)
@@ -371,15 +741,30 @@ fn test_ticket_delete_cascades_to_ai_insight() {
                 .expect("find_insight failed")
                 .is_none()
         );
+        assert!(
+            ai_repo
+                .list_conversation_messages(conversation_id)
+                .await
+                .expect("list_conversation_messages failed")
+                .is_empty()
+        );
+        assert!(
+            ai_repo
+                .find_conversation(conversation_id)
+                .await
+                .expect("find_conversation failed")
+                .is_none()
+        );
     });
 }
 
-// 10. Deleting a group removes its AI insights and reports.
+// 18. Deleting a group removes its AI insights, reports, chat messages, and
+// conversations.
 #[test]
 fn test_group_delete_cascades_to_ai_data() {
     support::runtime().block_on(async {
         let db = support::shared_client().await.database("resolve_test");
-        for collection in ["ai_ticket_insights", "ai_group_reports", "groups", "group_members", "tickets", "counters"] {
+        for collection in ["ai_ticket_insights", "ai_group_reports", "ai_chat_messages", "ai_conversations", "groups", "group_members", "tickets", "counters"] {
             db.collection::<mongodb::bson::Document>(collection)
                 .drop()
                 .await
@@ -426,6 +811,23 @@ fn test_group_delete_cascades_to_ai_data() {
             .insert_report(group_id, doc! { "total_tickets": 1 }, owner_id)
             .await
             .expect("insert_report failed");
+        let conversation_id = ai_repo
+            .create_conversation(group_id, ticket_id, owner_id)
+            .await
+            .expect("create_conversation failed")
+            .id
+            .unwrap();
+        ai_repo
+            .insert_chat_message(
+                conversation_id,
+                group_id,
+                ticket_id,
+                ChatRole::User,
+                Some(owner_id),
+                "hi",
+            )
+            .await
+            .expect("insert_chat_message failed");
 
         purge_group_data(&group_repo, &ticket_repo, &comment_repo, &ai_repo, group_id)
             .await
@@ -436,6 +838,20 @@ fn test_group_delete_cascades_to_ai_data() {
                 .find_insight(group_id, ticket_id)
                 .await
                 .expect("find_insight failed")
+                .is_none()
+        );
+        assert!(
+            ai_repo
+                .list_conversation_messages(conversation_id)
+                .await
+                .expect("list_conversation_messages failed")
+                .is_empty()
+        );
+        assert!(
+            ai_repo
+                .find_conversation(conversation_id)
+                .await
+                .expect("find_conversation failed")
                 .is_none()
         );
         assert!(

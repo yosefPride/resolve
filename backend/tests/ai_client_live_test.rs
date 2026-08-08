@@ -8,7 +8,7 @@ use resolve::ai::client::{AiProvider, GeminiClient};
 
 #[test]
 #[ignore]
-fn summarize_and_analyze_hit_the_real_gemini_api() {
+fn all_ai_provider_methods_hit_the_real_gemini_api() {
     dotenvy::dotenv().ok();
     let api_key = std::env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY must be set");
     let client = GeminiClient::new(api_key);
@@ -43,5 +43,33 @@ fn summarize_and_analyze_hit_the_real_gemini_api() {
             .expect("narrate_report call failed");
         println!("narrative: {narrative}");
         assert!(!narrative.trim().is_empty());
+
+        let reply = client
+            .chat(
+                "Login button unresponsive",
+                "Clicking the login button on mobile Safari does nothing; no network request fires.",
+                "",
+                "Any quick workaround while this gets fixed?",
+            )
+            .await
+            .expect("chat call failed");
+        println!("chat reply: {reply}");
+        assert!(!reply.trim().is_empty());
+
+        // Confirms the scoping instruction actually steers the real model,
+        // not just that the prompt text contains the right words (see
+        // client.rs's chat_prompt tests for that half) — an off-topic
+        // question should get a decline, not an actual answer.
+        let off_topic_reply = client
+            .chat(
+                "Login button unresponsive",
+                "Clicking the login button on mobile Safari does nothing; no network request fires.",
+                "",
+                "What's the capital of France?",
+            )
+            .await
+            .expect("off-topic chat call failed");
+        println!("off-topic reply: {off_topic_reply}");
+        assert!(!off_topic_reply.to_lowercase().contains("paris"));
     });
 }

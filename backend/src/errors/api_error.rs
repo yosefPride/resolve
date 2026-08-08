@@ -17,6 +17,7 @@ pub enum ApiError {
     DuplicateEmail,
     Conflict(String),
     Validation(String),
+    RateLimited(String),
     Internal,
 }
 
@@ -41,6 +42,7 @@ impl ApiError {
             ApiError::DuplicateEmail => "duplicate_email",
             ApiError::Conflict(_) => "conflict",
             ApiError::Validation(_) => "validation_error",
+            ApiError::RateLimited(_) => "rate_limited",
             ApiError::Internal => "internal_error",
         }
     }
@@ -56,6 +58,7 @@ impl ApiError {
             ApiError::DuplicateEmail => "email already in use".to_string(),
             ApiError::Conflict(message) => message.clone(),
             ApiError::Validation(message) => message.clone(),
+            ApiError::RateLimited(message) => message.clone(),
             ApiError::Internal => "internal server error".to_string(),
         }
     }
@@ -79,6 +82,7 @@ impl ResponseError for ApiError {
             ApiError::DuplicateEmail => StatusCode::CONFLICT,
             ApiError::Conflict(_) => StatusCode::CONFLICT,
             ApiError::Validation(_) => StatusCode::BAD_REQUEST,
+            ApiError::RateLimited(_) => StatusCode::TOO_MANY_REQUESTS,
             ApiError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

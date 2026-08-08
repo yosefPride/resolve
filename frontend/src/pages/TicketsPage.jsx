@@ -62,16 +62,16 @@ export default function TicketsPage() {
 
   return (
     <section className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div className="relative">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="relative min-w-0">
           <button
             type="button"
             onClick={() => setIsSwitcherOpen((open) => !open)}
-            className="flex items-center gap-2 text-2xl font-bold text-white"
+            className="flex max-w-full items-center gap-2 text-2xl font-bold text-white"
           >
-            {currentGroup?.name ?? 'Select a team'}
+            <span className="truncate">{currentGroup?.name ?? 'Select a team'}</span>
             <ChevronDown
-              className={`h-5 w-5 transition-transform ${isSwitcherOpen ? 'rotate-180' : ''}`}
+              className={`h-5 w-5 shrink-0 transition-transform ${isSwitcherOpen ? 'rotate-180' : ''}`}
             />
           </button>
 
@@ -93,7 +93,7 @@ export default function TicketsPage() {
           )}
         </div>
 
-        <Button onClick={() => setIsCreating(true)}>
+        <Button onClick={() => setIsCreating(true)} className="shrink-0">
           <Plus className="mr-1 h-4 w-4" />
           New issue
         </Button>

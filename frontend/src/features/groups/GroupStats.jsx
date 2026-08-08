@@ -17,7 +17,7 @@ export default function GroupStats({ groupId, memberCount }) {
   const openTickets = status === 'success' && summary ? summary.open_ticket_count : '—';
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
       <StatTile icon={User} label="Members" value={memberCount} />
       <StatTile icon={Ticket} label="Open Issues" value={openTickets} />
       {/* No activity tracking in the schema yet — real once it exists. */}
