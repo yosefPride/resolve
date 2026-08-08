@@ -107,6 +107,12 @@ export default function AiPanel({ ticket, groupId }) {
     }
   }
 
+  // isLoading (not isFetching): true only for the first fetch of a ticket that
+  // has no cached data yet, not for the background refetch that follows
+  // sending a message or clearing the chat — those keep showing the existing
+  // list until the new one lands, same as any other query-backed list here.
+  const isChatLoading = chatQuery.isLoading;
+
   const hasActivity =
     messages.length > 0 ||
     summaryQuery.data ||
@@ -143,9 +149,18 @@ export default function AiPanel({ ticket, groupId }) {
       </div>
 
       <div className="flex flex-1 flex-col items-center justify-center gap-4 overflow-y-auto px-6 py-6 text-center">
-        {!hasActivity && <img src={brandMark} alt="" className="h-12 w-12 opacity-10" />}
+        {isChatLoading && <p className="text-xs text-slate-500">Loading chat…</p>}
 
-        {hasActivity && (
+        {!isChatLoading && !hasActivity && (
+          <>
+            <img src={brandMark} alt="" className="h-12 w-12 opacity-10" />
+            <p className="text-xs text-slate-500">
+              Ask about this issue, or try Summarize or Analyze below.
+            </p>
+          </>
+        )}
+
+        {!isChatLoading && hasActivity && (
           <div className="flex w-full flex-col gap-3 text-left">
             {messages.map((message) => (
               <ChatMessageBubble key={message.id} message={message} />
