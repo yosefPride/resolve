@@ -17,3 +17,21 @@ export function analyzeTicket(groupId, ticketId) {
 export function generateGroupReport(groupId) {
   return api.post(`/ai/groups/${groupId}/report`).then((res) => res.data);
 }
+
+// Oldest-first, full thread — like listComments, no pagination.
+export function listChatMessages(groupId, ticketId) {
+  return api.get(`/ai/groups/${groupId}/tickets/${ticketId}/chat`).then((res) => res.data);
+}
+
+// Returns { user_message, assistant_message } (both persisted, with real ids
+// and timestamps) rather than just the assistant reply, so the caller never
+// has to fabricate the user's own message to render it immediately.
+export function sendChatMessage(groupId, ticketId, message) {
+  return api
+    .post(`/ai/groups/${groupId}/tickets/${ticketId}/chat`, { message })
+    .then((res) => res.data);
+}
+
+export function clearChat(groupId, ticketId) {
+  return api.delete(`/ai/groups/${groupId}/tickets/${ticketId}/chat`).then((res) => res.data);
+}
