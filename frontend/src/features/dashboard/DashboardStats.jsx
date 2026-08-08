@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Ticket, Users } from 'lucide-react';
+import { AlertTriangle, Ticket, User as UserIcon, Users } from 'lucide-react';
 import { listGroups } from '../../services/groups.service';
+import { useDashboardOverview } from '../../hooks/useDashboardOverview';
+import { useAuth } from '../../hooks/useAuth';
 import { isGroupAdmin } from '../../utils/roles';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
@@ -14,11 +16,15 @@ import CreateGroupForm from '../groups/CreateGroupForm';
 // is usually a cache hit rather than a fresh request, and stays in sync with
 // any create/rename/delete those pages invalidate. No dedicated dashboard
 // endpoint exists or is needed: GET /groups already carries every field used
-// here (member_count, open_ticket_count, role) per team.
+// for the Teams/Open Issues tiles and the team cards (member_count,
+// open_ticket_count, role) per team; the priority/mine tiles come from
+// useDashboardOverview instead (see that hook for why).
 export default function DashboardStats() {
   const [isCreating, setIsCreating] = useState(false);
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const { data: groups = [], status } = useQuery({ queryKey: ['groups'], queryFn: listGroups });
+  const { tickets } = useDashboardOverview(groups);
 
   function handleCreated() {
     queryClient.invalidateQueries({ queryKey: ['groups'] });
@@ -46,12 +52,20 @@ export default function DashboardStats() {
   }
 
   const totalOpenIssues = groups.reduce((sum, group) => sum + group.open_ticket_count, 0);
+  const criticalOrHighOpen = tickets.filter(
+    (ticket) => ticket.status === 'open' && (ticket.priority === 'critical' || ticket.priority === 'high'),
+  ).length;
+  const myOpenTickets = tickets.filter(
+    (ticket) => ticket.status === 'open' && ticket.created_by === user?.id,
+  ).length;
 
   return (
     <div className="flex flex-col gap-6 border-t border-white/10 pt-6">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile icon={Users} label="Teams" value={groups.length} />
         <StatTile icon={Ticket} label="Open Issues" value={totalOpenIssues} />
+        <StatTile icon={AlertTriangle} label="Critical/High Open" value={criticalOrHighOpen} />
+        <StatTile icon={UserIcon} label="My Open Issues" value={myOpenTickets} />
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
