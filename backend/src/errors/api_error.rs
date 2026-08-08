@@ -1,10 +1,13 @@
 use actix_web::{HttpResponse, ResponseError, http::StatusCode};
 use serde::Serialize;
 
+use crate::activity::repository::ActivityRepoError;
 use crate::admin::repository::AdminRepoError;
 use crate::ai::repository::AiRepoError;
 use crate::comment::repository::CommentRepoError;
 use crate::group::repository::GroupRepoError;
+use crate::link::repository::LinkRepoError;
+use crate::reference::repository::ReferenceRepoError;
 use crate::ticket::repository::TicketRepoError;
 use crate::user::repository::UserRepoError;
 
@@ -158,6 +161,27 @@ impl From<CommentRepoError> for ApiError {
 
 impl From<AiRepoError> for ApiError {
     fn from(_: AiRepoError) -> Self {
+        ApiError::Internal
+    }
+}
+
+impl From<ActivityRepoError> for ApiError {
+    fn from(_: ActivityRepoError) -> Self {
+        ApiError::Internal
+    }
+}
+
+impl From<LinkRepoError> for ApiError {
+    fn from(err: LinkRepoError) -> Self {
+        match err {
+            LinkRepoError::Duplicate => ApiError::Conflict("this link already exists".to_string()),
+            LinkRepoError::Database(_) => ApiError::Internal,
+        }
+    }
+}
+
+impl From<ReferenceRepoError> for ApiError {
+    fn from(_: ReferenceRepoError) -> Self {
         ApiError::Internal
     }
 }

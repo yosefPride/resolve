@@ -1,10 +1,13 @@
 use actix_web::web;
 
+use crate::activity::handlers as activity_handlers;
 use crate::admin::handlers as admin_handlers;
 use crate::ai::handlers as ai_handlers;
 use crate::auth::handlers as auth_handlers;
 use crate::comment::handlers as comment_handlers;
 use crate::group::handlers as group_handlers;
+use crate::link::handlers as link_handlers;
+use crate::reference::handlers as reference_handlers;
 use crate::ticket::handlers as ticket_handlers;
 
 pub fn configure(config: &mut web::ServiceConfig) {
@@ -71,6 +74,34 @@ pub fn configure(config: &mut web::ServiceConfig) {
                 .route(
                     "/{id}/tickets/{ticket_id}/comments/{comment_id}",
                     web::delete().to(comment_handlers::delete_comment),
+                )
+                .route(
+                    "/{id}/tickets/{ticket_id}/activity",
+                    web::get().to(activity_handlers::list_activity),
+                )
+                .route(
+                    "/{id}/tickets/{ticket_id}/links",
+                    web::post().to(link_handlers::create_link),
+                )
+                .route(
+                    "/{id}/tickets/{ticket_id}/links",
+                    web::get().to(link_handlers::list_links),
+                )
+                .route(
+                    "/{id}/tickets/{ticket_id}/links/{link_id}",
+                    web::delete().to(link_handlers::delete_link),
+                )
+                .route(
+                    "/{id}/tickets/{ticket_id}/references",
+                    web::post().to(reference_handlers::create_reference),
+                )
+                .route(
+                    "/{id}/tickets/{ticket_id}/references",
+                    web::get().to(reference_handlers::list_references),
+                )
+                .route(
+                    "/{id}/tickets/{ticket_id}/references/{reference_id}",
+                    web::delete().to(reference_handlers::delete_reference),
                 ),
         )
         .service(
@@ -99,10 +130,6 @@ pub fn configure(config: &mut web::ServiceConfig) {
                             "/conversations/{conversation_id}",
                             web::delete().to(ai_handlers::delete_conversation),
                         ),
-                )
-                .route(
-                    "/groups/{id}/report",
-                    web::post().to(ai_handlers::generate_group_report),
                 ),
         )
         .service(

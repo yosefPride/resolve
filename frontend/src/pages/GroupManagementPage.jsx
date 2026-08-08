@@ -10,7 +10,6 @@ import { errorMessage } from '../utils/errors';
 import MemberManager from '../features/groups/MemberManager';
 import GroupStats from '../features/groups/GroupStats';
 import RenameGroupForm from '../features/groups/RenameGroupForm';
-import GroupReportView from '../features/ai/GroupReportView';
 import Modal from '../components/ui/Modal';
 import Button from '../components/ui/Button';
 
@@ -115,51 +114,23 @@ export default function GroupManagementPage() {
         )}
       </div>
 
-      {iAmAdmin ? (
-        // Stats + AI report stacked on the left (40%), members (with
-        // add-member below the list, inside MemberManager) on the right
-        // (60%) at lg+. Below lg: a single centered column, same as the
-        // contributor layout.
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 lg:mx-0 lg:grid lg:max-w-none lg:grid-cols-[2fr_3fr] lg:items-start">
-          <div className="flex flex-col gap-6">
-            <div className="flex flex-col gap-3">
-              <h2 className="text-lg font-semibold text-white">Quick Stats</h2>
-              <GroupStats groupId={id} memberCount={members.length} />
-            </div>
-            <div className="flex flex-col gap-3">
-              <h2 className="text-lg font-semibold text-white">AI Report</h2>
-              <GroupReportView groupId={id} />
-            </div>
-          </div>
-          <div className="flex flex-col gap-3">
-            <h2 className="text-lg font-semibold text-white">Members</h2>
-            <MemberManager
-              groupId={id}
-              members={members}
-              myUserId={user.id}
-              myRole={myRole}
-            />
-          </div>
+      {/* Single centered column for every role — admin and contributor share
+          this exact layout (there is no per-role difference left here). */}
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+        <div className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold text-white">Quick Stats</h2>
+          <GroupStats groupId={id} memberCount={members.length} />
         </div>
-      ) : (
-        // No AI report or split columns for a contributor — just Stats then
-        // Members, stacked in one centered column.
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
-          <div className="flex flex-col gap-3">
-            <h2 className="text-lg font-semibold text-white">Quick Stats</h2>
-            <GroupStats groupId={id} memberCount={members.length} />
-          </div>
-          <div className="flex flex-col gap-3">
-            <h2 className="text-lg font-semibold text-white">Members</h2>
-            <MemberManager
-              groupId={id}
-              members={members}
-              myUserId={user.id}
-              myRole={myRole}
-            />
-          </div>
+        <div className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold text-white">Members</h2>
+          <MemberManager
+            groupId={id}
+            members={members}
+            myUserId={user.id}
+            myRole={myRole}
+          />
         </div>
-      )}
+      </div>
 
       <Modal
         isOpen={isRenaming}

@@ -1,3 +1,4 @@
+mod activity;
 mod admin;
 mod ai;
 mod auth;
@@ -6,7 +7,9 @@ mod config;
 mod db;
 mod errors;
 mod group;
+mod link;
 mod rbac;
+mod reference;
 mod server;
 mod state;
 mod ticket;

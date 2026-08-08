@@ -146,6 +146,60 @@ Fields:
 
 ---
 
+## ticket_activity
+
+Read-only history of ticket-level mutations — see docs/api.md, "Activity Endpoint".
+
+Fields:
+
+- \_id
+- group_id
+- ticket_id
+- actor_id
+- event_type (ticket_created | status_changed | priority_changed | title_changed | description_changed | comment_added | comment_deleted | link_added | link_removed)
+- old_value, new_value (nullable — populated only for status/priority/title changes and link_added/link_removed)
+- comment_id (nullable — populated only for comment_added/comment_deleted)
+- link_kind (nullable — relation | reference; populated only for link_added/link_removed)
+- occurred_at
+
+Written exclusively as a side effect of ticket/comment/link/reference mutations elsewhere in the system, never accepted from a client. One entry per changed field, not one entry per request — an update touching both status and priority writes two documents.
+
+---
+
+## ticket_links
+
+Relates two tickets in the same group — see docs/api.md, "Link Endpoints".
+
+Fields:
+
+- \_id
+- group_id
+- source_ticket_id
+- target_ticket_id
+- relation_type (blocks | relates_to | duplicates)
+- created_by
+- created_at
+
+Stored directionally from source_ticket_id's viewpoint; the inverse label (e.g. is_blocked_by) is resolved at read time, never stored as a second document. relates_to is symmetric — enforced at the service layer so an A↔B pair is never represented by two documents; blocks and duplicates are directional, so both directions may coexist as separate documents.
+
+---
+
+## ticket_references
+
+An external URL attached to a single ticket — see docs/api.md, "Reference Endpoints".
+
+Fields:
+
+- \_id
+- group_id
+- ticket_id
+- label
+- url
+- created_by
+- created_at
+
+---
+
 ## ai_ticket_insights
 
 Stores AI-generated results per ticket.
@@ -161,20 +215,6 @@ Fields:
 - classification
 - created_at
 - updated_at
-
----
-
-## ai_group_reports
-
-Stores aggregated AI reports (Group Admin only).
-
-Fields:
-
-- \_id
-- group_id
-- report_data
-- generated_at
-- generated_by (user_id)
 
 ---
 
@@ -212,8 +252,10 @@ Like refresh_tokens, this is system-level data tied to an admin action, not grou
 - users ↔ groups → many-to-many via group_members
 - groups → tickets (1-to-many)
 - tickets → comments (1-to-many)
+- tickets → ticket_activity (1-to-many)
+- tickets ↔ tickets → many-to-many via ticket_links
+- tickets → ticket_references (1-to-many)
 - tickets → ai_ticket_insights (1-to-1 or 1-to-many over time)
-- groups → ai_group_reports (1-to-many)
 - users → admin_audit_log (deleted_user_id, performed_by) (1-to-many)
 - groups → admin_audit_log (1-to-many)
 
@@ -327,6 +369,27 @@ informational only and never filtered on).
 
 - ticket_id
 - group_id
+
+## ticket_activity
+
+- group_id + ticket_id + occurred_at (compound, descending on occurred_at —
+  serves the newest-first feed; its (group_id, ticket_id) prefix also serves
+  both cascade deletes)
+- group_id + occurred_at (descending — serves find_latest_for_group, the
+  group list's `last_activity_at` stat; the compound index above can't
+  satisfy this sort since ticket_id sits between the two fields)
+
+## ticket_links
+
+- group_id + source_ticket_id + target_ticket_id + relation_type (compound,
+  unique — duplicate-link protection at the DB level, in addition to the
+  service-level pre-insert check)
+- group_id + target_ticket_id (a ticket can appear on either side of a link;
+  this serves the reverse-direction lookup the compound index's prefix can't)
+
+## ticket_references
+
+- group_id + ticket_id
 
 ## ai_ticket_insights
 

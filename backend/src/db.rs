@@ -149,6 +149,68 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), Error> {
         )
         .await?;
 
+    // Serves ActivityRepository::list_by_ticket (equality on group_id +
+    // ticket_id, sorted descending on occurred_at) and both cascade deletes
+    // (delete_by_ticket on the (group_id, ticket_id) prefix, delete_by_group
+    // on group_id alone).
+    db.collection::<Document>("ticket_activity")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "ticket_id": 1, "occurred_at": -1 })
+                .build(),
+        )
+        .await?;
+
+    // Serves ActivityRepository::find_latest_for_group (equality on group_id
+    // alone, sorted descending on occurred_at) — the compound index above
+    // can't satisfy that sort since ticket_id sits between group_id and
+    // occurred_at in it.
+    db.collection::<Document>("ticket_activity")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "occurred_at": -1 })
+                .build(),
+        )
+        .await?;
+
+    // Enforces at most one link per (group, source, target, relation_type) —
+    // duplicate protection at the DB level, same belt-and-braces pattern as
+    // group_members' compound unique index (LinkRepository::exists is the
+    // app-level pre-check). Its (group_id, source_ticket_id) prefix also
+    // serves list_by_ticket's source-side branch and delete_by_ticket.
+    db.collection::<Document>("ticket_links")
+        .create_index(
+            IndexModel::builder()
+                .keys(
+                    doc! { "group_id": 1, "source_ticket_id": 1, "target_ticket_id": 1, "relation_type": 1 },
+                )
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+        )
+        .await?;
+
+    // Serves list_by_ticket's target-side branch (a ticket_id can appear on
+    // either side of a link) and delete_by_ticket/delete_by_group's cascade
+    // deletes.
+    db.collection::<Document>("ticket_links")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "target_ticket_id": 1 })
+                .build(),
+        )
+        .await?;
+
+    // Serves ReferenceRepository::list_by_ticket and both cascade deletes
+    // (delete_by_ticket on the (group_id, ticket_id) prefix, delete_by_group
+    // on group_id alone).
+    db.collection::<Document>("ticket_references")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "ticket_id": 1 })
+                .build(),
+        )
+        .await?;
+
     // One insight document per ticket (AiRepository::upsert_summary /
     // upsert_analysis upsert against this pair), so it's unique as well as
     // the lookup path for find_insight.
@@ -157,39 +219,6 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), Error> {
             IndexModel::builder()
                 .keys(doc! { "group_id": 1, "ticket_id": 1 })
                 .options(IndexOptions::builder().unique(true).build())
-                .build(),
-        )
-        .await?;
-
-    // Serves find_latest_report's per-group "most recent" query (sorted
-    // descending on generated_at).
-    db.collection::<Document>("ai_group_reports")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "group_id": 1, "generated_at": -1 })
-                .build(),
-        )
-        .await?;
-
-    // TTL index: auto-expires a report 30 days after it was generated, same
-    // reaper mechanism as refresh_tokens (mongodb's background process drops
-    // it once expired), but relative to generated_at rather than an
-    // absolute expires_at field. Reports are insert-only, one new document
-    // per regeneration (docs/database.md: groups -> ai_group_reports is
-    // 1-to-many) — without this, an actively-used group regenerating hourly
-    // accumulates history that nothing ever reads (find_latest_report only
-    // ever wants the newest one), unbounded. Must be a separate single-field
-    // index from the compound one above: MongoDB TTL indexes can't be
-    // compound.
-    db.collection::<Document>("ai_group_reports")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "generated_at": 1 })
-                .options(
-                    IndexOptions::builder()
-                        .expire_after(std::time::Duration::from_secs(30 * 24 * 60 * 60))
-                        .build(),
-                )
                 .build(),
         )
         .await?;

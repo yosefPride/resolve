@@ -1,6 +1,8 @@
 use chrono::DateTime;
 use mongodb::{Database, bson::oid::ObjectId};
 
+use crate::activity::models::{ActivityEventType, CreateActivityInput};
+use crate::activity::repository::ActivityRepository;
 use crate::comment::models::{Comment, CommentResponse, CreateCommentInput};
 use crate::comment::repository::CommentRepository;
 use crate::errors::ApiError;
@@ -12,6 +14,7 @@ use crate::user::service::UserService;
 pub struct CommentService {
     repo: CommentRepository,
     ticket_repo: TicketRepository,
+    activity_repo: ActivityRepository,
     user_service: UserService,
     rbac: RbacService,
 }
@@ -21,6 +24,7 @@ impl CommentService {
         Self {
             repo: CommentRepository::new(db),
             ticket_repo: TicketRepository::new(db),
+            activity_repo: ActivityRepository::new(db),
             user_service: UserService::new(db),
             rbac: RbacService::new(db),
         }
@@ -79,6 +83,18 @@ impl CommentService {
                 content,
             })
             .await?;
+        self.activity_repo
+            .insert(CreateActivityInput {
+                group_id,
+                ticket_id,
+                actor_id: user_id,
+                event_type: ActivityEventType::CommentAdded,
+                old_value: None,
+                new_value: None,
+                comment_id: comment.id,
+                link_kind: None,
+            })
+            .await?;
         self.enrich_comment(comment).await
     }
 
@@ -133,6 +149,21 @@ impl CommentService {
         if !changed {
             return Err(ApiError::NotFound);
         }
+        // Recorded for both the hard-delete and tombstone (soft-delete)
+        // paths — either way the user's delete action succeeded, and the
+        // activity log doesn't distinguish the two.
+        self.activity_repo
+            .insert(CreateActivityInput {
+                group_id,
+                ticket_id,
+                actor_id: user_id,
+                event_type: ActivityEventType::CommentDeleted,
+                old_value: None,
+                new_value: None,
+                comment_id: Some(comment_id),
+                link_kind: None,
+            })
+            .await?;
         Ok(())
     }
 

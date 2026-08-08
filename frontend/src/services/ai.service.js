@@ -12,12 +12,6 @@ export function analyzeTicket(groupId, ticketId) {
   return api.post(`/ai/groups/${groupId}/tickets/${ticketId}/analyze`).then((res) => res.data);
 }
 
-// Group Admin only (backend returns 403 for contributors). Time-based cache:
-// fresh for 1 hour, so a same-hour call is cheap and returns cached: true.
-export function generateGroupReport(groupId) {
-  return api.post(`/ai/groups/${groupId}/report`).then((res) => res.data);
-}
-
 // AI chat is now private, per-user conversations (a ticket can have many),
 // not a single group-shared thread — these replace the old listChatMessages/
 // sendChatMessage/clearChat trio.

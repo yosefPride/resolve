@@ -40,15 +40,6 @@ pub trait AiProvider {
         description: &str,
     ) -> impl Future<Output = Result<AnalysisResult, ApiError>> + Send;
 
-    // stats_summary is a plain-text rendering of already-computed, real
-    // numbers (AiService assembles it from TicketRepository data) — the
-    // model's job is narrating those numbers into prose, not counting
-    // anything itself, so a hallucinated count can't sneak into the report.
-    fn narrate_report(
-        &self,
-        stats_summary: &str,
-    ) -> impl Future<Output = Result<String, ApiError>> + Send;
-
     // transcript is a pre-formatted "User: ...\nAssistant: ...\n..." string
     // built by AiService from the last CHAT_HISTORY_LIMIT stored messages
     // (empty string if this is the first message) — same reasoning as
@@ -136,11 +127,6 @@ impl AiProvider for GeminiClient {
         parse_analysis_response(&body)
     }
 
-    async fn narrate_report(&self, stats_summary: &str) -> Result<String, ApiError> {
-        let body = self.generate(&report_prompt(stats_summary), None).await?;
-        parse_summary_response(&body)
-    }
-
     async fn chat(
         &self,
         title: &str,
@@ -197,16 +183,6 @@ fn chat_prompt(title: &str, description: &str, transcript: &str, message: &str) 
          sentences at most.\n\n\
          Title: {title}\nDescription: {description}{history_section}\n\n\
          New message (stay in scope): {message}"
-    )
-}
-
-fn report_prompt(stats_summary: &str) -> String {
-    format!(
-        "You are producing a short analytics narrative for a bug-tracking \
-         group's admin. Given the aggregate statistics below, write 2-4 \
-         concise sentences describing ticket trends and workload \
-         distribution. Use only the numbers given — do not invent or \
-         estimate any figure not present below.\n\n{stats_summary}"
     )
 }
 
@@ -289,12 +265,6 @@ mod tests {
         let prompt = analyze_prompt("Login broken", "Button does nothing on click");
         assert!(prompt.contains("Login broken"));
         assert!(prompt.contains("Button does nothing on click"));
-    }
-
-    #[test]
-    fn report_prompt_includes_stats_summary() {
-        let prompt = report_prompt("Total tickets: 12, Open: 5, Closed: 7");
-        assert!(prompt.contains("Total tickets: 12, Open: 5, Closed: 7"));
     }
 
     #[test]
