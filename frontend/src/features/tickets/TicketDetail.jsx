@@ -19,6 +19,7 @@ import Modal from '../../components/ui/Modal';
 import ActivityList from '../activity/ActivityList';
 import AiPanel from '../ai/AiPanel';
 import CommentList from '../comments/CommentList';
+import LinksPanel from '../links/LinksPanel';
 import DescriptionMarkdown from './DescriptionMarkdown';
 import EditTicketForm from './EditTicketForm';
 import TicketMeta from './TicketMeta';
@@ -170,9 +171,11 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
                   </span>
                 )}
               </TabButton>
-              {/* No ticket-relation/reference data wired up yet — placeholder
-                  holds this tab's spot until the Links tab is built. */}
-              <TabButton icon={Link2} isActive={false} disabled>
+              <TabButton
+                icon={Link2}
+                isActive={activeTab === 'links'}
+                onClick={() => setActiveTab('links')}
+              >
                 Links
               </TabButton>
               <TabButton
@@ -220,6 +223,15 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
               }
             >
               <ActivityList groupId={groupId} ticketId={ticket.id} />
+            </div>
+            <div
+              className={
+                activeTab === 'links'
+                  ? 'h-128 overflow-y-auto rounded-xl border border-white/10 bg-white/5 p-6'
+                  : 'hidden'
+              }
+            >
+              <LinksPanel groupId={groupId} ticketId={ticket.id} isAdmin={isAdmin} />
             </div>
           </div>
         </div>
