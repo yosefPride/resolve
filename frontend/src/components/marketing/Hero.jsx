@@ -1,5 +1,6 @@
 import Button from '../ui/Button';
 import ProductDemo from './demo/ProductDemo';
+// import testHeroVideo from '../../assets/test-hero.mp4';
 
 // `isolate` on the section keeps the -z-10 glow in a stacking context of its
 // own. Without it the glow belongs to the root context, where it paints beneath
@@ -7,6 +8,21 @@ import ProductDemo from './demo/ProductDemo';
 export default function Hero() {
   return (
     <section className="relative isolate overflow-hidden">
+      {/* Background video trial — swap ProductDemo back out for this to try it again.
+      <video
+        src={testHeroVideo}
+        className="absolute inset-0 -z-30 h-full w-full object-cover"
+        autoPlay
+        loop
+        muted
+        playsInline
+      />
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 -z-20 bg-linear-to-b from-black/40 via-black/70 to-black"
+      />
+      */}
+
       <div className="max-w-7xl mx-auto px-4 pt-20 pb-16 text-left sm:px-6 sm:pt-28 lg:px-8">
 
         <h1 className="mt-6 max-w-3xl text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl">
@@ -14,9 +30,7 @@ export default function Hero() {
         </h1>
 
         <p className="mt-5 max-w-xl text-base text-slate-400 sm:text-lg">
-          Resolve is where your team files bugs, works them through comments
-          and history, and asks AI for a summary or fix — all on the ticket
-          itself, nowhere else to check.
+          Resolve combines issue tracking and team management — powered by AI where it counts.
         </p>
 
         <div className="mt-8 flex items-center gap-4">

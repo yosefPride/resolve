@@ -59,6 +59,7 @@ export default function AiSpotlight() {
       title="Ask about any issue, or get an instant summary and analysis."
       description="Every ticket has its own AI thread — summarize it, analyze it, or just ask a question, without leaving the page."
       tinted
+      layout="side"
     >
       <div className="mx-auto flex h-132 max-w-2xl flex-col rounded-xl border border-white/10 bg-white/5 shadow-2xl shadow-black/50">
         <div className="flex items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
