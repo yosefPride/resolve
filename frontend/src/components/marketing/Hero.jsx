@@ -10,12 +10,13 @@ export default function Hero() {
       <div className="max-w-7xl mx-auto px-4 pt-20 pb-16 text-left sm:px-6 sm:pt-28 lg:px-8">
 
         <h1 className="mt-6 max-w-3xl text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl">
-          Ship fixes, not spreadsheets.
+          Track. Discuss. Resolve.
         </h1>
 
         <p className="mt-5 max-w-xl text-base text-slate-400 sm:text-lg">
-          Resolve gives every team a single home for tracking bugs — with AI
-          assistance that speeds up triage without ever touching your data.
+          Resolve is where your team files bugs, works them through comments
+          and history, and asks AI for a summary or fix — all on the ticket
+          itself, nowhere else to check.
         </p>
 
         <div className="mt-8 flex items-center gap-4">

@@ -1,15 +1,19 @@
 import Hero from '../components/marketing/Hero';
-import FeatureGrid from '../components/marketing/FeatureGrid';
+import IssueDetailSpotlight from '../components/marketing/spotlights/IssueDetailSpotlight';
+import AiSpotlight from '../components/marketing/spotlights/AiSpotlight';
+import DashboardSpotlight from '../components/marketing/spotlights/DashboardSpotlight';
 import WorkflowTimeline from '../components/marketing/WorkflowTimeline';
-import AudienceCards from '../components/marketing/AudienceCards';
+import FinalCta from '../components/marketing/FinalCta';
 
 export default function LandingPage() {
   return (
     <>
       <Hero />
-      <FeatureGrid />
+      <IssueDetailSpotlight />
+      <AiSpotlight />
+      <DashboardSpotlight />
       <WorkflowTimeline />
-      <AudienceCards />
+      <FinalCta />
     </>
   );
 }
