@@ -1,13 +1,14 @@
 import Button from '../ui/Button';
-// import ProductDemo from './demo/ProductDemo';
-import testHeroVideo from '../../assets/test-hero.mp4';
+import ProductDemo from './demo/ProductDemo';
+// import testHeroVideo from '../../assets/test-hero.mp4';
 
-// `isolate` on the section keeps the -z-10 glow (and the video behind it) in a
-// stacking context of its own. Without it they'd belong to the root context,
-// where the layout's bg-black paints over them.
+// `isolate` on the section keeps the -z-10 glow in a stacking context of its
+// own. Without it the glow belongs to the root context, where it paints beneath
+// the layout's bg-black and disappears.
 export default function Hero() {
   return (
-    <section className="relative isolate min-h-[70vh] overflow-hidden">
+    <section className="relative isolate overflow-hidden">
+      {/* Background video trial — swap ProductDemo back out for this to try it again.
       <video
         src={testHeroVideo}
         className="absolute inset-0 -z-30 h-full w-full object-cover"
@@ -20,6 +21,7 @@ export default function Hero() {
         aria-hidden="true"
         className="absolute inset-0 -z-20 bg-linear-to-b from-black/40 via-black/70 to-black"
       />
+      */}
 
       <div className="max-w-7xl mx-auto px-4 pt-20 pb-16 text-left sm:px-6 sm:pt-28 lg:px-8">
 
@@ -48,7 +50,7 @@ export default function Hero() {
           "
         />
         <div className="max-w-7xl mx-auto">
-          {/* <ProductDemo /> */}
+          <ProductDemo />
         </div>
       </div>
     </section>
