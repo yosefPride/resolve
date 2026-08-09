@@ -14,9 +14,7 @@ export default function Hero() {
         </h1>
 
         <p className="mt-5 max-w-xl text-base text-slate-400 sm:text-lg">
-          Resolve is where your team files bugs, works them through comments
-          and history, and asks AI for a summary or fix — all on the ticket
-          itself, nowhere else to check.
+          Resolve combines issue tracking and team management — powered by AI where it counts.
         </p>
 
         <div className="mt-8 flex items-center gap-4">
