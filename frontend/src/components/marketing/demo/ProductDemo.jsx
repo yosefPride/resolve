@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
 import Input from '../../ui/Input';
 import Badge from '../../ui/Badge';
+import Pagination from '../../ui/Pagination';
 import DemoSidebar from './DemoSidebar';
-import { formatDate } from '../../../utils/format';
+import { PRIORITY_VARIANT, STATUS_VARIANT, capitalize } from '../../../features/tickets/badgeVariants';
 import {
   DEMO_ISSUES,
   DEMO_STATUSES,
@@ -16,66 +16,17 @@ import {
 // screenshot that used to live there. Renders the issues list against seeded
 // data (demoIssues.js) — no API call, no auth, no dependency on features/tickets.
 //
-// Rows are intentionally inert: opening an issue needs a detail page that is
-// being built elsewhere, so there is nothing to navigate to. The toolbar filters
-// become live in the next stage; they are rendered here unstyled-as-disabled on
-// purpose, since greyed-out controls on a landing page read as broken.
+// Every visual choice here mirrors the real Issues page 1:1 (TicketCard,
+// TicketFilters, TicketsPage, badgeVariants.js) so this can't drift into
+// looking like a different product than the one behind the login wall. Rows
+// stay inert (plain <div>, not <Link>) — clicking through to a real ticket
+// page from fake data would either 404 or need auth, either of which reads
+// as broken on a public page.
 
-// Shared column template so the header and every row stay aligned. The trailing
-// date column is dropped below `lg` where there isn't room for it.
-const COLUMNS =
-  'grid grid-cols-[minmax(0,1fr)_7rem_5.5rem] gap-4 lg:grid-cols-[minmax(0,1fr)_9rem_6rem_6rem_6rem]';
+const PER_PAGE = 10;
 
-// Badge only ships neutral/accent/outline — no semantic colours — so the status
-// and priority pills are local to the demo rather than new shared variants.
-// Worth promoting into Badge if the real issues page wants the same treatment.
-const STATUS_STYLES = {
-  open: 'bg-emerald-500/10 text-emerald-300 border border-emerald-400/20',
-  closed: 'bg-white/5 text-slate-400 border border-white/10',
-};
-
-const PRIORITY_STYLES = {
-  critical: 'bg-red-500/10 text-red-300 border border-red-400/20',
-  high: 'bg-amber-500/10 text-amber-300 border border-amber-400/20',
-  low: 'bg-white/5 text-slate-400 border border-white/10',
-};
-
-function Pill({ styles, children }) {
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${styles}`}
-    >
-      {children}
-    </span>
-  );
-}
-
-// Native <select> rather than the app's Radix dropdowns: it is keyboard- and
-// screen-reader-accessible for free, and the demo has no need for the styled
-// menu behaviour. Swap to DropdownMenu if the preview needs to match the real
-// toolbar pixel for pixel.
-function FilterSelect({ label, options, ...props }) {
-  return (
-    <label className="flex items-center gap-2">
-      <span className="sr-only">{label}</span>
-      <select
-        className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-300 capitalize outline-none focus:border-sky-400/50"
-        {...props}
-      >
-        <option value="">{label}</option>
-        {options.map((option) => (
-          <option
-            key={option}
-            value={option}
-            className="bg-slate-900 capitalize"
-          >
-            {option}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
+const SELECT_CLASS =
+  'rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50';
 
 // Search deliberately only looks at what the row actually shows — title,
 // reporter and issue number. Matching on `description` too would be easy, but a
@@ -93,36 +44,33 @@ function matchesQuery(issue, query) {
 
 export default function ProductDemo() {
   const [query, setQuery] = useState('');
-  const [reporter, setReporter] = useState('');
+  const [creator, setCreator] = useState('');
   const [status, setStatus] = useState('');
   const [priority, setPriority] = useState('');
-
-  const isFiltered = Boolean(query || reporter || status || priority);
+  const [page, setPage] = useState(1);
 
   function clearFilters() {
     setQuery('');
-    setReporter('');
+    setCreator('');
     setStatus('');
     setPriority('');
   }
 
   // Filtering runs against the seeded array in memory. The real issues page
-  // will push this to the API (GET /groups/{id}/tickets with query params);
+  // pushes this to the API (GET /groups/{id}/tickets with query params);
   // here it stays client-side so the preview works logged-out and offline.
   const issues = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return DEMO_ISSUES.filter(
       (issue) =>
-        (!reporter || issue.created_by_name === reporter) &&
+        (!creator || issue.created_by_name === creator) &&
         (!status || issue.status === status) &&
         (!priority || issue.priority === priority) &&
         matchesQuery(issue, normalized),
     );
-  }, [query, reporter, status, priority]);
+  }, [query, creator, status, priority]);
 
-  // The header count is a team-level stat (the same figure GET /groups reports
-  // per team), so it stays fixed while filters narrow the list below it.
-  const openCount = DEMO_ISSUES.filter((issue) => issue.status === 'open').length;
+  const totalPages = Math.max(1, Math.ceil(issues.length / PER_PAGE));
 
   return (
     <div className="mx-auto max-h-9xl flex items-stretch overflow-hidden rounded-2xl border border-white/10 bg-surface shadow-2xl shadow-black/50">
@@ -132,101 +80,107 @@ export default function ProductDemo() {
 
       <div className="flex min-w-0 grow flex-col">
         <div className="flex items-center justify-between gap-4 border-b border-white/10 px-5 py-4">
-          <div className="flex items-baseline gap-3">
-            <h3 className="text-sm font-semibold text-white">
-              {DEMO_TEAM_NAME}
-            </h3>
-            <span className="text-xs text-slate-400">{openCount} open</span>
-            {isFiltered && (
-              <span className="text-xs text-slate-500">
-                showing {issues.length} of {DEMO_ISSUES.length}
-              </span>
-            )}
-          </div>
+          <h3 className="text-2xl font-bold text-white">{DEMO_TEAM_NAME}</h3>
           <Badge variant="outline" size="sm">
-            Sample data
+            Preview data
           </Badge>
         </div>
 
         <div className="flex flex-wrap items-center gap-3 border-b border-white/10 px-5 py-3">
-          <div className="relative flex-1 basis-48">
-            <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-500" />
-            <Input
-              type="search"
-              placeholder="Search issues"
-              aria-label="Search issues"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              className="w-full py-1.5 pl-9 text-sm"
-            />
-          </div>
-          <FilterSelect
-            label="Reporter"
-            options={demoCreators()}
-            value={reporter}
-            onChange={(event) => setReporter(event.target.value)}
+          <Input
+            type="search"
+            placeholder="Search by title"
+            aria-label="Search issues"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            className="flex-1 text-sm sm:max-w-xs"
           />
-          <FilterSelect
-            label="Status"
-            options={DEMO_STATUSES}
+          <select
             value={status}
             onChange={(event) => setStatus(event.target.value)}
-          />
-          <FilterSelect
-            label="Priority"
-            options={DEMO_PRIORITIES}
+            aria-label="Filter by status"
+            className={SELECT_CLASS}
+          >
+            <option value="">All statuses</option>
+            {DEMO_STATUSES.map((option) => (
+              <option key={option} value={option}>
+                {capitalize(option)}
+              </option>
+            ))}
+          </select>
+          <select
             value={priority}
             onChange={(event) => setPriority(event.target.value)}
-          />
+            aria-label="Filter by priority"
+            className={SELECT_CLASS}
+          >
+            <option value="">All priorities</option>
+            {DEMO_PRIORITIES.map((option) => (
+              <option key={option} value={option}>
+                {capitalize(option)}
+              </option>
+            ))}
+          </select>
+          <select
+            value={creator}
+            onChange={(event) => setCreator(event.target.value)}
+            aria-label="Filter by creator"
+            className={SELECT_CLASS}
+          >
+            <option value="">Everyone</option>
+            {demoCreators().map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
         </div>
 
-        <div
-          className={`${COLUMNS} border-b border-white/10 px-5 py-2 text-xs font-medium tracking-wide text-slate-500 uppercase`}
-        >
-          <span>Issue</span>
-          <span className="hidden lg:block">Reporter</span>
-          <span>Status</span>
-          <span>Priority</span>
-          <span className="hidden lg:block">Created</span>
-        </div>
+        <div className="flex flex-col gap-4 px-5 py-4">
+          {issues.length === 0 && (
+            <div className="flex flex-col items-center gap-3 py-6 text-center">
+              <p className="text-sm text-slate-400">No issues match those filters.</p>
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/5 hover:text-white"
+              >
+                Clear filters
+              </button>
+            </div>
+          )}
 
-        {issues.length === 0 && (
-          <div className="flex flex-col items-center gap-3 px-5 py-10 text-center">
-            <p className="text-sm text-slate-400">No issues match those filters.</p>
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/5 hover:text-white"
-            >
-              Clear filters
-            </button>
+          {issues.length > 0 && (
+            <div className="flex flex-col gap-2">
+              {issues.map((issue) => (
+                <div
+                  key={issue.id}
+                  className="flex items-center justify-between gap-4 rounded-lg border border-white/10 bg-white/5 px-4 py-3"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="shrink-0 text-xs font-medium text-slate-500">
+                      #{issue.ticket_number}
+                    </span>
+                    <span className="truncate text-sm font-medium text-white">{issue.title}</span>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="hidden text-xs text-slate-400 sm:inline">
+                      {issue.created_by_name}
+                    </span>
+                    <Badge variant={STATUS_VARIANT[issue.status]}>{capitalize(issue.status)}</Badge>
+                    <Badge variant={PRIORITY_VARIANT[issue.priority]}>
+                      {capitalize(issue.priority)}
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex justify-center">
+            <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
           </div>
-        )}
-
-        <ul className="divide-y divide-white/5">
-          {issues.map((issue) => (
-            <li key={issue.id} className={`${COLUMNS} items-center px-5 py-3`}>
-              <div className="flex min-w-0 items-baseline gap-2">
-                <span className="text-xs text-slate-500 tabular-nums">
-                  #{issue.ticket_number}
-                </span>
-                <span className="truncate text-sm text-white">
-                  {issue.title}
-                </span>
-              </div>
-              <span className="hidden truncate text-sm text-slate-400 lg:block">
-                {issue.created_by_name}
-              </span>
-              <Pill styles={STATUS_STYLES[issue.status]}>{issue.status}</Pill>
-              <Pill styles={PRIORITY_STYLES[issue.priority]}>
-                {issue.priority}
-              </Pill>
-              <span className="hidden text-xs text-slate-500 lg:block">
-                {formatDate(issue.created_at)}
-              </span>
-            </li>
-          ))}
-        </ul>
+        </div>
       </div>
     </div>
   );
