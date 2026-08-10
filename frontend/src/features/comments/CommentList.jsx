@@ -98,12 +98,13 @@ function CommentItem({
   // tombstone has nothing left to delete.
   const canDelete = !comment.is_deleted && (comment.user_id === currentUserId || isAdmin);
   const isReplying = replyingTo === comment.id;
+  const isOwn = comment.user_id === currentUserId;
 
   return (
     <li>
-      <article className="flex flex-col gap-1 py-2">
-        {comment.parentSummary && <QuotedParent summary={comment.parentSummary} />}
-
+      <article
+        className={`flex w-[60%] flex-col gap-1 py-2 ${isOwn ? 'ml-auto items-end' : 'mr-auto items-start'}`}
+      >
         <p className="flex items-center gap-2 text-xs text-slate-500">
           <Avatar name={comment.user_name} seed={comment.user_id} size="sm" />
           <span>
@@ -114,17 +115,25 @@ function CommentItem({
           </span>
         </p>
 
-        {/* Plain text, never HTML: the backend stores comment content verbatim
-            without sanitising it, so React's automatic escaping here is the
-            only thing between a pasted <script> and the DOM. Do not swap this
-            for dangerouslySetInnerHTML or a markdown renderer. */}
-        <p
-          className={`whitespace-pre-wrap break-words text-sm ${
-            comment.is_deleted ? 'italic text-slate-500' : 'text-slate-200'
+        <div
+          className={`w-full rounded-2xl px-3 py-2 ${
+            isOwn ? 'rounded-tr-sm bg-sky-600/30' : 'rounded-tl-sm bg-white/10'
           }`}
         >
-          {comment.content}
-        </p>
+          {comment.parentSummary && <QuotedParent summary={comment.parentSummary} />}
+
+          {/* Plain text, never HTML: the backend stores comment content verbatim
+              without sanitising it, so React's automatic escaping here is the
+              only thing between a pasted <script> and the DOM. Do not swap this
+              for dangerouslySetInnerHTML or a markdown renderer. */}
+          <p
+            className={`whitespace-pre-wrap break-words text-sm ${
+              comment.is_deleted ? 'italic text-slate-500' : 'text-slate-200'
+            }`}
+          >
+            {comment.content}
+          </p>
+        </div>
 
         {!comment.is_deleted && (
           <div className="flex gap-1">
