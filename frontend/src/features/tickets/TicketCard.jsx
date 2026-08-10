@@ -13,9 +13,15 @@ export default function TicketCard({ ticket, groupId }) {
         <span className="truncate text-sm font-medium text-white">{ticket.title}</span>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <span className="hidden text-xs text-slate-400 sm:inline">{ticket.created_by_name}</span>
-        <Badge variant={STATUS_VARIANT[ticket.status]}>{capitalize(ticket.status)}</Badge>
-        <Badge variant={PRIORITY_VARIANT[ticket.priority]}>{capitalize(ticket.priority)}</Badge>
+        <span className="hidden w-28 truncate text-xs text-slate-400 sm:inline">
+          {ticket.created_by_name}
+        </span>
+        <div className="flex w-20 justify-start">
+          <Badge variant={STATUS_VARIANT[ticket.status]}>{capitalize(ticket.status)}</Badge>
+        </div>
+        <div className="flex w-20 justify-start">
+          <Badge variant={PRIORITY_VARIANT[ticket.priority]}>{capitalize(ticket.priority)}</Badge>
+        </div>
       </div>
     </Link>
   );
