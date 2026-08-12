@@ -1,10 +1,10 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { ChevronDown, Maximize2, Minimize2, Send, SquarePen, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import brandMark from '../../assets/brand-mark.svg';
 import Avatar from '../../components/ui/Avatar';
 import Button from '../../components/ui/Button';
+import DropdownMenu, { DropdownMenuItem } from '../../components/ui/DropdownMenu';
 import Input from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
 import { useAuth } from '../../hooks/useAuth';
@@ -84,10 +84,9 @@ const PILL =
 
 // Dropdown trigger + list for switching between the caller's own conversations
 // on this ticket. Each row's delete button is a plain sibling button next to
-// the DropdownMenu.Item, not nested inside it — nesting an interactive
-// element inside a Radix menu item means fighting its own click/keyboard
-// selection handling; keeping the Item to just the label sidesteps that
-// entirely.
+// the DropdownMenuItem, not nested inside it — nesting an interactive element
+// inside a Radix menu item means fighting its own click/keyboard selection
+// handling; keeping the item to just the label sidesteps that entirely.
 function ConversationSwitcher({
   conversations,
   activeConversationId,
@@ -97,46 +96,47 @@ function ConversationSwitcher({
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
 
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger className="flex min-w-0 items-center gap-1 text-sm font-semibold text-slate-300 outline-none hover:text-white">
-        <span className="truncate">{activeConversation?.title || 'New chat'}</span>
-        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-      </DropdownMenu.Trigger>
-
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="start"
-          sideOffset={8}
-          className="z-50 max-h-80 w-64 overflow-y-auto rounded-lg border border-white/10 bg-neutral-800 py-1 shadow-2xl shadow-black/50"
+    <DropdownMenu
+      align="start"
+      width="w-64"
+      contentClassName="max-h-80 overflow-y-auto"
+      trigger={
+        <button
+          type="button"
+          className="flex min-w-0 items-center gap-1 text-sm font-semibold text-slate-300 outline-none hover:text-white"
         >
-          {conversations.length === 0 && (
-            <p className="px-4 py-3 text-xs text-slate-500">No conversations yet.</p>
-          )}
+          <span className="truncate">{activeConversation?.title || 'New chat'}</span>
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+        </button>
+      }
+    >
+      {conversations.length === 0 && (
+        <p className="px-4 py-3 text-xs text-slate-500">No conversations yet.</p>
+      )}
 
-          {conversations.map((conversation) => (
-            <div key={conversation.id} className="flex items-center gap-1 pr-1 pl-1">
-              <DropdownMenu.Item
-                onSelect={() => onSelectConversation(conversation.id)}
-                className={`flex-1 cursor-pointer truncate rounded px-3 py-2 text-sm outline-none transition-colors data-highlighted:bg-white/10 ${
-                  conversation.id === activeConversationId ? 'text-white' : 'text-slate-300'
-                }`}
-              >
-                {conversation.title || 'New chat'}
-              </DropdownMenu.Item>
-              <button
-                type="button"
-                onClick={() => onRequestDelete(conversation.id)}
-                aria-label="Delete conversation"
-                title="Delete conversation"
-                className="shrink-0 rounded p-1.5 text-slate-500 transition-colors hover:bg-white/10 hover:text-red-400"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+      {conversations.map((conversation) => (
+        <div key={conversation.id} className="flex items-center gap-1 pr-1 pl-1">
+          <DropdownMenuItem
+            variant="plain"
+            className={`flex-1 truncate rounded ${
+              conversation.id === activeConversationId ? 'text-white' : 'text-slate-300'
+            }`}
+            onSelect={() => onSelectConversation(conversation.id)}
+          >
+            {conversation.title || 'New chat'}
+          </DropdownMenuItem>
+          <button
+            type="button"
+            onClick={() => onRequestDelete(conversation.id)}
+            aria-label="Delete conversation"
+            title="Delete conversation"
+            className="shrink-0 rounded p-1.5 text-slate-500 transition-colors hover:bg-white/10 hover:text-red-400"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ))}
+    </DropdownMenu>
   );
 }
 

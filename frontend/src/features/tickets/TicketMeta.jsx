@@ -1,10 +1,10 @@
 import { Link } from 'react-router-dom';
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Check, Users } from 'lucide-react';
 import { useUpdateTicket } from '../../hooks/useTickets';
 import { errorMessage } from '../../utils/errors';
 import Avatar from '../../components/ui/Avatar';
 import Badge from '../../components/ui/Badge';
+import DropdownMenu, { DropdownMenuItem } from '../../components/ui/DropdownMenu';
 import { PRIORITY_VARIANT, STATUS_VARIANT, capitalize } from './badgeVariants';
 
 const STATUS_OPTIONS = ['open', 'closed'];
@@ -15,36 +15,33 @@ const PRIORITY_OPTIONS = ['low', 'high', 'critical'];
 // current value is a no-op rather than a wasted PATCH.
 function BadgeDropdown({ ariaLabel, value, variant, options, disabled, onSelect }) {
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger
-        disabled={disabled}
-        aria-label={ariaLabel}
-        className="rounded-full outline-none focus-visible:ring-1 focus-visible:ring-white disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        <Badge size="sm" variant={variant}>
-          {capitalize(value)}
-        </Badge>
-      </DropdownMenu.Trigger>
-
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="end"
-          sideOffset={6}
-          className="z-50 w-36 rounded-lg border border-white/10 bg-neutral-800 py-1 shadow-2xl shadow-black/50"
+    <DropdownMenu
+      width="w-36"
+      sideOffset={6}
+      trigger={
+        <button
+          type="button"
+          disabled={disabled}
+          aria-label={ariaLabel}
+          className="rounded-full outline-none focus-visible:ring-1 focus-visible:ring-white disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {options.map((option) => (
-            <DropdownMenu.Item
-              key={option}
-              onSelect={() => option !== value && onSelect(option)}
-              className="flex cursor-pointer items-center justify-between px-4 py-2 text-sm text-slate-300 outline-none transition-colors data-highlighted:bg-white/10"
-            >
-              {capitalize(option)}
-              {option === value && <Check className="h-4 w-4 text-sky-400" />}
-            </DropdownMenu.Item>
-          ))}
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+          <Badge size="sm" variant={variant}>
+            {capitalize(value)}
+          </Badge>
+        </button>
+      }
+    >
+      {options.map((option) => (
+        <DropdownMenuItem
+          key={option}
+          className="flex items-center justify-between"
+          onSelect={() => option !== value && onSelect(option)}
+        >
+          {capitalize(option)}
+          {option === value && <Check className="h-4 w-4 text-sky-400" />}
+        </DropdownMenuItem>
+      ))}
+    </DropdownMenu>
   );
 }
 

@@ -6,6 +6,7 @@ import { listGroups } from '../services/groups.service';
 import TicketList from '../features/tickets/TicketList';
 import CreateTicketForm from '../features/tickets/CreateTicketForm';
 import Button from '../components/ui/Button';
+import DropdownMenu, { DropdownMenuItem } from '../components/ui/DropdownMenu';
 import Modal from '../components/ui/Modal';
 
 // The selected team lives in the URL (?group=<id>), not component state, so a
@@ -14,7 +15,6 @@ import Modal from '../components/ui/Modal';
 export default function TicketsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const groupId = searchParams.get('group') || '';
-  const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
 
   const { data: groups = [], status } = useQuery({ queryKey: ['groups'], queryFn: listGroups });
@@ -31,7 +31,6 @@ export default function TicketsPage() {
 
   function selectGroup(id) {
     setSearchParams({ group: id });
-    setIsSwitcherOpen(false);
   }
 
   if (status === 'pending') {
@@ -63,35 +62,30 @@ export default function TicketsPage() {
   return (
     <section className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="relative min-w-0">
-          <button
-            type="button"
-            onClick={() => setIsSwitcherOpen((open) => !open)}
-            className="flex max-w-full items-center gap-2 text-2xl font-bold text-white"
-          >
-            <span className="truncate">{currentGroup?.name ?? 'Select a team'}</span>
-            <ChevronDown
-              className={`h-5 w-5 shrink-0 transition-transform ${isSwitcherOpen ? 'rotate-180' : ''}`}
-            />
-          </button>
-
-          {isSwitcherOpen && (
-            <div className="absolute left-0 top-full z-10 mt-2 w-56 rounded-lg border border-white/10 bg-neutral-950 py-1 shadow-2xl shadow-black/50">
-              {groups.map((group) => (
-                <button
-                  key={group.id}
-                  type="button"
-                  onClick={() => selectGroup(group.id)}
-                  className={`block w-full px-4 py-2 text-left text-sm hover:bg-white/10 ${
-                    group.id === groupId ? 'text-white' : 'text-slate-300'
-                  }`}
-                >
-                  {group.name}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <DropdownMenu
+          align="start"
+          width="w-56"
+          trigger={
+            <button
+              type="button"
+              className="group flex min-w-0 max-w-full items-center gap-2 text-2xl font-bold text-white outline-none"
+            >
+              <span className="truncate">{currentGroup?.name ?? 'Select a team'}</span>
+              <ChevronDown className="h-5 w-5 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+            </button>
+          }
+        >
+          {groups.map((group) => (
+            <DropdownMenuItem
+              key={group.id}
+              variant="plain"
+              className={group.id === groupId ? 'text-white' : 'text-slate-300'}
+              onSelect={() => selectGroup(group.id)}
+            >
+              {group.name}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenu>
 
         <Button onClick={() => setIsCreating(true)} className="shrink-0">
           <Plus className="mr-1 h-4 w-4" />

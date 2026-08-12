@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { MoreVertical } from 'lucide-react';
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useNavigate } from 'react-router-dom';
 import { addMember, lookupUserByEmail, removeMember, updateMemberRole } from '../../services/groups.service';
 import { GROUP_ROLES, isGroupAdmin } from '../../utils/roles';
 import { errorMessage } from '../../utils/errors';
 import Button from '../../components/ui/Button';
+import DropdownMenu, { DropdownMenuItem } from '../../components/ui/DropdownMenu';
 import Input from '../../components/ui/Input';
 import Badge from '../../components/ui/Badge';
 
@@ -100,38 +100,27 @@ function AddMemberForm({ groupId }) {
 
 function MemberActionsMenu({ member, isSelf, canChangeRole, isBusy, onToggleRole, onRemove }) {
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger
-        disabled={isBusy}
-        aria-label="Member actions"
-        className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
-      >
-        <MoreVertical className="h-5 w-5" />
-      </DropdownMenu.Trigger>
-
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="end"
-          sideOffset={8}
-          className="z-50 w-40 rounded-lg border border-white/10 bg-neutral-950 py-1 shadow-2xl shadow-black/50"
+    <DropdownMenu
+      trigger={
+        <button
+          type="button"
+          disabled={isBusy}
+          aria-label="Member actions"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
         >
-          {canChangeRole && (
-            <DropdownMenu.Item
-              onSelect={onToggleRole}
-              className="cursor-pointer px-4 py-2 text-sm text-slate-300 outline-none transition-colors data-highlighted:bg-white/10"
-            >
-              {isGroupAdmin(member.role) ? 'Demote' : 'Promote'}
-            </DropdownMenu.Item>
-          )}
-          <DropdownMenu.Item
-            onSelect={onRemove}
-            className="cursor-pointer px-4 py-2 text-sm text-red-400 outline-none transition-colors data-highlighted:bg-white/10"
-          >
-            {isSelf ? 'Leave' : 'Remove'}
-          </DropdownMenu.Item>
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+          <MoreVertical className="h-5 w-5" />
+        </button>
+      }
+    >
+      {canChangeRole && (
+        <DropdownMenuItem onSelect={onToggleRole}>
+          {isGroupAdmin(member.role) ? 'Demote' : 'Promote'}
+        </DropdownMenuItem>
+      )}
+      <DropdownMenuItem variant="danger" onSelect={onRemove}>
+        {isSelf ? 'Leave' : 'Remove'}
+      </DropdownMenuItem>
+    </DropdownMenu>
   );
 }
 

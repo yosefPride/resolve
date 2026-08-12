@@ -9,12 +9,12 @@ import {
   MoreVertical,
   Pencil,
 } from 'lucide-react';
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useDeleteTicket } from '../../hooks/useTickets';
 import { useComments } from '../../hooks/useComments';
 import { errorMessage } from '../../utils/errors';
 import { formatDateTime, formatRelativeTime } from '../../utils/format';
 import Button from '../../components/ui/Button';
+import DropdownMenu, { DropdownMenuItem } from '../../components/ui/DropdownMenu';
 import Modal from '../../components/ui/Modal';
 import ActivityList from '../activity/ActivityList';
 import AiPanel from '../ai/AiPanel';
@@ -95,28 +95,21 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
             >
               <Pencil className="h-3.5 w-3.5" /> Edit Issue
             </Button>
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger
-                aria-label="Issue actions"
-                className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
-              >
-                <MoreVertical className="h-4 w-4" />
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Portal>
-                <DropdownMenu.Content
-                  align="end"
-                  sideOffset={8}
-                  className="z-50 w-40 rounded-lg border border-white/10 bg-neutral-950 py-1 shadow-2xl shadow-black/50"
+            <DropdownMenu
+              trigger={
+                <button
+                  type="button"
+                  aria-label="Issue actions"
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
                 >
-                  <DropdownMenu.Item
-                    onSelect={() => setIsConfirmingDelete(true)}
-                    className="cursor-pointer px-4 py-2 text-sm text-red-400 outline-none transition-colors data-highlighted:bg-white/10"
-                  >
-                    Delete issue
-                  </DropdownMenu.Item>
-                </DropdownMenu.Content>
-              </DropdownMenu.Portal>
-            </DropdownMenu.Root>
+                  <MoreVertical className="h-4 w-4" />
+                </button>
+              }
+            >
+              <DropdownMenuItem variant="danger" onSelect={() => setIsConfirmingDelete(true)}>
+                Delete issue
+              </DropdownMenuItem>
+            </DropdownMenu>
           </div>
         )}
       </div>
