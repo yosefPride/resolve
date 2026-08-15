@@ -76,4 +76,12 @@ impl UserService {
     ) -> Result<bool, UserRepoError> {
         self.repo.update_global_role(id, global_role).await
     }
+
+    pub async fn clear_global_role(&self, id: ObjectId) -> Result<bool, UserRepoError> {
+        self.repo.clear_global_role(id).await
+    }
+
+    pub async fn count_system_admins(&self) -> Result<u64, UserRepoError> {
+        self.repo.count_system_admins().await
+    }
 }

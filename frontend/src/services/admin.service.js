@@ -41,6 +41,12 @@ export function promoteUser(userId) {
   return api.post(`/admin/users/${userId}/promote`).then((res) => res.data);
 }
 
+// Rejected (409) if the target isn't currently a System Admin, or if they're
+// the last remaining one.
+export function demoteUser(userId) {
+  return api.post(`/admin/users/${userId}/demote`).then((res) => res.data);
+}
+
 // filters: { groupId?, userId? } — independent, either/both/neither. userId
 // filters by the deleted user. Omitted keys are left off the query string.
 export function listAuditLog(filters = {}) {

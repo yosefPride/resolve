@@ -1164,3 +1164,112 @@ fn test_promote_user_full_flow() {
         }
     });
 }
+
+// 13. POST /admin/users/:id/demote revokes System Admin, is audit-logged,
+// requires System Admin to call, 404s on a missing target, and 409s on a
+// target that isn't currently a System Admin. The "refuses to demote the last
+// remaining System Admin" guard is a global count over the whole `users`
+// collection, which this shared, cumulative test database can't isolate (see
+// tests/admin_service_tests.rs, which drops/recreates `users` per test, for
+// that assertion instead).
+#[test]
+fn test_demote_user_full_flow() {
+    support::runtime().block_on(async {
+        let (db, uri) = setup_db().await;
+        let user_repo = UserRepository::new(&db);
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(build_app_state(db.clone(), uri))
+                .service(web::scope("/api/v1").configure(routes::configure)),
+        )
+        .await;
+
+        let sysadmin: AuthResponse = actix_test::read_body_json(
+            actix_test::call_service(&app, register_request("demote-sysadmin").to_request())
+                .await,
+        )
+        .await;
+        make_system_admin(&db, ObjectId::parse_str(&sysadmin.user.id).unwrap()).await;
+
+        let other_admin: AuthResponse = actix_test::read_body_json(
+            actix_test::call_service(&app, register_request("demote-other-admin").to_request())
+                .await,
+        )
+        .await;
+        make_system_admin(&db, ObjectId::parse_str(&other_admin.user.id).unwrap()).await;
+
+        let plain: AuthResponse = actix_test::read_body_json(
+            actix_test::call_service(&app, register_request("demote-plain").to_request()).await,
+        )
+        .await;
+
+        // Non-admin caller → 403.
+        let forbidden = actix_test::TestRequest::post()
+            .uri(&format!("/api/v1/admin/users/{}/demote", sysadmin.user.id))
+            .insert_header(auth_header(&plain.jwt))
+            .to_request();
+        assert_eq!(
+            actix_test::call_service(&app, forbidden).await.status(),
+            403
+        );
+
+        // Missing target → 404.
+        let missing = actix_test::TestRequest::post()
+            .uri(&format!("/api/v1/admin/users/{}/demote", ObjectId::new()))
+            .insert_header(auth_header(&sysadmin.jwt))
+            .to_request();
+        assert_eq!(actix_test::call_service(&app, missing).await.status(), 404);
+
+        // Target isn't a System Admin → 409.
+        let not_admin = actix_test::TestRequest::post()
+            .uri(&format!("/api/v1/admin/users/{}/demote", plain.user.id))
+            .insert_header(auth_header(&sysadmin.jwt))
+            .to_request();
+        assert_eq!(
+            actix_test::call_service(&app, not_admin).await.status(),
+            409
+        );
+
+        // Demote other_admin, leaving sysadmin as the sole System Admin → 204.
+        let demote_req = actix_test::TestRequest::post()
+            .uri(&format!("/api/v1/admin/users/{}/demote", other_admin.user.id))
+            .insert_header(auth_header(&sysadmin.jwt))
+            .to_request();
+        assert_eq!(
+            actix_test::call_service(&app, demote_req).await.status(),
+            204
+        );
+
+        let list_req = actix_test::TestRequest::get()
+            .uri("/api/v1/admin/users")
+            .insert_header(auth_header(&sysadmin.jwt))
+            .to_request();
+        let users: Vec<UserResponse> =
+            actix_test::read_body_json(actix_test::call_service(&app, list_req).await).await;
+        let demoted = users
+            .iter()
+            .find(|u| u.id == other_admin.user.id)
+            .expect("demoted user missing from list");
+        assert!(demoted.global_role.is_none());
+
+        // Audit trail carries a demotion entry naming this target.
+        let audit_req = actix_test::TestRequest::get()
+            .uri("/api/v1/admin/audit-log")
+            .insert_header(auth_header(&sysadmin.jwt))
+            .to_request();
+        let entries: Vec<AuditLogEntryResponse> =
+            actix_test::read_body_json(actix_test::call_service(&app, audit_req).await).await;
+        assert!(entries.iter().any(|e| {
+            e.action == AuditAction::Demotion
+                && e.target_user_id.as_deref() == Some(other_admin.user.id.as_str())
+                && e.performed_by == sysadmin.user.id
+        }));
+
+        for id in [sysadmin.user.id, other_admin.user.id, plain.user.id] {
+            user_repo
+                .delete(ObjectId::parse_str(&id).unwrap())
+                .await
+                .ok();
+        }
+    });
+}

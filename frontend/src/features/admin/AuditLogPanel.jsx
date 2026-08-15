@@ -8,9 +8,10 @@ const ACTION_LABELS = {
   succession: 'Succession',
   group_auto_deleted: 'Team auto-deleted',
   promotion: 'Promoted to System Admin',
+  demotion: 'Demoted from System Admin',
 };
 
-// Succession/group_auto_deleted name the deleted user; promotion has no
+// Succession/group_auto_deleted name the deleted user; promotion/demotion has no
 // deleted user, only the user promoted. Either way it's "the user this row is
 // about", so the table treats them as one column.
 function entryUserId(entry) {

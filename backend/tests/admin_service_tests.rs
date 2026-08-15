@@ -857,3 +857,103 @@ fn test_promote_user_grants_role_and_is_audit_logged() {
         assert_conflict(result);
     });
 }
+
+// 26. A non-System-Admin caller is forbidden from demoting anyone.
+#[test]
+fn test_demote_user_requires_system_admin() {
+    support::runtime().block_on(async {
+        let (_db, admin, _groups, users, _audit) = setup().await;
+        let caller_id = create_user(&users, "not-admin").await;
+        let target_id = create_user(&users, "target").await;
+
+        let result = admin.demote_user(caller_id, target_id).await;
+        assert_forbidden(result);
+    });
+}
+
+// 27. Demoting a nonexistent target returns NotFound.
+#[test]
+fn test_demote_user_target_not_found() {
+    support::runtime().block_on(async {
+        let (_db, admin, _groups, users, _audit) = setup().await;
+        let caller_id = create_user(&users, "sysadmin").await;
+        make_system_admin(&users, caller_id).await;
+
+        let result = admin.demote_user(caller_id, ObjectId::new()).await;
+        assert!(matches!(result, Err(ApiError::NotFound)));
+    });
+}
+
+// 28. Demoting a user who isn't a System Admin is rejected with Conflict.
+#[test]
+fn test_demote_user_not_system_admin_conflict() {
+    support::runtime().block_on(async {
+        let (_db, admin, _groups, users, _audit) = setup().await;
+        let caller_id = create_user(&users, "sysadmin").await;
+        make_system_admin(&users, caller_id).await;
+        let target_id = create_user(&users, "plain").await;
+
+        let result = admin.demote_user(caller_id, target_id).await;
+        assert_conflict(result);
+    });
+}
+
+// 29. Demoting the sole remaining System Admin is rejected with Conflict —
+// even when it's the caller demoting themselves.
+#[test]
+fn test_demote_user_last_system_admin_conflict() {
+    support::runtime().block_on(async {
+        let (_db, admin, _groups, users, _audit) = setup().await;
+        let caller_id = create_user(&users, "sysadmin").await;
+        make_system_admin(&users, caller_id).await;
+
+        let result = admin.demote_user(caller_id, caller_id).await;
+        assert_conflict(result);
+
+        let caller = users
+            .find_by_id(caller_id)
+            .await
+            .expect("find_by_id failed")
+            .expect("caller missing");
+        assert!(matches!(caller.global_role, Some(GlobalRole::SystemAdmin)));
+    });
+}
+
+// 30. Demoting revokes the role and writes a Demotion audit entry. Self-
+// demotion succeeds as long as another System Admin still exists afterward.
+#[test]
+fn test_demote_user_revokes_role_and_is_audit_logged() {
+    support::runtime().block_on(async {
+        let (_db, admin, _groups, users, _audit) = setup().await;
+        let caller_id = create_user(&users, "sysadmin").await;
+        make_system_admin(&users, caller_id).await;
+        let other_admin_id = create_user(&users, "other-sysadmin").await;
+        make_system_admin(&users, other_admin_id).await;
+
+        admin
+            .demote_user(caller_id, caller_id)
+            .await
+            .expect("demote_user failed");
+
+        let caller = users
+            .find_by_id(caller_id)
+            .await
+            .expect("find_by_id failed")
+            .expect("caller missing");
+        assert!(caller.global_role.is_none());
+
+        let entries = admin
+            .list_audit_log(other_admin_id, None, None)
+            .await
+            .expect("list_audit_log failed");
+        assert!(entries.iter().any(|e| {
+            e.action == AuditAction::Demotion
+                && e.target_user_id.as_deref() == Some(caller_id.to_hex().as_str())
+                && e.performed_by == caller_id.to_hex()
+        }));
+
+        // Now the only System Admin: demoting is rejected.
+        let result = admin.demote_user(other_admin_id, other_admin_id).await;
+        assert_conflict(result);
+    });
+}

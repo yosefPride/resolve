@@ -3,6 +3,7 @@ import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-quer
 import UserTable from '../users/UserTable';
 import DeleteUserModal from './DeleteUserModal';
 import PromoteUserModal from './PromoteUserModal';
+import DemoteUserModal from './DemoteUserModal';
 import { listUsers } from '../../services/admin.service';
 import { useAuth } from '../../hooks/useAuth';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
@@ -13,6 +14,7 @@ export default function UsersPanel() {
   const queryClient = useQueryClient();
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [promoteTarget, setPromoteTarget] = useState(null);
+  const [demoteTarget, setDemoteTarget] = useState(null);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 300);
 
@@ -35,6 +37,12 @@ export default function UsersPanel() {
 
   function handlePromoted() {
     setPromoteTarget(null);
+    queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+    queryClient.invalidateQueries({ queryKey: ['admin', 'auditLog'] });
+  }
+
+  function handleDemoted() {
+    setDemoteTarget(null);
     queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
     queryClient.invalidateQueries({ queryKey: ['admin', 'auditLog'] });
   }
@@ -63,6 +71,7 @@ export default function UsersPanel() {
             currentUserId={currentUser?.id}
             onDelete={setDeleteTarget}
             onPromote={setPromoteTarget}
+            onDemote={setDemoteTarget}
           />
         ))}
 
@@ -79,6 +88,14 @@ export default function UsersPanel() {
           user={promoteTarget}
           onClose={() => setPromoteTarget(null)}
           onPromoted={handlePromoted}
+        />
+      )}
+
+      {demoteTarget && (
+        <DemoteUserModal
+          user={demoteTarget}
+          onClose={() => setDemoteTarget(null)}
+          onDemoted={handleDemoted}
         />
       )}
     </>

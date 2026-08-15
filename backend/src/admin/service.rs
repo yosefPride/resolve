@@ -233,9 +233,9 @@ impl AdminService {
         Ok(self.user_service.list_all(search).await?)
     }
 
-    // Grants the target user the global System Admin role. No path back
-    // (revoke) exists yet — see docs/rbac.md. Audit-logged like every other
-    // System Admin action in this service.
+    // Grants the target user the global System Admin role. Audit-logged like
+    // every other System Admin action in this service. See demote_user for
+    // the reverse.
     pub async fn promote_user(
         &self,
         caller_id: ObjectId,
@@ -268,6 +268,65 @@ impl AdminService {
             .insert_audit_entry(AuditLogEntry {
                 id: None,
                 action: AuditAction::Promotion,
+                group_id: None,
+                group_name: String::new(),
+                deleted_user_id: None,
+                deleted_user_name: String::new(),
+                successor_user_id: None,
+                successor_user_name: None,
+                target_user_id: Some(target_user_id),
+                target_user_name: Some(target_user.name),
+                performed_by: caller_id,
+                performed_by_name,
+                created_at: BsonDateTime::now(),
+            })
+            .await?;
+
+        Ok(())
+    }
+
+    // Revokes the target user's System Admin role. Refuses (409) to demote
+    // the last remaining System Admin — unlike Group Admin succession there's
+    // no successor to hand the role to, so the invariant is just "at least
+    // one must remain" rather than "someone must be named". Self-demotion is
+    // allowed as long as another System Admin still exists afterward.
+    pub async fn demote_user(
+        &self,
+        caller_id: ObjectId,
+        target_user_id: ObjectId,
+    ) -> Result<(), ApiError> {
+        self.rbac.require_system_admin(caller_id).await?;
+
+        let target_user = self
+            .user_service
+            .find_by_id(target_user_id)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+        if target_user.global_role != Some(GlobalRole::SystemAdmin) {
+            return Err(ApiError::Conflict(
+                "user is not a System Admin".to_string(),
+            ));
+        }
+        if self.user_service.count_system_admins().await? <= 1 {
+            return Err(ApiError::Conflict(
+                "cannot demote the last System Admin".to_string(),
+            ));
+        }
+        let performed_by_name = self
+            .user_service
+            .find_by_id(caller_id)
+            .await?
+            .map(|u| u.name)
+            .unwrap_or_default();
+
+        self.user_service
+            .clear_global_role(target_user_id)
+            .await?;
+
+        self.admin_repo
+            .insert_audit_entry(AuditLogEntry {
+                id: None,
+                action: AuditAction::Demotion,
                 group_id: None,
                 group_name: String::new(),
                 deleted_user_id: None,

@@ -126,6 +126,24 @@ impl UserRepository {
         Ok(result.matched_count > 0)
     }
 
+    pub async fn clear_global_role(&self, id: ObjectId) -> Result<bool, UserRepoError> {
+        let result = self
+            .collection
+            .update_one(doc! { "_id": id }, doc! { "$unset": { "global_role": "" } })
+            .await?;
+        Ok(result.matched_count > 0)
+    }
+
+    // Used to guard demotion: refuses to demote the last System Admin.
+    pub async fn count_system_admins(&self) -> Result<u64, UserRepoError> {
+        let role = mongodb::bson::to_bson(&GlobalRole::SystemAdmin)
+            .expect("GlobalRole always serializes");
+        Ok(self
+            .collection
+            .count_documents(doc! { "global_role": role })
+            .await?)
+    }
+
     pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, UserRepoError> {
         Ok(self.collection.find_one(doc! { "email": email }).await?)
     }

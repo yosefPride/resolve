@@ -12,19 +12,21 @@ pub enum AuditAction {
     Succession,
     GroupAutoDeleted,
     Promotion,
+    Demotion,
 }
 
 // One row per System Admin action worth an audit trail — succession/
 // auto-deletion performed during an admin-triggered user deletion, or a user
-// promoted to System Admin — see docs/database.md ("admin_audit_log") and
-// docs/rbac.md ("Group Admin Succession"). Not group-scoped tenant data:
-// written by System Admin, not read by group-scoped business logic.
+// promoted to or demoted from System Admin — see docs/database.md
+// ("admin_audit_log") and docs/rbac.md ("Group Admin Succession"). Not
+// group-scoped tenant data: written by System Admin, not read by
+// group-scoped business logic.
 //
 // Fields are optional because they're action-specific: Succession and
 // GroupAutoDeleted populate group_id/group_name/deleted_user_id/
 // deleted_user_name (successor_user_id/name too, for Succession only);
-// Promotion populates only target_user_id/target_user_name. performed_by is
-// the only field every action shares.
+// Promotion and Demotion each populate only target_user_id/target_user_name.
+// performed_by is the only field every action shares.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditLogEntry {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]

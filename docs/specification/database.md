@@ -223,21 +223,22 @@ Fields:
 Records System Admin actions worth a trail: naming a Group Admin successor (or
 auto-deleting a group with no possible successor) as part of deleting a user —
 see docs/rbac.md ("Group Admin Succession") and docs/api.md (`POST
-/admin/users/:id/delete`) — and granting a user the System Admin role, see
-docs/api.md (`POST /admin/users/:id/promote`).
+/admin/users/:id/delete`) — and granting or revoking a user's System Admin
+role, see docs/api.md (`POST /admin/users/:id/promote` and `POST
+/admin/users/:id/demote`).
 
 Fields:
 
 - \_id
-- action (succession | group_auto_deleted | promotion)
+- action (succession | group_auto_deleted | promotion | demotion)
 - group_id (nullable; set only when action = succession or group_auto_deleted)
 - group_name (snapshot — see note below; set only when action = succession or group_auto_deleted)
 - deleted_user_id (nullable; the user being deleted, was sole Group Admin of group_id; set only when action = succession or group_auto_deleted)
 - deleted_user_name (snapshot; set only when action = succession or group_auto_deleted)
 - successor_user_id (nullable; set only when action = succession)
 - successor_user_name (nullable; snapshot, set only when action = succession)
-- target_user_id (nullable; the user granted System Admin; set only when action = promotion)
-- target_user_name (nullable; snapshot, set only when action = promotion)
+- target_user_id (nullable; the user granted or revoked System Admin; set only when action = promotion or demotion)
+- target_user_name (nullable; snapshot, set only when action = promotion or demotion)
 - performed_by (System Admin's user_id)
 - performed_by_name (snapshot)
 - created_at
@@ -251,10 +252,10 @@ The `*_name` fields are denormalized snapshots captured at write time, not
 lookups. By the time the log is read the deleted user (action = succession or
 group_auto_deleted) and an auto-deleted group (action = group_auto_deleted) no
 longer exist, so their ids can't be resolved to names after the fact — the name
-is stored alongside the id when the entry is written. The promoted user (action
-= promotion) still exists, but its name is snapshotted too, for the same
-reason every other name here is: consistency, and so a later rename doesn't
-rewrite history.
+is stored alongside the id when the entry is written. The promoted/demoted
+user (action = promotion or demotion) still exists, but its name is
+snapshotted too, for the same reason every other name here is: consistency,
+and so a later rename doesn't rewrite history.
 
 Like refresh_tokens, this is system-level data tied to an admin action, not group-scoped tenant data — it is written by System Admin, not queried by group-scoped business logic.
 
@@ -323,7 +324,8 @@ System Admin capabilities:
 - manage users
 - manage groups
 - view system metadata
-- promote another user to System Admin (see docs/api.md, `POST /admin/users/:id/promote`) — one-way, audit-logged; there is no revoke/demote endpoint
+- promote another user to System Admin (see docs/api.md, `POST /admin/users/:id/promote`) — audit-logged
+- demote another user, or self, from System Admin (see docs/api.md, `POST /admin/users/:id/demote`) — audit-logged; rejected if the target is the last remaining System Admin
 
 System Admin limitations:
 
@@ -331,6 +333,7 @@ System Admin limitations:
 - cannot bypass group isolation
 - cannot appoint a Group Admin successor on a group's behalf (see docs/rbac.md, "Group Admin Succession")
 - cannot promote a user to System Admin except by calling the promote endpoint as an existing System Admin — the very first System Admin has no such caller, so is set directly against the database, outside the API
+- cannot demote the last remaining System Admin — unlike Group Admin succession there's no successor to name, so the invariant is simply "at least one must remain"
 
 ---
 
