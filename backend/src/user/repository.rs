@@ -6,7 +6,7 @@ use mongodb::{
     bson::{DateTime as BsonDateTime, doc, oid::ObjectId},
 };
 
-use crate::user::models::{CreateUserInput, User};
+use crate::user::models::{CreateUserInput, GlobalRole, User};
 use crate::utils::substring_regex;
 
 #[derive(Debug)]
@@ -104,6 +104,23 @@ impl UserRepository {
             .update_one(
                 doc! { "_id": id },
                 doc! { "$set": { "password_hash": password_hash } },
+            )
+            .await?;
+        Ok(result.matched_count > 0)
+    }
+
+    pub async fn update_global_role(
+        &self,
+        id: ObjectId,
+        global_role: GlobalRole,
+    ) -> Result<bool, UserRepoError> {
+        let global_role =
+            mongodb::bson::to_bson(&global_role).expect("GlobalRole always serializes");
+        let result = self
+            .collection
+            .update_one(
+                doc! { "_id": id },
+                doc! { "$set": { "global_role": global_role } },
             )
             .await?;
         Ok(result.matched_count > 0)

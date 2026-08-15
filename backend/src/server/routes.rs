@@ -141,7 +141,8 @@ pub fn configure(config: &mut web::ServiceConfig) {
                 .service(
                     web::scope("/users/{id}")
                         .route("/deletion-check", web::get().to(admin_handlers::deletion_check))
-                        .route("/delete", web::post().to(admin_handlers::delete_user)),
+                        .route("/delete", web::post().to(admin_handlers::delete_user))
+                        .route("/promote", web::post().to(admin_handlers::promote_user)),
                 ),
         );
 }

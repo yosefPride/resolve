@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use actix_web::{App, test as actix_test, web};
 use mongodb::{Database, IndexModel, bson::doc, bson::oid::ObjectId, options::IndexOptions};
-use resolve::admin::models::{AuditLogEntryResponse, DeleteUserRequest, DeletionCheckResponse};
+use resolve::admin::models::{
+    AuditAction, AuditLogEntryResponse, DeleteUserRequest, DeletionCheckResponse,
+};
 use resolve::auth::models::{AuthResponse, RegisterRequest};
 use resolve::group::models::{AddMemberRequest, CreateGroupRequest, GroupResponse, Role};
 use resolve::group::repository::GroupRepository;
@@ -71,9 +73,9 @@ fn auth_header(jwt: &str) -> (&'static str, String) {
     ("Authorization", format!("Bearer {jwt}"))
 }
 
-// No HTTP endpoint promotes a user to System Admin (by design — see
-// docs/rbac.md), so tests reach into the collection directly, same as
-// tests/admin_service_tests.rs's make_system_admin helper.
+// Seeds the very first System Admin directly, since POST /admin/users/:id/promote
+// itself requires a caller who already holds the role — same bootstrap problem
+// tests/admin_service_tests.rs's make_system_admin helper solves.
 async fn make_system_admin(db: &Database, user_id: ObjectId) {
     let role = mongodb::bson::to_bson(&GlobalRole::SystemAdmin).unwrap();
     db.collection::<mongodb::bson::Document>("users")
@@ -777,8 +779,8 @@ fn test_audit_log_lists_succession_entry() {
         assert_eq!(list_resp.status(), 200);
         let entries: Vec<AuditLogEntryResponse> = actix_test::read_body_json(list_resp).await;
         assert!(entries.iter().any(|e| {
-            e.group_id == group.id
-                && e.deleted_user_id == owner.user.id
+            e.group_id.as_deref() == Some(group.id.as_str())
+                && e.deleted_user_id.as_deref() == Some(owner.user.id.as_str())
                 && e.successor_user_id.as_deref() == Some(contributor.user.id.as_str())
         }));
 
@@ -1056,6 +1058,105 @@ fn test_list_groups_search() {
             group_repo.delete_group(group_id).await.ok();
         }
         for id in [sysadmin.user.id, owner.user.id] {
+            user_repo
+                .delete(ObjectId::parse_str(&id).unwrap())
+                .await
+                .ok();
+        }
+    });
+}
+
+// 12. POST /admin/users/:id/promote grants the target System Admin, is
+// audit-logged, is idempotent-rejecting on a second call, requires System
+// Admin to call, and 404s on a missing target.
+#[test]
+fn test_promote_user_full_flow() {
+    support::runtime().block_on(async {
+        let (db, uri) = setup_db().await;
+        let user_repo = UserRepository::new(&db);
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(build_app_state(db.clone(), uri))
+                .service(web::scope("/api/v1").configure(routes::configure)),
+        )
+        .await;
+
+        let sysadmin: AuthResponse = actix_test::read_body_json(
+            actix_test::call_service(&app, register_request("promote-sysadmin").to_request())
+                .await,
+        )
+        .await;
+        make_system_admin(&db, ObjectId::parse_str(&sysadmin.user.id).unwrap()).await;
+
+        let target: AuthResponse = actix_test::read_body_json(
+            actix_test::call_service(&app, register_request("promote-target").to_request())
+                .await,
+        )
+        .await;
+
+        // Non-admin caller → 403.
+        let forbidden = actix_test::TestRequest::post()
+            .uri(&format!("/api/v1/admin/users/{}/promote", target.user.id))
+            .insert_header(auth_header(&target.jwt))
+            .to_request();
+        assert_eq!(
+            actix_test::call_service(&app, forbidden).await.status(),
+            403
+        );
+
+        // Missing target → 404.
+        let missing = actix_test::TestRequest::post()
+            .uri(&format!("/api/v1/admin/users/{}/promote", ObjectId::new()))
+            .insert_header(auth_header(&sysadmin.jwt))
+            .to_request();
+        assert_eq!(actix_test::call_service(&app, missing).await.status(), 404);
+
+        // System Admin promotes the target → 204, role takes effect.
+        let promote_req = actix_test::TestRequest::post()
+            .uri(&format!("/api/v1/admin/users/{}/promote", target.user.id))
+            .insert_header(auth_header(&sysadmin.jwt))
+            .to_request();
+        assert_eq!(
+            actix_test::call_service(&app, promote_req).await.status(),
+            204
+        );
+
+        let list_req = actix_test::TestRequest::get()
+            .uri("/api/v1/admin/users")
+            .insert_header(auth_header(&sysadmin.jwt))
+            .to_request();
+        let users: Vec<UserResponse> =
+            actix_test::read_body_json(actix_test::call_service(&app, list_req).await).await;
+        let promoted = users
+            .iter()
+            .find(|u| u.id == target.user.id)
+            .expect("promoted user missing from list");
+        assert!(matches!(promoted.global_role, Some(GlobalRole::SystemAdmin)));
+
+        // Already a System Admin → 409, second time around.
+        let repeat_req = actix_test::TestRequest::post()
+            .uri(&format!("/api/v1/admin/users/{}/promote", target.user.id))
+            .insert_header(auth_header(&sysadmin.jwt))
+            .to_request();
+        assert_eq!(
+            actix_test::call_service(&app, repeat_req).await.status(),
+            409
+        );
+
+        // Audit trail carries a promotion entry naming this target.
+        let audit_req = actix_test::TestRequest::get()
+            .uri("/api/v1/admin/audit-log")
+            .insert_header(auth_header(&sysadmin.jwt))
+            .to_request();
+        let entries: Vec<AuditLogEntryResponse> =
+            actix_test::read_body_json(actix_test::call_service(&app, audit_req).await).await;
+        assert!(entries.iter().any(|e| {
+            e.action == AuditAction::Promotion
+                && e.target_user_id.as_deref() == Some(target.user.id.as_str())
+                && e.performed_by == sysadmin.user.id
+        }));
+
+        for id in [sysadmin.user.id, target.user.id] {
             user_repo
                 .delete(ObjectId::parse_str(&id).unwrap())
                 .await

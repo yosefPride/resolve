@@ -37,6 +37,10 @@ export function deleteUser(userId, successors) {
     .then((res) => res.data);
 }
 
+export function promoteUser(userId) {
+  return api.post(`/admin/users/${userId}/promote`).then((res) => res.data);
+}
+
 // filters: { groupId?, userId? } — independent, either/both/neither. userId
 // filters by the deleted user. Omitted keys are left off the query string.
 export function listAuditLog(filters = {}) {

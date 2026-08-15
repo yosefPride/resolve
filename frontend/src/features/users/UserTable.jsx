@@ -4,8 +4,9 @@ import Button from '../../components/ui/Button';
 
 // Presentational: renders the system-wide user list (GET /admin/users →
 // UserResponse[]). Loading/error live in the parent panel. The caller's own row
-// has no delete action (backend rejects self-deletion anyway).
-export default function UserTable({ users, currentUserId, onDelete }) {
+// has no actions (backend rejects self-deletion anyway; the viewer is already
+// a System Admin by virtue of reaching this page, so promotion doesn't apply).
+export default function UserTable({ users, currentUserId, onDelete, onPromote }) {
   if (users.length === 0) {
     return <p className="text-sm text-slate-400">No users found.</p>;
   }
@@ -35,9 +36,16 @@ export default function UserTable({ users, currentUserId, onDelete }) {
                 {user.id === currentUserId ? (
                   <span className="text-xs text-slate-500">You</span>
                 ) : (
-                  <Button variant="dangerOutline" size="sm" onClick={() => onDelete(user)}>
-                    Delete
-                  </Button>
+                  <div className="flex justify-end gap-2">
+                    {!isSystemAdmin(user) && (
+                      <Button variant="ghost" size="sm" onClick={() => onPromote(user)}>
+                        Promote
+                      </Button>
+                    )}
+                    <Button variant="dangerOutline" size="sm" onClick={() => onDelete(user)}>
+                      Delete
+                    </Button>
+                  </div>
                 )}
               </td>
             </tr>

@@ -22,7 +22,7 @@ use crate::link::repository::LinkRepository;
 use crate::rbac::service::RbacService;
 use crate::reference::repository::ReferenceRepository;
 use crate::ticket::repository::TicketRepository;
-use crate::user::models::UserResponse;
+use crate::user::models::{GlobalRole, UserResponse};
 use crate::user::service::UserService;
 
 #[derive(Default)]
@@ -167,12 +167,14 @@ impl AdminService {
                 .insert_audit_entry(AuditLogEntry {
                     id: None,
                     action: AuditAction::Succession,
-                    group_id: *group_id,
+                    group_id: Some(*group_id),
                     group_name: group_name.clone(),
-                    deleted_user_id: target_user_id,
+                    deleted_user_id: Some(target_user_id),
                     deleted_user_name: deleted_user_name.clone(),
                     successor_user_id: Some(successor_id),
                     successor_user_name: Some(successor_name),
+                    target_user_id: None,
+                    target_user_name: None,
                     performed_by: caller_id,
                     performed_by_name: performed_by_name.clone(),
                     created_at: BsonDateTime::now(),
@@ -196,12 +198,14 @@ impl AdminService {
                 .insert_audit_entry(AuditLogEntry {
                     id: None,
                     action: AuditAction::GroupAutoDeleted,
-                    group_id: *group_id,
+                    group_id: Some(*group_id),
                     group_name: group_name.clone(),
-                    deleted_user_id: target_user_id,
+                    deleted_user_id: Some(target_user_id),
                     deleted_user_name: deleted_user_name.clone(),
                     successor_user_id: None,
                     successor_user_name: None,
+                    target_user_id: None,
+                    target_user_name: None,
                     performed_by: caller_id,
                     performed_by_name: performed_by_name.clone(),
                     created_at: BsonDateTime::now(),
@@ -227,6 +231,58 @@ impl AdminService {
     ) -> Result<Vec<UserResponse>, ApiError> {
         self.rbac.require_system_admin(caller_id).await?;
         Ok(self.user_service.list_all(search).await?)
+    }
+
+    // Grants the target user the global System Admin role. No path back
+    // (revoke) exists yet — see docs/rbac.md. Audit-logged like every other
+    // System Admin action in this service.
+    pub async fn promote_user(
+        &self,
+        caller_id: ObjectId,
+        target_user_id: ObjectId,
+    ) -> Result<(), ApiError> {
+        self.rbac.require_system_admin(caller_id).await?;
+
+        let target_user = self
+            .user_service
+            .find_by_id(target_user_id)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+        if target_user.global_role == Some(GlobalRole::SystemAdmin) {
+            return Err(ApiError::Conflict(
+                "user is already a System Admin".to_string(),
+            ));
+        }
+        let performed_by_name = self
+            .user_service
+            .find_by_id(caller_id)
+            .await?
+            .map(|u| u.name)
+            .unwrap_or_default();
+
+        self.user_service
+            .update_global_role(target_user_id, GlobalRole::SystemAdmin)
+            .await?;
+
+        self.admin_repo
+            .insert_audit_entry(AuditLogEntry {
+                id: None,
+                action: AuditAction::Promotion,
+                group_id: None,
+                group_name: String::new(),
+                deleted_user_id: None,
+                deleted_user_name: String::new(),
+                successor_user_id: None,
+                successor_user_name: None,
+                target_user_id: Some(target_user_id),
+                target_user_name: Some(target_user.name),
+                performed_by: caller_id,
+                performed_by_name,
+                created_at: BsonDateTime::now(),
+            })
+            .await?;
+
+        Ok(())
     }
 
     // Read-only view of the succession/auto-deletion audit trail, System Admin
