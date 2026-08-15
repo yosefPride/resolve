@@ -5,7 +5,7 @@ use mongodb::{
     bson::{doc, oid::ObjectId},
     options::IndexOptions,
 };
-use resolve::admin::{repository::AdminRepository, service::AdminService};
+use resolve::admin::{models::AuditAction, repository::AdminRepository, service::AdminService};
 use resolve::errors::ApiError;
 use resolve::group::{models::Role, repository::GroupRepository, service::GroupService};
 use resolve::ticket::models::{CreateTicketInput, TicketPriority};
@@ -86,17 +86,12 @@ async fn create_user(user_repo: &UserRepository, prefix: &str) -> ObjectId {
     user.id.unwrap()
 }
 
-// No repository method exists to promote a user's global_role (not needed
-// anywhere in production code yet), so this reaches into the collection
-// directly — acceptable for test setup, matching how other test files create
-// indexes directly rather than through a repository.
-async fn make_system_admin(db: &Database, user_id: ObjectId) {
-    let role = mongodb::bson::to_bson(&GlobalRole::SystemAdmin).unwrap();
-    db.collection::<mongodb::bson::Document>("users")
-        .update_one(
-            doc! { "_id": user_id },
-            doc! { "$set": { "global_role": role } },
-        )
+// Bootstraps the very first System Admin directly through the repository —
+// AdminService::promote_user requires a caller who already holds the role, so
+// test setup can't go through the service for this one.
+async fn make_system_admin(user_repo: &UserRepository, user_id: ObjectId) {
+    user_repo
+        .update_global_role(user_id, GlobalRole::SystemAdmin)
         .await
         .expect("failed to promote to system admin");
 }
@@ -126,9 +121,9 @@ fn test_deletion_check_requires_system_admin() {
 #[test]
 fn test_deletion_check_no_memberships() {
     support::runtime().block_on(async {
-        let (db, admin, _groups, users, _audit) = setup().await;
+        let (_db, admin, _groups, users, _audit) = setup().await;
         let caller_id = create_user(&users, "sysadmin").await;
-        make_system_admin(&db, caller_id).await;
+        make_system_admin(&users, caller_id).await;
         let target_id = create_user(&users, "lonely").await;
 
         let check = admin
@@ -145,9 +140,9 @@ fn test_deletion_check_no_memberships() {
 #[test]
 fn test_deletion_check_blocked_group_with_successor() {
     support::runtime().block_on(async {
-        let (db, admin, groups, users, _audit) = setup().await;
+        let (_db, admin, groups, users, _audit) = setup().await;
         let caller_id = create_user(&users, "sysadmin").await;
-        make_system_admin(&db, caller_id).await;
+        make_system_admin(&users, caller_id).await;
         let target_id = create_user(&users, "sole-admin").await;
         let contributor_id = create_user(&users, "contributor").await;
 
@@ -181,9 +176,9 @@ fn test_deletion_check_blocked_group_with_successor() {
 #[test]
 fn test_deletion_check_auto_delete_group() {
     support::runtime().block_on(async {
-        let (db, admin, groups, users, _audit) = setup().await;
+        let (_db, admin, groups, users, _audit) = setup().await;
         let caller_id = create_user(&users, "sysadmin").await;
-        make_system_admin(&db, caller_id).await;
+        make_system_admin(&users, caller_id).await;
         let target_id = create_user(&users, "lone-admin").await;
 
         let group = groups
@@ -206,9 +201,9 @@ fn test_deletion_check_auto_delete_group() {
 #[test]
 fn test_deletion_check_target_not_found() {
     support::runtime().block_on(async {
-        let (db, admin, _groups, users, _audit) = setup().await;
+        let (_db, admin, _groups, users, _audit) = setup().await;
         let caller_id = create_user(&users, "sysadmin").await;
-        make_system_admin(&db, caller_id).await;
+        make_system_admin(&users, caller_id).await;
 
         let result = admin.deletion_check(caller_id, ObjectId::new()).await;
         assert!(matches!(result, Err(ApiError::NotFound)));
@@ -219,9 +214,9 @@ fn test_deletion_check_target_not_found() {
 #[test]
 fn test_delete_user_missing_successor_conflict() {
     support::runtime().block_on(async {
-        let (db, admin, groups, users, _audit) = setup().await;
+        let (_db, admin, groups, users, _audit) = setup().await;
         let caller_id = create_user(&users, "sysadmin").await;
-        make_system_admin(&db, caller_id).await;
+        make_system_admin(&users, caller_id).await;
         let target_id = create_user(&users, "sole-admin").await;
         let contributor_id = create_user(&users, "contributor").await;
 
@@ -261,9 +256,9 @@ fn test_delete_user_missing_successor_conflict() {
 #[test]
 fn test_delete_user_with_successor_succeeds() {
     support::runtime().block_on(async {
-        let (db, admin, groups, users, audit) = setup().await;
+        let (_db, admin, groups, users, audit) = setup().await;
         let caller_id = create_user(&users, "sysadmin").await;
-        make_system_admin(&db, caller_id).await;
+        make_system_admin(&users, caller_id).await;
         let target_id = create_user(&users, "sole-admin").await;
         let contributor_id = create_user(&users, "contributor").await;
 
@@ -319,9 +314,9 @@ fn test_delete_user_with_successor_succeeds() {
 #[test]
 fn test_delete_user_auto_deletes_lone_group() {
     support::runtime().block_on(async {
-        let (db, admin, groups, users, audit) = setup().await;
+        let (_db, admin, groups, users, audit) = setup().await;
         let caller_id = create_user(&users, "sysadmin").await;
-        make_system_admin(&db, caller_id).await;
+        make_system_admin(&users, caller_id).await;
         let target_id = create_user(&users, "lone-admin").await;
 
         let group = groups
@@ -362,9 +357,9 @@ fn test_delete_user_auto_deletes_lone_group() {
 #[test]
 fn test_delete_user_removes_plain_membership() {
     support::runtime().block_on(async {
-        let (db, admin, groups, users, audit) = setup().await;
+        let (_db, admin, groups, users, audit) = setup().await;
         let caller_id = create_user(&users, "sysadmin").await;
-        make_system_admin(&db, caller_id).await;
+        make_system_admin(&users, caller_id).await;
         let owner_id = create_user(&users, "owner").await;
         let target_id = create_user(&users, "contributor").await;
 
@@ -431,9 +426,9 @@ fn test_delete_user_requires_system_admin() {
 #[test]
 fn test_delete_user_partial_successors_rejected_atomically() {
     support::runtime().block_on(async {
-        let (db, admin, groups, users, _audit) = setup().await;
+        let (_db, admin, groups, users, _audit) = setup().await;
         let caller_id = create_user(&users, "sysadmin").await;
-        make_system_admin(&db, caller_id).await;
+        make_system_admin(&users, caller_id).await;
         let target_id = create_user(&users, "sole-admin").await;
         let contributor_a = create_user(&users, "contributor-a").await;
         let contributor_b = create_user(&users, "contributor-b").await;
@@ -500,9 +495,9 @@ fn test_list_users_requires_system_admin() {
 #[test]
 fn test_list_users_returns_all_users() {
     support::runtime().block_on(async {
-        let (db, admin, _groups, users, _audit) = setup().await;
+        let (_db, admin, _groups, users, _audit) = setup().await;
         let caller_id = create_user(&users, "sysadmin").await;
-        make_system_admin(&db, caller_id).await;
+        make_system_admin(&users, caller_id).await;
         create_user(&users, "someone").await;
         create_user(&users, "someone-else").await;
 
@@ -530,9 +525,9 @@ fn test_list_groups_requires_system_admin() {
 #[test]
 fn test_list_groups_returns_all_groups() {
     support::runtime().block_on(async {
-        let (db, admin, groups, users, _audit) = setup().await;
+        let (_db, admin, groups, users, _audit) = setup().await;
         let caller_id = create_user(&users, "sysadmin").await;
-        make_system_admin(&db, caller_id).await;
+        make_system_admin(&users, caller_id).await;
         let owner_id = create_user(&users, "owner").await;
 
         groups
@@ -577,7 +572,7 @@ fn test_delete_group_as_non_member_succeeds() {
     support::runtime().block_on(async {
         let (db, admin, groups, users, _audit) = setup().await;
         let caller_id = create_user(&users, "sysadmin").await;
-        make_system_admin(&db, caller_id).await;
+        make_system_admin(&users, caller_id).await;
         let owner_id = create_user(&users, "owner").await;
         let contributor_id = create_user(&users, "contributor").await;
 
@@ -616,9 +611,9 @@ fn test_delete_group_as_non_member_succeeds() {
 #[test]
 fn test_delete_group_not_found() {
     support::runtime().block_on(async {
-        let (db, admin, _groups, users, _audit) = setup().await;
+        let (_db, admin, _groups, users, _audit) = setup().await;
         let caller_id = create_user(&users, "sysadmin").await;
-        make_system_admin(&db, caller_id).await;
+        make_system_admin(&users, caller_id).await;
 
         let result = admin.delete_group(caller_id, ObjectId::new()).await;
         assert!(matches!(result, Err(ApiError::NotFound)));
@@ -642,9 +637,9 @@ fn test_list_audit_log_requires_system_admin() {
 #[test]
 fn test_list_audit_log_filters() {
     support::runtime().block_on(async {
-        let (db, admin, groups, users, _audit) = setup().await;
+        let (_db, admin, groups, users, _audit) = setup().await;
         let caller_id = create_user(&users, "sysadmin").await;
-        make_system_admin(&db, caller_id).await;
+        make_system_admin(&users, caller_id).await;
         let target_id = create_user(&users, "sole-admin").await;
         let succ_a = create_user(&users, "succ-a").await;
         let succ_b = create_user(&users, "succ-b").await;
@@ -683,7 +678,7 @@ fn test_list_audit_log_filters() {
             .await
             .expect("list_audit_log failed");
         assert_eq!(only_a.len(), 1);
-        assert_eq!(only_a[0].group_id, group_a.id);
+        assert_eq!(only_a[0].group_id, Some(group_a.id.clone()));
         assert_eq!(only_a[0].successor_user_id, Some(succ_a.to_hex()));
 
         // Filter by the deleted user: both groups' entries (both name that user).
@@ -692,7 +687,7 @@ fn test_list_audit_log_filters() {
             .await
             .expect("list_audit_log failed");
         assert_eq!(by_user.len(), 2);
-        assert!(by_user.iter().all(|e| e.deleted_user_id == target_id.to_hex()));
+        assert!(by_user.iter().all(|e| e.deleted_user_id.as_deref() == Some(target_id.to_hex().as_str())));
 
         // No filter: both entries.
         let all = admin
@@ -744,9 +739,9 @@ async fn count_counters(group_id: ObjectId) -> u64 {
 #[test]
 fn test_admin_delete_group_cascades_tickets_and_counter() {
     support::runtime().block_on(async {
-        let (db, admin, groups, users, _audit) = setup().await;
+        let (_db, admin, groups, users, _audit) = setup().await;
         let caller_id = create_user(&users, "sysadmin").await;
-        make_system_admin(&db, caller_id).await;
+        make_system_admin(&users, caller_id).await;
         let owner_id = create_user(&users, "group-admin").await;
 
         let group = groups
@@ -775,9 +770,9 @@ fn test_admin_delete_group_cascades_tickets_and_counter() {
 #[test]
 fn test_delete_user_auto_delete_cascades_tickets_and_counter() {
     support::runtime().block_on(async {
-        let (db, admin, groups, users, _audit) = setup().await;
+        let (_db, admin, groups, users, _audit) = setup().await;
         let caller_id = create_user(&users, "sysadmin").await;
-        make_system_admin(&db, caller_id).await;
+        make_system_admin(&users, caller_id).await;
         let target_id = create_user(&users, "lone-admin").await;
 
         let group = groups
@@ -797,5 +792,168 @@ fn test_delete_user_auto_delete_cascades_tickets_and_counter() {
 
         assert_eq!(count_tickets(group_id).await, 0, "tickets were orphaned");
         assert_eq!(count_counters(group_id).await, 0, "counter was orphaned");
+    });
+}
+
+// 23. A non-System-Admin caller is forbidden from promoting anyone.
+#[test]
+fn test_promote_user_requires_system_admin() {
+    support::runtime().block_on(async {
+        let (_db, admin, _groups, users, _audit) = setup().await;
+        let caller_id = create_user(&users, "not-admin").await;
+        let target_id = create_user(&users, "target").await;
+
+        let result = admin.promote_user(caller_id, target_id).await;
+        assert_forbidden(result);
+    });
+}
+
+// 24. Promoting a nonexistent target returns NotFound.
+#[test]
+fn test_promote_user_target_not_found() {
+    support::runtime().block_on(async {
+        let (_db, admin, _groups, users, _audit) = setup().await;
+        let caller_id = create_user(&users, "sysadmin").await;
+        make_system_admin(&users, caller_id).await;
+
+        let result = admin.promote_user(caller_id, ObjectId::new()).await;
+        assert!(matches!(result, Err(ApiError::NotFound)));
+    });
+}
+
+// 25. Promoting grants the role, writes a Promotion audit entry, and a second
+// promotion of the same user is rejected with Conflict.
+#[test]
+fn test_promote_user_grants_role_and_is_audit_logged() {
+    support::runtime().block_on(async {
+        let (_db, admin, _groups, users, _audit) = setup().await;
+        let caller_id = create_user(&users, "sysadmin").await;
+        make_system_admin(&users, caller_id).await;
+        let target_id = create_user(&users, "target").await;
+
+        admin
+            .promote_user(caller_id, target_id)
+            .await
+            .expect("promote_user failed");
+
+        let target = users
+            .find_by_id(target_id)
+            .await
+            .expect("find_by_id failed")
+            .expect("target missing");
+        assert!(matches!(target.global_role, Some(GlobalRole::SystemAdmin)));
+
+        let entries = admin
+            .list_audit_log(caller_id, None, None)
+            .await
+            .expect("list_audit_log failed");
+        assert!(entries.iter().any(|e| {
+            e.action == AuditAction::Promotion
+                && e.target_user_id.as_deref() == Some(target_id.to_hex().as_str())
+                && e.performed_by == caller_id.to_hex()
+        }));
+
+        let result = admin.promote_user(caller_id, target_id).await;
+        assert_conflict(result);
+    });
+}
+
+// 26. A non-System-Admin caller is forbidden from demoting anyone.
+#[test]
+fn test_demote_user_requires_system_admin() {
+    support::runtime().block_on(async {
+        let (_db, admin, _groups, users, _audit) = setup().await;
+        let caller_id = create_user(&users, "not-admin").await;
+        let target_id = create_user(&users, "target").await;
+
+        let result = admin.demote_user(caller_id, target_id).await;
+        assert_forbidden(result);
+    });
+}
+
+// 27. Demoting a nonexistent target returns NotFound.
+#[test]
+fn test_demote_user_target_not_found() {
+    support::runtime().block_on(async {
+        let (_db, admin, _groups, users, _audit) = setup().await;
+        let caller_id = create_user(&users, "sysadmin").await;
+        make_system_admin(&users, caller_id).await;
+
+        let result = admin.demote_user(caller_id, ObjectId::new()).await;
+        assert!(matches!(result, Err(ApiError::NotFound)));
+    });
+}
+
+// 28. Demoting a user who isn't a System Admin is rejected with Conflict.
+#[test]
+fn test_demote_user_not_system_admin_conflict() {
+    support::runtime().block_on(async {
+        let (_db, admin, _groups, users, _audit) = setup().await;
+        let caller_id = create_user(&users, "sysadmin").await;
+        make_system_admin(&users, caller_id).await;
+        let target_id = create_user(&users, "plain").await;
+
+        let result = admin.demote_user(caller_id, target_id).await;
+        assert_conflict(result);
+    });
+}
+
+// 29. Demoting the sole remaining System Admin is rejected with Conflict —
+// even when it's the caller demoting themselves.
+#[test]
+fn test_demote_user_last_system_admin_conflict() {
+    support::runtime().block_on(async {
+        let (_db, admin, _groups, users, _audit) = setup().await;
+        let caller_id = create_user(&users, "sysadmin").await;
+        make_system_admin(&users, caller_id).await;
+
+        let result = admin.demote_user(caller_id, caller_id).await;
+        assert_conflict(result);
+
+        let caller = users
+            .find_by_id(caller_id)
+            .await
+            .expect("find_by_id failed")
+            .expect("caller missing");
+        assert!(matches!(caller.global_role, Some(GlobalRole::SystemAdmin)));
+    });
+}
+
+// 30. Demoting revokes the role and writes a Demotion audit entry. Self-
+// demotion succeeds as long as another System Admin still exists afterward.
+#[test]
+fn test_demote_user_revokes_role_and_is_audit_logged() {
+    support::runtime().block_on(async {
+        let (_db, admin, _groups, users, _audit) = setup().await;
+        let caller_id = create_user(&users, "sysadmin").await;
+        make_system_admin(&users, caller_id).await;
+        let other_admin_id = create_user(&users, "other-sysadmin").await;
+        make_system_admin(&users, other_admin_id).await;
+
+        admin
+            .demote_user(caller_id, caller_id)
+            .await
+            .expect("demote_user failed");
+
+        let caller = users
+            .find_by_id(caller_id)
+            .await
+            .expect("find_by_id failed")
+            .expect("caller missing");
+        assert!(caller.global_role.is_none());
+
+        let entries = admin
+            .list_audit_log(other_admin_id, None, None)
+            .await
+            .expect("list_audit_log failed");
+        assert!(entries.iter().any(|e| {
+            e.action == AuditAction::Demotion
+                && e.target_user_id.as_deref() == Some(caller_id.to_hex().as_str())
+                && e.performed_by == caller_id.to_hex()
+        }));
+
+        // Now the only System Admin: demoting is rejected.
+        let result = admin.demote_user(other_admin_id, other_admin_id).await;
+        assert_conflict(result);
     });
 }

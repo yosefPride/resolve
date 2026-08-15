@@ -6,7 +6,7 @@ use mongodb::{
     bson::{DateTime as BsonDateTime, doc, oid::ObjectId},
 };
 
-use crate::user::models::{CreateUserInput, User};
+use crate::user::models::{CreateUserInput, GlobalRole, User};
 use crate::utils::substring_regex;
 
 #[derive(Debug)]
@@ -107,6 +107,41 @@ impl UserRepository {
             )
             .await?;
         Ok(result.matched_count > 0)
+    }
+
+    pub async fn update_global_role(
+        &self,
+        id: ObjectId,
+        global_role: GlobalRole,
+    ) -> Result<bool, UserRepoError> {
+        let global_role =
+            mongodb::bson::to_bson(&global_role).expect("GlobalRole always serializes");
+        let result = self
+            .collection
+            .update_one(
+                doc! { "_id": id },
+                doc! { "$set": { "global_role": global_role } },
+            )
+            .await?;
+        Ok(result.matched_count > 0)
+    }
+
+    pub async fn clear_global_role(&self, id: ObjectId) -> Result<bool, UserRepoError> {
+        let result = self
+            .collection
+            .update_one(doc! { "_id": id }, doc! { "$unset": { "global_role": "" } })
+            .await?;
+        Ok(result.matched_count > 0)
+    }
+
+    // Used to guard demotion: refuses to demote the last System Admin.
+    pub async fn count_system_admins(&self) -> Result<u64, UserRepoError> {
+        let role = mongodb::bson::to_bson(&GlobalRole::SystemAdmin)
+            .expect("GlobalRole always serializes");
+        Ok(self
+            .collection
+            .count_documents(doc! { "global_role": role })
+            .await?)
     }
 
     pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, UserRepoError> {

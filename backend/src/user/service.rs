@@ -1,7 +1,7 @@
 use mongodb::{Database, bson::oid::ObjectId};
 
 use crate::user::{
-    models::{CreateUserInput, User, UserResponse},
+    models::{CreateUserInput, GlobalRole, User, UserResponse},
     repository::{UserRepoError, UserRepository},
 };
 
@@ -67,5 +67,21 @@ impl UserService {
 
     pub async fn delete(&self, id: ObjectId) -> Result<bool, UserRepoError> {
         self.repo.delete(id).await
+    }
+
+    pub async fn update_global_role(
+        &self,
+        id: ObjectId,
+        global_role: GlobalRole,
+    ) -> Result<bool, UserRepoError> {
+        self.repo.update_global_role(id, global_role).await
+    }
+
+    pub async fn clear_global_role(&self, id: ObjectId) -> Result<bool, UserRepoError> {
+        self.repo.clear_global_role(id).await
+    }
+
+    pub async fn count_system_admins(&self) -> Result<u64, UserRepoError> {
+        self.repo.count_system_admins().await
     }
 }

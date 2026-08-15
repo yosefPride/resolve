@@ -711,28 +711,56 @@ Every succession or auto-deletion performed this way is recorded in `admin_audit
 
 ---
 
+## POST /admin/users/:id/promote
+
+Grant the target user the global System Admin role — System Admin only.
+
+No request body. Rejected (409) if the target is already a System Admin. 404 if the target doesn't exist.
+
+The very first System Admin can't be created through this endpoint, since it requires an existing System Admin to call it; that one is set directly against the database.
+
+The grant is recorded in `admin_audit_log` as a `promotion` entry, readable via `GET /admin/audit-log` below.
+
+---
+
+## POST /admin/users/:id/demote
+
+Revoke the target user's global System Admin role — System Admin only.
+
+No request body. Rejected (409) if the target isn't currently a System Admin, or if the target is the last remaining System Admin (there's no successor to name, unlike Group Admin succession — see docs/rbac.md, "System Admin Model" — so the rule is simply "at least one must remain"). 404 if the target doesn't exist. Self-demotion is allowed, as long as another System Admin still exists afterward.
+
+The revocation is recorded in `admin_audit_log` as a `demotion` entry, readable via `GET /admin/audit-log` below.
+
+---
+
 ## GET /admin/audit-log
 
-Read the succession / auto-deletion audit trail — System Admin only.
+Read the System Admin action audit trail — succession, auto-deletion, promotion, and demotion — System Admin only.
 
 Optional query filters, independent (either may be used alone, both may be combined, both may be omitted):
 
-- `group_id` — only entries for that group
-- `user_id` — only entries where that user was the one deleted
+- `group_id` — only entries for that group (promotion/demotion entries have none, so are excluded when this filter is set)
+- `user_id` — only entries where that user was the one deleted (promotion/demotion entries have no deleted user, so are excluded when this filter is set — filtering by the promoted/demoted user isn't supported)
 
 Entries are returned newest-first. The `*_name` fields are snapshots taken when
-the entry was written (the deleted user, and an auto-deleted group, no longer
-exist to be looked up at read time). Each entry:
+the entry was written, not lookups — for succession/group_auto_deleted the
+deleted user (and, for group_auto_deleted, the group) no longer exist to be
+looked up at read time; for promotion/demotion the target user still exists,
+but is snapshotted too, for consistency and so a later rename doesn't rewrite
+history. Fields are action-specific — each entry only populates the fields
+relevant to its action:
 
 - id
-- action (succession | group_auto_deleted)
-- group_id
-- group_name
-- deleted_user_id
-- deleted_user_name
-- successor_user_id (null when action = group_auto_deleted)
-- successor_user_name (null when action = group_auto_deleted)
-- performed_by (the System Admin who ran the deletion)
+- action (succession | group_auto_deleted | promotion | demotion)
+- group_id (succession, group_auto_deleted only)
+- group_name (succession, group_auto_deleted only)
+- deleted_user_id (succession, group_auto_deleted only)
+- deleted_user_name (succession, group_auto_deleted only)
+- successor_user_id (succession only)
+- successor_user_name (succession only)
+- target_user_id (promotion only — the user granted System Admin)
+- target_user_name (promotion only)
+- performed_by (the System Admin who performed the action)
 - performed_by_name
 - created_at
 
