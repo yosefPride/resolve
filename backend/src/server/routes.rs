@@ -7,6 +7,7 @@ use crate::auth::handlers as auth_handlers;
 use crate::comment::handlers as comment_handlers;
 use crate::group::handlers as group_handlers;
 use crate::link::handlers as link_handlers;
+use crate::reaction::handlers as reaction_handlers;
 use crate::reference::handlers as reference_handlers;
 use crate::ticket::handlers as ticket_handlers;
 
@@ -74,6 +75,14 @@ pub fn configure(config: &mut web::ServiceConfig) {
                 .route(
                     "/{id}/tickets/{ticket_id}/comments/{comment_id}",
                     web::delete().to(comment_handlers::delete_comment),
+                )
+                .route(
+                    "/{id}/tickets/{ticket_id}/comments/{comment_id}/reactions",
+                    web::put().to(reaction_handlers::set_reaction),
+                )
+                .route(
+                    "/{id}/tickets/{ticket_id}/comments/{comment_id}/reactions",
+                    web::delete().to(reaction_handlers::remove_reaction),
                 )
                 .route(
                     "/{id}/tickets/{ticket_id}/activity",

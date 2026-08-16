@@ -9,6 +9,7 @@ mod errors;
 mod group;
 mod link;
 mod rbac;
+mod reaction;
 mod reference;
 mod server;
 mod state;
@@ -58,7 +59,7 @@ async fn main() -> std::io::Result<()> {
         // calls to be sent/received at all. So the origin must be explicit.
         let cors = Cors::default()
             .allowed_origin(&app_state.config.frontend_origin)
-            .allowed_methods(vec!["GET", "POST", "PATCH", "DELETE"])
+            .allowed_methods(vec!["GET", "POST", "PATCH", "PUT", "DELETE"])
             .allowed_headers(vec![header::AUTHORIZATION, header::CONTENT_TYPE])
             .supports_credentials()
             .max_age(3600);

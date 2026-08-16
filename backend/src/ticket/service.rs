@@ -11,6 +11,7 @@ use crate::comment::repository::CommentRepository;
 use crate::errors::ApiError;
 use crate::link::repository::LinkRepository;
 use crate::rbac::service::RbacService;
+use crate::reaction::repository::ReactionRepository;
 use crate::reference::repository::ReferenceRepository;
 use crate::ticket::models::{
     CreateTicketInput, CreateTicketRequest, ListTicketsQuery, Ticket, TicketListResponse,
@@ -29,6 +30,7 @@ pub struct TicketService {
     ai_repo: AiRepository,
     activity_repo: ActivityRepository,
     link_repo: LinkRepository,
+    reaction_repo: ReactionRepository,
     reference_repo: ReferenceRepository,
     user_service: UserService,
     rbac: RbacService,
@@ -42,6 +44,7 @@ impl TicketService {
             ai_repo: AiRepository::new(db),
             activity_repo: ActivityRepository::new(db),
             link_repo: LinkRepository::new(db),
+            reaction_repo: ReactionRepository::new(db),
             reference_repo: ReferenceRepository::new(db),
             user_service: UserService::new(db),
             rbac: RbacService::new(db),
@@ -262,6 +265,12 @@ impl TicketService {
             .await?
             .ok_or(ApiError::NotFound)?;
         self.comment_repo
+            .delete_by_ticket(group_id, ticket_id)
+            .await?;
+        // Every comment on this ticket is gone via the cascade just above,
+        // so their reactions would otherwise be orphaned rows referencing a
+        // comment_id that no longer resolves to anything.
+        self.reaction_repo
             .delete_by_ticket(group_id, ticket_id)
             .await?;
         self.ai_repo.delete_by_ticket(group_id, ticket_id).await?;

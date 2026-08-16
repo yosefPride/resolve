@@ -8,6 +8,7 @@ pub mod errors;
 pub mod group;
 pub mod link;
 pub mod rbac;
+pub mod reaction;
 pub mod reference;
 pub mod server;
 pub mod state;

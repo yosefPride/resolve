@@ -2,6 +2,8 @@ use chrono::{DateTime, Utc};
 use mongodb::bson::{DateTime as BsonDateTime, oid::ObjectId};
 use serde::{Deserialize, Serialize};
 
+use crate::reaction::models::ReactionSummary;
+
 // Content is replaced with DELETED_CONTENT_PLACEHOLDER and is_deleted flips to
 // true when a comment with existing replies is deleted (CommentService::
 // delete_comment) — the document stays so those replies keep a valid
@@ -47,4 +49,9 @@ pub struct CommentResponse {
     pub content: String,
     pub is_deleted: bool,
     pub created_at: DateTime<Utc>,
+    // Per-emoji counts plus whether the requesting user is behind one of
+    // them — built by CommentService::enrich_comment from the
+    // comment_reactions collection, empty on a tombstoned comment (its
+    // reactions are cleared at delete time, see CommentService::delete_comment).
+    pub reactions: Vec<ReactionSummary>,
 }

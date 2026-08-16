@@ -1,18 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { useComments, useDeleteComment } from '../../hooks/useComments';
+import { useComments, useDeleteComment, useRemoveReaction, useSetReaction } from '../../hooks/useComments';
 import { useAuth } from '../../hooks/useAuth';
 import { errorMessage } from '../../utils/errors';
 import { formatDateTime, formatRelativeTime } from '../../utils/format';
 import Avatar from '../../components/ui/Avatar';
 import Button from '../../components/ui/Button';
+import EmojiPicker from '../../components/ui/EmojiPicker';
 import Modal from '../../components/ui/Modal';
 import CommentForm from './CommentForm';
-
-// Visual nesting stops here. Replies deeper than this keep their real depth in
-// the tree but render at the same inset, so a long back-and-forth can't shrink
-// the text column to nothing on a phone. Past the cap it's the quoted-parent
-// block on each reply that carries the structure instead of the indent.
-const MAX_INDENT_DEPTH = 4;
 
 // The API hands back one flat array, oldest-first. Map preserves insertion
 // order, so both roots and each reply list come out oldest-first with no sort.
@@ -80,9 +75,48 @@ function QuotedParent({ summary }) {
   );
 }
 
+// Pills for existing reactions plus an "add reaction" picker, meant to sit
+// inline in the same row as the Reply/Delete buttons (not a separate row
+// above them) — a Fragment rather than its own flex container, so its pills
+// lay out as direct siblings of those buttons. Clicking a pill you're already
+// behind on removes it; clicking someone else's pill joins it as your own —
+// the backend allows only one reaction per user per comment, so that join
+// silently replaces whatever emoji you'd picked before, same as picking a
+// fresh one from the picker. Not gated on isClosed: reactions stay allowed on
+// a closed ticket, unlike posting a new comment or reply.
+function ReactionBar({ comment, onSetReaction, onRemoveReaction }) {
+  return (
+    <>
+      {comment.reactions.map((reaction) => (
+        <button
+          key={reaction.emoji}
+          type="button"
+          onClick={() =>
+            reaction.reacted_by_me
+              ? onRemoveReaction(comment.id)
+              : onSetReaction(comment.id, reaction.emoji)
+          }
+          className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors ${
+            reaction.reacted_by_me
+              ? 'border-sky-400/30 bg-sky-500/10 text-sky-300'
+              : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
+          }`}
+        >
+          <span>{reaction.emoji}</span>
+          <span>{reaction.count}</span>
+        </button>
+      ))}
+      <EmojiPicker
+        closeOnSelect
+        onSelect={(char) => onSetReaction(comment.id, char)}
+        triggerClassName="p-1"
+      />
+    </>
+  );
+}
+
 function CommentItem({
   comment,
-  depth,
   groupId,
   ticketId,
   currentUserId,
@@ -92,6 +126,8 @@ function CommentItem({
   onReply,
   onCancelReply,
   onRequestDelete,
+  onSetReaction,
+  onRemoveReaction,
 }) {
   // Author or Group Admin, matching RbacService::require_owner_or_group_admin.
   // UX only — the backend rejects an unauthorised DELETE either way. A
@@ -136,7 +172,12 @@ function CommentItem({
         </div>
 
         {!comment.is_deleted && (
-          <div className="flex gap-1">
+          <div className="flex flex-wrap items-center gap-1">
+            <ReactionBar
+              comment={comment}
+              onSetReaction={onSetReaction}
+              onRemoveReaction={onRemoveReaction}
+            />
             {!isClosed && (
               <Button variant="ghost" size="sm" onClick={() => onReply(comment.id)}>
                 Reply
@@ -170,12 +211,11 @@ function CommentItem({
       )}
 
       {comment.replies.length > 0 && (
-        <ul className={depth < MAX_INDENT_DEPTH ? 'border-l border-white/10 pl-4' : ''}>
+        <ul>
           {comment.replies.map((reply) => (
             <CommentItem
               key={reply.id}
               comment={reply}
-              depth={depth + 1}
               groupId={groupId}
               ticketId={ticketId}
               currentUserId={currentUserId}
@@ -185,6 +225,8 @@ function CommentItem({
               onReply={onReply}
               onCancelReply={onCancelReply}
               onRequestDelete={onRequestDelete}
+              onSetReaction={onSetReaction}
+              onRemoveReaction={onRemoveReaction}
             />
           ))}
         </ul>
@@ -200,6 +242,8 @@ export default function CommentList({ groupId, ticketId, isAdmin, isClosed, isVi
   const [pendingDelete, setPendingDelete] = useState(null);
   const [deleteError, setDeleteError] = useState('');
   const deleteComment = useDeleteComment(groupId, ticketId);
+  const setReaction = useSetReaction(groupId, ticketId);
+  const removeReaction = useRemoveReaction(groupId, ticketId);
   const threadRef = useRef(null);
 
   // Comments are oldest-first, so the latest is at the bottom — jump there
@@ -254,7 +298,6 @@ export default function CommentList({ groupId, ticketId, isAdmin, isClosed, isVi
               <CommentItem
                 key={comment.id}
                 comment={comment}
-                depth={0}
                 groupId={groupId}
                 ticketId={ticketId}
                 currentUserId={user.id}
@@ -264,6 +307,8 @@ export default function CommentList({ groupId, ticketId, isAdmin, isClosed, isVi
                 onReply={setReplyingTo}
                 onCancelReply={() => setReplyingTo(null)}
                 onRequestDelete={setPendingDelete}
+                onSetReaction={(commentId, emoji) => setReaction.mutate({ commentId, emoji })}
+                onRemoveReaction={(commentId) => removeReaction.mutate(commentId)}
               />
             ))}
           </ul>

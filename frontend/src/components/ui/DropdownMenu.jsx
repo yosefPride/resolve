@@ -7,7 +7,10 @@ import * as RadixDropdownMenu from '@radix-ui/react-dropdown-menu';
 // so the panel needs its own opaque color instead. `trigger` is rendered as
 // the actual trigger element via asChild, so callers keep full control over
 // its markup (icon, aria-label, disabled, etc.) — this component only owns
-// the popover shell.
+// the popover shell. `open`/`onOpenChange` are optional: pass both for a
+// caller that needs to close the panel itself (e.g. after picking one item
+// from a non-Item grid of buttons); omit both and Radix manages open state
+// on its own, as every existing caller does.
 export default function DropdownMenu({
   trigger,
   children,
@@ -15,9 +18,11 @@ export default function DropdownMenu({
   sideOffset = 8,
   width = 'w-40',
   contentClassName = '',
+  open,
+  onOpenChange,
 }) {
   return (
-    <RadixDropdownMenu.Root>
+    <RadixDropdownMenu.Root open={open} onOpenChange={onOpenChange}>
       <RadixDropdownMenu.Trigger asChild>{trigger}</RadixDropdownMenu.Trigger>
       <RadixDropdownMenu.Portal>
         <RadixDropdownMenu.Content
