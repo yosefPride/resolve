@@ -7,7 +7,9 @@ use resolve::group::repository::GroupRepository;
 use resolve::reaction::models::{ReactionSummary, SetReactionRequest};
 use resolve::server::routes;
 use resolve::state::AppState;
-use resolve::ticket::models::{CreateTicketRequest, TicketPriority, TicketResponse, TicketStatus, UpdateTicketRequest};
+use resolve::ticket::models::{
+    CreateTicketRequest, TicketPriority, TicketResponse, TicketStatus, UpdateTicketRequest,
+};
 use resolve::user::repository::UserRepository;
 
 mod support;
@@ -309,7 +311,11 @@ fn test_reaction_validation_over_http() {
                 .to_request(),
         )
         .await;
-        assert_eq!(too_long_resp.status(), 400, "over-length emoji must be rejected");
+        assert_eq!(
+            too_long_resp.status(),
+            400,
+            "over-length emoji must be rejected"
+        );
 
         let group_id = ObjectId::parse_str(&group.id).unwrap();
         cleanup(&group_repo, &user_repo, group_id, &[&owner]).await;
@@ -387,7 +393,10 @@ fn test_reaction_on_closed_ticket_allowed_over_http() {
         let close_resp = actix_test::call_service(
             &app,
             actix_test::TestRequest::patch()
-                .uri(&format!("/api/v1/groups/{}/tickets/{}", group.id, ticket.id))
+                .uri(&format!(
+                    "/api/v1/groups/{}/tickets/{}",
+                    group.id, ticket.id
+                ))
                 .insert_header(auth_header(&owner.jwt))
                 .set_json(&UpdateTicketRequest {
                     title: None,
@@ -474,7 +483,11 @@ fn test_reaction_on_missing_comment_not_found_over_http() {
         let resp = actix_test::call_service(
             &app,
             actix_test::TestRequest::put()
-                .uri(&reaction_uri(&group.id, &ticket.id, &ObjectId::new().to_hex()))
+                .uri(&reaction_uri(
+                    &group.id,
+                    &ticket.id,
+                    &ObjectId::new().to_hex(),
+                ))
                 .insert_header(auth_header(&owner.jwt))
                 .set_json(&SetReactionRequest {
                     emoji: "\u{1F44D}".to_string(),
