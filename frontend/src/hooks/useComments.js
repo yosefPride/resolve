@@ -1,5 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createComment, deleteComment, listComments } from '../services/comments.service';
+import {
+  createComment,
+  deleteComment,
+  listComments,
+  removeReaction,
+  setReaction,
+} from '../services/comments.service';
 
 export function useComments(groupId, ticketId) {
   return useQuery({
@@ -29,6 +35,26 @@ export function useDeleteComment(groupId, ticketId) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (commentId) => deleteComment(groupId, ticketId, commentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['comments', groupId, ticketId] });
+    },
+  });
+}
+
+export function useSetReaction(groupId, ticketId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ commentId, emoji }) => setReaction(groupId, ticketId, commentId, emoji),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['comments', groupId, ticketId] });
+    },
+  });
+}
+
+export function useRemoveReaction(groupId, ticketId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (commentId) => removeReaction(groupId, ticketId, commentId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['comments', groupId, ticketId] });
     },
