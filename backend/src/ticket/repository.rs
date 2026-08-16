@@ -74,6 +74,7 @@ impl TicketRepository {
             created_by: input.created_by,
             created_at: now,
             updated_at: now,
+            content_updated_at: now,
         };
         let result = self.tickets.insert_one(&ticket).await?;
         let id = result

@@ -24,3 +24,19 @@ export function deleteComment(groupId, ticketId, commentId) {
     .delete(`/groups/${groupId}/tickets/${ticketId}/comments/${commentId}`)
     .then((res) => res.data);
 }
+
+// Sets (or replaces) the caller's own reaction on this comment — the backend
+// allows at most one reaction per user per comment, so picking a new emoji
+// swaps out whatever the caller had reacted with before, it never adds a
+// second one. Returns the comment's full updated reaction summary.
+export function setReaction(groupId, ticketId, commentId, emoji) {
+  return api
+    .put(`/groups/${groupId}/tickets/${ticketId}/comments/${commentId}/reactions`, { emoji })
+    .then((res) => res.data);
+}
+
+export function removeReaction(groupId, ticketId, commentId) {
+  return api
+    .delete(`/groups/${groupId}/tickets/${ticketId}/comments/${commentId}/reactions`)
+    .then((res) => res.data);
+}

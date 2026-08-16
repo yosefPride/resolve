@@ -4,12 +4,18 @@ use mongodb::{
     bson::{self, DateTime as BsonDateTime, Document, oid::ObjectId},
 };
 
+use crate::activity::models::{ActivityEventType, CreateActivityInput};
+use crate::activity::repository::ActivityRepository;
+use crate::ai::repository::AiRepository;
 use crate::comment::repository::CommentRepository;
 use crate::errors::ApiError;
+use crate::link::repository::LinkRepository;
 use crate::rbac::service::RbacService;
+use crate::reaction::repository::ReactionRepository;
+use crate::reference::repository::ReferenceRepository;
 use crate::ticket::models::{
     CreateTicketInput, CreateTicketRequest, ListTicketsQuery, Ticket, TicketListResponse,
-    TicketResponse, UpdateTicketRequest,
+    TicketPriority, TicketResponse, TicketStatus, UpdateTicketRequest,
 };
 use crate::ticket::repository::TicketRepository;
 use crate::user::service::UserService;
@@ -21,6 +27,11 @@ const MAX_PER_PAGE: u64 = 100;
 pub struct TicketService {
     repo: TicketRepository,
     comment_repo: CommentRepository,
+    ai_repo: AiRepository,
+    activity_repo: ActivityRepository,
+    link_repo: LinkRepository,
+    reaction_repo: ReactionRepository,
+    reference_repo: ReferenceRepository,
     user_service: UserService,
     rbac: RbacService,
 }
@@ -30,6 +41,11 @@ impl TicketService {
         Self {
             repo: TicketRepository::new(db),
             comment_repo: CommentRepository::new(db),
+            ai_repo: AiRepository::new(db),
+            activity_repo: ActivityRepository::new(db),
+            link_repo: LinkRepository::new(db),
+            reaction_repo: ReactionRepository::new(db),
+            reference_repo: ReferenceRepository::new(db),
             user_service: UserService::new(db),
             rbac: RbacService::new(db),
         }
@@ -53,6 +69,18 @@ impl TicketService {
                 description: input.description,
                 priority: input.priority,
                 created_by: user_id,
+            })
+            .await?;
+        self.activity_repo
+            .insert(CreateActivityInput {
+                group_id,
+                ticket_id: ticket.id.expect("insert_ticket always returns an id"),
+                actor_id: user_id,
+                event_type: ActivityEventType::TicketCreated,
+                old_value: None,
+                new_value: None,
+                comment_id: None,
+                link_kind: None,
             })
             .await?;
         self.enrich_ticket(ticket).await
@@ -124,32 +152,99 @@ impl TicketService {
     ) -> Result<TicketResponse, ApiError> {
         self.rbac.require_group_admin(group_id, user_id).await?;
 
+        // Fetched up front (rather than relying solely on repo.update_ticket's
+        // None-on-missing for the 404 case) so the activity events below can
+        // be built from real before/after values: an event is only recorded
+        // for a field whose value actually changes, not merely one the
+        // caller included in the request body.
+        let current = self
+            .repo
+            .find_by_id(group_id, ticket_id)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+
         let mut changes = Document::new();
+        // Tracks whether this edit touches AI-relevant content, so
+        // content_updated_at (see Ticket's doc comment) only bumps for
+        // title/description/priority — not a status-only change.
+        let mut content_changed = false;
+        let mut events: Vec<(ActivityEventType, Option<String>, Option<String>)> = Vec::new();
+
         if let Some(title) = input.title {
+            if title != current.title {
+                events.push((
+                    ActivityEventType::TitleChanged,
+                    Some(current.title.clone()),
+                    Some(title.clone()),
+                ));
+            }
             changes.insert("title", title);
+            content_changed = true;
         }
         if let Some(description) = input.description {
+            // No before/after text stored for description (see
+            // ActivityEventType::DescriptionChanged's doc comment) — just the
+            // fact that it changed.
+            if description != current.description {
+                events.push((ActivityEventType::DescriptionChanged, None, None));
+            }
             changes.insert("description", description);
+            content_changed = true;
         }
         if let Some(priority) = input.priority {
+            if priority != current.priority {
+                events.push((
+                    ActivityEventType::PriorityChanged,
+                    Some(priority_str(current.priority).to_string()),
+                    Some(priority_str(priority).to_string()),
+                ));
+            }
             changes.insert(
                 "priority",
                 bson::to_bson(&priority).expect("TicketPriority always serializes"),
             );
+            content_changed = true;
         }
         if let Some(status) = input.status {
+            if status != current.status {
+                events.push((
+                    ActivityEventType::StatusChanged,
+                    Some(status_str(current.status).to_string()),
+                    Some(status_str(status).to_string()),
+                ));
+            }
             changes.insert(
                 "status",
                 bson::to_bson(&status).expect("TicketStatus always serializes"),
             );
         }
-        changes.insert("updated_at", BsonDateTime::now());
+        let now = BsonDateTime::now();
+        changes.insert("updated_at", now);
+        if content_changed {
+            changes.insert("content_updated_at", now);
+        }
 
         let ticket = self
             .repo
             .update_ticket(group_id, ticket_id, changes)
             .await?
             .ok_or(ApiError::NotFound)?;
+
+        for (event_type, old_value, new_value) in events {
+            self.activity_repo
+                .insert(CreateActivityInput {
+                    group_id,
+                    ticket_id,
+                    actor_id: user_id,
+                    event_type,
+                    old_value,
+                    new_value,
+                    comment_id: None,
+                    link_kind: None,
+                })
+                .await?;
+        }
+
         self.enrich_ticket(ticket).await
     }
 
@@ -161,14 +256,31 @@ impl TicketService {
     ) -> Result<(), ApiError> {
         self.rbac.require_group_admin(group_id, user_id).await?;
         // Existence check first (so a bogus ticket_id 404s before any write),
-        // then the comment cascade, then the ticket document last — same
-        // child-before-parent ordering as purge_group_data, so a mid-failure
-        // leaves the ticket still resolvable and this call re-runnable.
+        // then the comment/AI-insight/activity/link cascades, then the
+        // ticket document last — same child-before-parent ordering as
+        // purge_group_data, so a mid-failure leaves the ticket still
+        // resolvable and this call re-runnable.
         self.repo
             .find_by_id(group_id, ticket_id)
             .await?
             .ok_or(ApiError::NotFound)?;
         self.comment_repo
+            .delete_by_ticket(group_id, ticket_id)
+            .await?;
+        // Every comment on this ticket is gone via the cascade just above,
+        // so their reactions would otherwise be orphaned rows referencing a
+        // comment_id that no longer resolves to anything.
+        self.reaction_repo
+            .delete_by_ticket(group_id, ticket_id)
+            .await?;
+        self.ai_repo.delete_by_ticket(group_id, ticket_id).await?;
+        self.activity_repo
+            .delete_by_ticket(group_id, ticket_id)
+            .await?;
+        // Removes links on either side, so a deleted ticket never leaves a
+        // dangling relation on the other end (LinkRepository::delete_by_ticket).
+        self.link_repo.delete_by_ticket(group_id, ticket_id).await?;
+        self.reference_repo
             .delete_by_ticket(group_id, ticket_id)
             .await?;
         self.repo.delete_ticket(group_id, ticket_id).await?;
@@ -196,6 +308,24 @@ impl TicketService {
             updated_at: DateTime::from_timestamp_millis(ticket.updated_at.timestamp_millis())
                 .unwrap_or_default(),
         })
+    }
+}
+
+// Human-readable old/new values for the activity log — matches the enums'
+// own snake_case serde representation (ticket/models.rs) rather than Rust's
+// Debug output.
+fn status_str(status: TicketStatus) -> &'static str {
+    match status {
+        TicketStatus::Open => "open",
+        TicketStatus::Closed => "closed",
+    }
+}
+
+fn priority_str(priority: TicketPriority) -> &'static str {
+    match priority {
+        TicketPriority::Low => "low",
+        TicketPriority::High => "high",
+        TicketPriority::Critical => "critical",
     }
 }
 
@@ -255,6 +385,7 @@ mod tests {
             created_by: ObjectId::new(),
             created_at: now,
             updated_at: now,
+            content_updated_at: now,
         }
     }
 

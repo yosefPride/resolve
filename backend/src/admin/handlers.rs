@@ -42,6 +42,28 @@ pub async fn delete_user(
     Ok(HttpResponse::NoContent().finish())
 }
 
+pub async fn promote_user(
+    user: SystemAdminUser,
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ApiError> {
+    let target_id = parse_id(&path.into_inner())?;
+    let service = AdminService::new(&state.db);
+    service.promote_user(user.user_id, target_id).await?;
+    Ok(HttpResponse::NoContent().finish())
+}
+
+pub async fn demote_user(
+    user: SystemAdminUser,
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ApiError> {
+    let target_id = parse_id(&path.into_inner())?;
+    let service = AdminService::new(&state.db);
+    service.demote_user(user.user_id, target_id).await?;
+    Ok(HttpResponse::NoContent().finish())
+}
+
 pub async fn list_users(
     user: SystemAdminUser,
     state: web::Data<AppState>,

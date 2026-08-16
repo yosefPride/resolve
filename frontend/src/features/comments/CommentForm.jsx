@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useCreateComment } from '../../hooks/useComments';
 import { errorMessage } from '../../utils/errors';
 import Button from '../../components/ui/Button';
+import EmojiPicker from '../../components/ui/EmojiPicker';
 
 const MAX_CONTENT_LENGTH = 2000;
 
@@ -30,11 +31,29 @@ export default function CommentForm({
   const [content, setContent] = useState('');
   const [error, setError] = useState('');
   const createComment = useCreateComment(groupId, ticketId);
+  const textareaRef = useRef(null);
 
   const length = contentLength(content);
   const isEmpty = content.trim() === '';
   const isTooLong = length > MAX_CONTENT_LENGTH;
   const isReply = parentCommentId !== null;
+
+  // Inserts at the cursor (falling back to the end if the textarea hasn't
+  // mounted yet) rather than always appending, and refocuses afterward so a
+  // user can pick several emoji in a row without re-clicking into the field
+  // between each one.
+  function insertEmoji(char) {
+    const node = textareaRef.current;
+    const start = node?.selectionStart ?? content.length;
+    const end = node?.selectionEnd ?? content.length;
+    const next = content.slice(0, start) + char + content.slice(end);
+    setContent(next);
+    requestAnimationFrame(() => {
+      node?.focus();
+      const cursor = start + char.length;
+      node?.setSelectionRange(cursor, cursor);
+    });
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -58,6 +77,7 @@ export default function CommentForm({
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-2">
       <textarea
+        ref={textareaRef}
         value={content}
         onChange={(event) => setContent(event.target.value)}
         rows={isReply ? 2 : 3}
@@ -69,7 +89,11 @@ export default function CommentForm({
       {error && <p className="text-sm text-red-500">{error}</p>}
 
       <div className="flex items-center justify-end gap-3">
-        <span className={`text-xs ${isTooLong ? 'text-red-400' : 'text-slate-500'}`}>
+        {/* closeOnSelect stays false (the default): picking an emoji here
+            should let the user keep adding more without reopening the panel,
+            unlike the reaction bar's single-pick picker. */}
+        <EmojiPicker onSelect={insertEmoji} />
+        <span className={`mr-auto text-xs ${isTooLong ? 'text-red-400' : 'text-slate-500'}`}>
           {length} / {MAX_CONTENT_LENGTH}
         </span>
         {onCancel && (

@@ -1,9 +1,14 @@
 use actix_web::web;
 
+use crate::activity::handlers as activity_handlers;
 use crate::admin::handlers as admin_handlers;
+use crate::ai::handlers as ai_handlers;
 use crate::auth::handlers as auth_handlers;
 use crate::comment::handlers as comment_handlers;
 use crate::group::handlers as group_handlers;
+use crate::link::handlers as link_handlers;
+use crate::reaction::handlers as reaction_handlers;
+use crate::reference::handlers as reference_handlers;
 use crate::ticket::handlers as ticket_handlers;
 
 pub fn configure(config: &mut web::ServiceConfig) {
@@ -70,9 +75,72 @@ pub fn configure(config: &mut web::ServiceConfig) {
                 .route(
                     "/{id}/tickets/{ticket_id}/comments/{comment_id}",
                     web::delete().to(comment_handlers::delete_comment),
+                )
+                .route(
+                    "/{id}/tickets/{ticket_id}/comments/{comment_id}/reactions",
+                    web::put().to(reaction_handlers::set_reaction),
+                )
+                .route(
+                    "/{id}/tickets/{ticket_id}/comments/{comment_id}/reactions",
+                    web::delete().to(reaction_handlers::remove_reaction),
+                )
+                .route(
+                    "/{id}/tickets/{ticket_id}/activity",
+                    web::get().to(activity_handlers::list_activity),
+                )
+                .route(
+                    "/{id}/tickets/{ticket_id}/links",
+                    web::post().to(link_handlers::create_link),
+                )
+                .route(
+                    "/{id}/tickets/{ticket_id}/links",
+                    web::get().to(link_handlers::list_links),
+                )
+                .route(
+                    "/{id}/tickets/{ticket_id}/links/{link_id}",
+                    web::delete().to(link_handlers::delete_link),
+                )
+                .route(
+                    "/{id}/tickets/{ticket_id}/references",
+                    web::post().to(reference_handlers::create_reference),
+                )
+                .route(
+                    "/{id}/tickets/{ticket_id}/references",
+                    web::get().to(reference_handlers::list_references),
+                )
+                .route(
+                    "/{id}/tickets/{ticket_id}/references/{reference_id}",
+                    web::delete().to(reference_handlers::delete_reference),
                 ),
         )
-        .service(web::scope("/ai"))
+        .service(
+            web::scope("/ai")
+                .service(
+                    web::scope("/groups/{id}/tickets/{ticket_id}")
+                        .route("/summarize", web::post().to(ai_handlers::summarize_ticket))
+                        .route("/analyze", web::post().to(ai_handlers::analyze_ticket))
+                        .route(
+                            "/conversations",
+                            web::post().to(ai_handlers::create_conversation),
+                        )
+                        .route(
+                            "/conversations",
+                            web::get().to(ai_handlers::list_conversations),
+                        )
+                        .route(
+                            "/conversations/{conversation_id}/messages",
+                            web::post().to(ai_handlers::send_conversation_message),
+                        )
+                        .route(
+                            "/conversations/{conversation_id}/messages",
+                            web::get().to(ai_handlers::list_conversation_messages),
+                        )
+                        .route(
+                            "/conversations/{conversation_id}",
+                            web::delete().to(ai_handlers::delete_conversation),
+                        ),
+                ),
+        )
         .service(
             web::scope("/admin")
                 .route("/users", web::get().to(admin_handlers::list_users))
@@ -82,7 +150,9 @@ pub fn configure(config: &mut web::ServiceConfig) {
                 .service(
                     web::scope("/users/{id}")
                         .route("/deletion-check", web::get().to(admin_handlers::deletion_check))
-                        .route("/delete", web::post().to(admin_handlers::delete_user)),
+                        .route("/delete", web::post().to(admin_handlers::delete_user))
+                        .route("/promote", web::post().to(admin_handlers::promote_user))
+                        .route("/demote", web::post().to(admin_handlers::demote_user)),
                 ),
         );
 }

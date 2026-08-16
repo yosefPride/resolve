@@ -18,6 +18,11 @@ import AdminRoute from './lib/AdminRoute';
 // pages share one AppLayout instance so its chrome never remounts while
 // navigating between them. The auth gate wraps the layout (not each page), and
 // AdminRoute stays on the /admin leaf since it is an extra role check on top.
+//
+// NotFoundPage sits outside both groups as its own bare route: it renders
+// different chrome depending on auth state (plain vs AppLayout/Sidebar), and
+// nesting a second `*` under either group would race the other on route
+// ranking instead of reliably covering just that group's visitors.
 export default function App() {
   return (
     <Routes>
@@ -25,10 +30,6 @@ export default function App() {
         <Route path='/' element={<LandingPage />} />
         <Route path='/register' element={<RegisterPage />} />
         <Route path='/login' element={<LoginPage />} />
-        {/* Catch-all: unmatched paths get the marketing chrome rather than a
-            blank page. Sits here (not in AppLayout) so it renders whether or
-            not you are signed in. */}
-        <Route path='*' element={<NotFoundPage />} />
       </Route>
 
       <Route
@@ -52,6 +53,8 @@ export default function App() {
           }
         />
       </Route>
+
+      <Route path='*' element={<NotFoundPage />} />
     </Routes>
   );
 }

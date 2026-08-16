@@ -1,6 +1,6 @@
 # Backend — Groups & Membership
 
-Covers `src/group/`: `models.rs` (107), `repository.rs` (218), `service.rs` (310),
+Covers `src/group/`: `models.rs` (107), `repository.rs` (218), `service.rs` (322),
 `handlers.rs` (165).
 
 The group is the tenant boundary. This module owns group metadata, membership, and
@@ -101,11 +101,12 @@ Every membership query filters on `group_id`, `user_id`, or both — never a bar
 
 ## `group/service.rs`
 
-### `struct GroupService { repo, ticket_repo, comment_repo, user_service, rbac }`
-Note the **`ticket_repo` and `comment_repo` fields** — the backend's cross-feature
-dependencies, both here. `ticket_repo` has two jobs: `list_my_groups` reports
-`open_ticket_count`, and group deletion cascades tickets. `comment_repo` has only the
-second. Both cascades run through `purge_group_data` below.
+### `struct GroupService { repo, ticket_repo, comment_repo, ai_repo, user_service, rbac }`
+Note the **`ticket_repo`, `comment_repo`, and `ai_repo` fields** — the backend's cross-feature
+dependencies, all three here. `ticket_repo` has two jobs: `list_my_groups` reports
+`open_ticket_count`, and group deletion cascades tickets. `comment_repo` and `ai_repo`
+(added for `08-ai.md`) each have only the second. All three cascades run through
+`purge_group_data` below.
 
 ### `async fn create_group(&self, user_id, name) -> Result<GroupResponse, ApiError>`
 No RBAC check — any authenticated user may create a group.
@@ -138,7 +139,7 @@ group rather than a spurious error.
 `require_group_admin` → `purge_group_data(...)` (below). The authorization check stays here;
 the cascade itself is shared.
 
-### `pub async fn purge_group_data(repo, ticket_repo, comment_repo, group_id) -> Result<bool, ApiError>`
+### `pub async fn purge_group_data(repo, ticket_repo, comment_repo, ai_repo, group_id) -> Result<bool, ApiError>`
 A **free function, not a method** — that's the whole point. It is the one place that knows
 what "a group's data" consists of, and all three paths that destroy a group call it:
 
@@ -152,7 +153,7 @@ Each caller keeps its own authorization check; only the cascade is shared, so a 
 per-group collection gets wired in once instead of three times.
 
 ```
-delete_members_by_group → ticket_repo.delete_by_group → comment_repo.delete_by_group → delete_group
+delete_members_by_group → ticket_repo.delete_by_group → comment_repo.delete_by_group → ai_repo.delete_by_group → delete_group
 ```
 
 Order is **child-to-parent**: the group document goes last, so a failure partway through
@@ -163,9 +164,10 @@ was supposed to remove. Sequential writes, not a transaction — the same choice
 Returns `delete_group`'s boolean, which is how `AdminService::delete_group` still turns a
 missing group into `404`.
 
-Two scoping notes:
+Three scoping notes:
 - `ticket_repo.delete_by_group` removes the group's tickets **and** its `counters` document (the counter's `_id` *is* the `group_id`).
 - `comment_repo.delete_by_group` filters on `group_id` alone — comments carry their own `group_id`, so no per-ticket fan-out is needed. Deleting a *single* ticket is a separate, smaller cascade that lives in `TicketService::delete_ticket`; putting it here would take the whole group down with one ticket.
+- `ai_repo.delete_by_group` (`08-ai.md`) clears both `ai_ticket_insights` and `ai_group_reports` for the group, same "carries its own `group_id`, no fan-out needed" shape as comments.
 
 Centralizing the cascade here is what keeps a deleted group from orphaning its tickets and
 counter — each of the three paths previously removed only the memberships and the group

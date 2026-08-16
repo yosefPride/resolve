@@ -31,12 +31,14 @@ fn sample_entry(
     AuditLogEntry {
         id: None,
         action,
-        group_id,
+        group_id: Some(group_id),
         group_name: "Test Group".to_string(),
-        deleted_user_id,
+        deleted_user_id: Some(deleted_user_id),
         deleted_user_name: "Deleted User".to_string(),
         successor_user_id,
         successor_user_name: successor_user_id.map(|_| "Successor".to_string()),
+        target_user_id: None,
+        target_user_name: None,
         performed_by: oid(),
         performed_by_name: "Admin".to_string(),
         created_at: BsonDateTime::now(),
@@ -64,8 +66,8 @@ fn test_insert_audit_entry() {
 
         assert!(inserted.id.is_some());
         assert_eq!(inserted.action, AuditAction::Succession);
-        assert_eq!(inserted.group_id, group_id);
-        assert_eq!(inserted.deleted_user_id, deleted_user_id);
+        assert_eq!(inserted.group_id, Some(group_id));
+        assert_eq!(inserted.deleted_user_id, Some(deleted_user_id));
         assert_eq!(inserted.successor_user_id, Some(successor_id));
 
         // To see this for yourself: comment out the `.drop()` call in `setup()`
@@ -133,7 +135,7 @@ fn test_list_audit_log_for_group() {
             .await
             .expect("list failed");
         assert_eq!(entries.len(), 2);
-        assert!(entries.iter().all(|e| e.group_id == group_id));
+        assert!(entries.iter().all(|e| e.group_id == Some(group_id)));
     });
 }
 
@@ -174,7 +176,7 @@ fn test_list_audit_log_for_user() {
             .await
             .expect("list failed");
         assert_eq!(entries.len(), 2);
-        assert!(entries.iter().all(|e| e.deleted_user_id == deleted_user_id));
+        assert!(entries.iter().all(|e| e.deleted_user_id == Some(deleted_user_id)));
     });
 }
 

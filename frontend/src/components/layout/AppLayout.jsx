@@ -8,7 +8,12 @@ import logo from '../../assets/brand-logo.svg';
 // two ways: docked beside the page from `md` up, and as a slide-in drawer below
 // it. Visibility is CSS-driven (`hidden md:flex` / `md:hidden`) so resizing
 // never remounts the nav or drops its state.
-export default function AppLayout() {
+//
+// Normally used as a route element, where `children` is absent and the
+// current route renders through `Outlet`. Pages that need this chrome outside
+// of that route tree (e.g. the signed-in 404) can render `<AppLayout>` with
+// explicit children instead.
+export default function AppLayout({ children }) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const closeDrawer = () => setIsDrawerOpen(false);
 
@@ -53,10 +58,11 @@ export default function AppLayout() {
 
         {/* Every app page renders inside one full-height framed panel with
             small padding around it — pages supply content only, no outer
-            container of their own. */}
-        <main className="flex grow flex-col p-4 sm:p-6">
+            container of their own. Gutter is flush on mobile (no room to
+            spare) and reappears at sm. */}
+        <main className="flex grow flex-col p-0 sm:p-6">
           <div className="flex grow flex-col rounded-2xl border border-white/10 bg-white/2 p-6 sm:p-8">
-            <Outlet />
+            {children ?? <Outlet />}
           </div>
         </main>
       </div>

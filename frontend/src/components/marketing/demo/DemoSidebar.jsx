@@ -38,7 +38,7 @@ export default function DemoSidebar({ className = '' }) {
   return (
     <aside
       aria-hidden="true"
-      className={`${className} w-60 shrink-0 flex-col gap-4 border-r border-white/10 bg-black p-3`}
+      className={`${className} w-64 shrink-0 flex-col gap-4 border-r border-white/10 bg-black p-3`}
     >
       <div className="flex items-center justify-between gap-2 px-1">
         <img src={logo} alt="" className="h-5 w-auto object-contain" />

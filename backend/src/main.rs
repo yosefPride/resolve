@@ -1,3 +1,4 @@
+mod activity;
 mod admin;
 mod ai;
 mod auth;
@@ -6,7 +7,10 @@ mod config;
 mod db;
 mod errors;
 mod group;
+mod link;
 mod rbac;
+mod reaction;
+mod reference;
 mod server;
 mod state;
 mod ticket;
@@ -36,6 +40,12 @@ async fn main() -> std::io::Result<()> {
     db::ensure_indexes(&database)
         .await
         .map_err(|error| std::io::Error::other(format!("Failed to create indexes: {error}")))?;
+    db::backfill_ticket_content_updated_at(&database)
+        .await
+        .map_err(|error| std::io::Error::other(format!("Ticket backfill failed: {error}")))?;
+    db::wipe_legacy_chat_messages(&database)
+        .await
+        .map_err(|error| std::io::Error::other(format!("Legacy chat wipe failed: {error}")))?;
     let bind_address = config.bind_address();
     let app_state = web::Data::new(AppState {
         db: database,
@@ -49,7 +59,7 @@ async fn main() -> std::io::Result<()> {
         // calls to be sent/received at all. So the origin must be explicit.
         let cors = Cors::default()
             .allowed_origin(&app_state.config.frontend_origin)
-            .allowed_methods(vec!["GET", "POST", "PATCH", "DELETE"])
+            .allowed_methods(vec!["GET", "POST", "PATCH", "PUT", "DELETE"])
             .allowed_headers(vec![header::AUTHORIZATION, header::CONTENT_TYPE])
             .supports_credentials()
             .max_age(3600);

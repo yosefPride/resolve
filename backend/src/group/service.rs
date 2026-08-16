@@ -1,8 +1,13 @@
 use chrono::DateTime;
 use mongodb::{Database, bson::oid::ObjectId};
 
+use crate::activity::repository::ActivityRepository;
+use crate::ai::repository::AiRepository;
 use crate::comment::repository::CommentRepository;
 use crate::errors::ApiError;
+use crate::link::repository::LinkRepository;
+use crate::reaction::repository::ReactionRepository;
+use crate::reference::repository::ReferenceRepository;
 use crate::group::models::{
     CreateGroupInput, GroupMember, GroupResponse, GroupSummaryResponse, MemberResponse, Role,
     UserLookupResponse,
@@ -35,11 +40,21 @@ pub async fn purge_group_data(
     repo: &GroupRepository,
     ticket_repo: &TicketRepository,
     comment_repo: &CommentRepository,
+    ai_repo: &AiRepository,
+    activity_repo: &ActivityRepository,
+    link_repo: &LinkRepository,
+    reaction_repo: &ReactionRepository,
+    reference_repo: &ReferenceRepository,
     group_id: ObjectId,
 ) -> Result<bool, ApiError> {
     repo.delete_members_by_group(group_id).await?;
     ticket_repo.delete_by_group(group_id).await?;
     comment_repo.delete_by_group(group_id).await?;
+    ai_repo.delete_by_group(group_id).await?;
+    activity_repo.delete_by_group(group_id).await?;
+    link_repo.delete_by_group(group_id).await?;
+    reaction_repo.delete_by_group(group_id).await?;
+    reference_repo.delete_by_group(group_id).await?;
     Ok(repo.delete_group(group_id).await?)
 }
 
@@ -47,6 +62,11 @@ pub struct GroupService {
     repo: GroupRepository,
     ticket_repo: TicketRepository,
     comment_repo: CommentRepository,
+    ai_repo: AiRepository,
+    activity_repo: ActivityRepository,
+    link_repo: LinkRepository,
+    reaction_repo: ReactionRepository,
+    reference_repo: ReferenceRepository,
     user_service: UserService,
     rbac: RbacService,
 }
@@ -57,6 +77,11 @@ impl GroupService {
             repo: GroupRepository::new(db),
             ticket_repo: TicketRepository::new(db),
             comment_repo: CommentRepository::new(db),
+            ai_repo: AiRepository::new(db),
+            activity_repo: ActivityRepository::new(db),
+            link_repo: LinkRepository::new(db),
+            reaction_repo: ReactionRepository::new(db),
+            reference_repo: ReferenceRepository::new(db),
             user_service: UserService::new(db),
             rbac: RbacService::new(db),
         }
@@ -99,12 +124,21 @@ impl GroupService {
                 .ticket_repo
                 .count_open_by_group(membership.group_id)
                 .await?;
+            let last_activity_at = self
+                .activity_repo
+                .find_latest_for_group(membership.group_id)
+                .await?
+                .map(|entry| {
+                    DateTime::from_timestamp_millis(entry.occurred_at.timestamp_millis())
+                        .unwrap_or_default()
+                });
             result.push(GroupSummaryResponse {
                 id: group.id.map(|id| id.to_hex()).unwrap_or_default(),
                 name: group.name,
                 role: membership.role,
                 member_count,
                 open_ticket_count,
+                last_activity_at,
                 created_at: DateTime::from_timestamp_millis(group.created_at.timestamp_millis())
                     .unwrap_or_default(),
             });
@@ -148,7 +182,18 @@ impl GroupService {
         group_id: ObjectId,
     ) -> Result<(), ApiError> {
         self.rbac.require_group_admin(group_id, user_id).await?;
-        purge_group_data(&self.repo, &self.ticket_repo, &self.comment_repo, group_id).await?;
+        purge_group_data(
+            &self.repo,
+            &self.ticket_repo,
+            &self.comment_repo,
+            &self.ai_repo,
+            &self.activity_repo,
+            &self.link_repo,
+            &self.reaction_repo,
+            &self.reference_repo,
+            group_id,
+        )
+        .await?;
         Ok(())
     }
 

@@ -10,15 +10,20 @@ use crate::admin::models::{
     AuditAction, AuditLogEntry, AuditLogEntryResponse, AutoDeleteGroupInfo, BlockedGroupInfo,
     DeletionCheckResponse,
 };
+use crate::activity::repository::ActivityRepository;
 use crate::admin::repository::AdminRepository;
+use crate::ai::repository::AiRepository;
 use crate::comment::repository::CommentRepository;
 use crate::errors::ApiError;
 use crate::group::models::{GroupMember, GroupResponse, MemberResponse, Role};
 use crate::group::repository::GroupRepository;
 use crate::group::service::purge_group_data;
+use crate::link::repository::LinkRepository;
 use crate::rbac::service::RbacService;
+use crate::reaction::repository::ReactionRepository;
+use crate::reference::repository::ReferenceRepository;
 use crate::ticket::repository::TicketRepository;
-use crate::user::models::UserResponse;
+use crate::user::models::{GlobalRole, UserResponse};
 use crate::user::service::UserService;
 
 #[derive(Default)]
@@ -37,6 +42,16 @@ pub struct AdminService {
     ticket_repo: TicketRepository,
     // Held only to feed purge_group_data; admin has no other comment concern.
     comment_repo: CommentRepository,
+    // Held only to feed purge_group_data; admin has no other AI concern.
+    ai_repo: AiRepository,
+    // Held only to feed purge_group_data; admin has no other activity concern.
+    activity_repo: ActivityRepository,
+    // Held only to feed purge_group_data; admin has no other link concern.
+    link_repo: LinkRepository,
+    // Held only to feed purge_group_data; admin has no other reaction concern.
+    reaction_repo: ReactionRepository,
+    // Held only to feed purge_group_data; admin has no other reference concern.
+    reference_repo: ReferenceRepository,
     user_service: UserService,
     admin_repo: AdminRepository,
     rbac: RbacService,
@@ -48,6 +63,11 @@ impl AdminService {
             group_repo: GroupRepository::new(db),
             ticket_repo: TicketRepository::new(db),
             comment_repo: CommentRepository::new(db),
+            ai_repo: AiRepository::new(db),
+            activity_repo: ActivityRepository::new(db),
+            link_repo: LinkRepository::new(db),
+            reaction_repo: ReactionRepository::new(db),
+            reference_repo: ReferenceRepository::new(db),
             user_service: UserService::new(db),
             admin_repo: AdminRepository::new(db),
             rbac: RbacService::new(db),
@@ -151,12 +171,14 @@ impl AdminService {
                 .insert_audit_entry(AuditLogEntry {
                     id: None,
                     action: AuditAction::Succession,
-                    group_id: *group_id,
+                    group_id: Some(*group_id),
                     group_name: group_name.clone(),
-                    deleted_user_id: target_user_id,
+                    deleted_user_id: Some(target_user_id),
                     deleted_user_name: deleted_user_name.clone(),
                     successor_user_id: Some(successor_id),
                     successor_user_name: Some(successor_name),
+                    target_user_id: None,
+                    target_user_name: None,
                     performed_by: caller_id,
                     performed_by_name: performed_by_name.clone(),
                     created_at: BsonDateTime::now(),
@@ -169,6 +191,11 @@ impl AdminService {
                 &self.group_repo,
                 &self.ticket_repo,
                 &self.comment_repo,
+                &self.ai_repo,
+                &self.activity_repo,
+                &self.link_repo,
+                &self.reaction_repo,
+                &self.reference_repo,
                 *group_id,
             )
             .await?;
@@ -176,12 +203,14 @@ impl AdminService {
                 .insert_audit_entry(AuditLogEntry {
                     id: None,
                     action: AuditAction::GroupAutoDeleted,
-                    group_id: *group_id,
+                    group_id: Some(*group_id),
                     group_name: group_name.clone(),
-                    deleted_user_id: target_user_id,
+                    deleted_user_id: Some(target_user_id),
                     deleted_user_name: deleted_user_name.clone(),
                     successor_user_id: None,
                     successor_user_name: None,
+                    target_user_id: None,
+                    target_user_name: None,
                     performed_by: caller_id,
                     performed_by_name: performed_by_name.clone(),
                     created_at: BsonDateTime::now(),
@@ -207,6 +236,117 @@ impl AdminService {
     ) -> Result<Vec<UserResponse>, ApiError> {
         self.rbac.require_system_admin(caller_id).await?;
         Ok(self.user_service.list_all(search).await?)
+    }
+
+    // Grants the target user the global System Admin role. Audit-logged like
+    // every other System Admin action in this service. See demote_user for
+    // the reverse.
+    pub async fn promote_user(
+        &self,
+        caller_id: ObjectId,
+        target_user_id: ObjectId,
+    ) -> Result<(), ApiError> {
+        self.rbac.require_system_admin(caller_id).await?;
+
+        let target_user = self
+            .user_service
+            .find_by_id(target_user_id)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+        if target_user.global_role == Some(GlobalRole::SystemAdmin) {
+            return Err(ApiError::Conflict(
+                "user is already a System Admin".to_string(),
+            ));
+        }
+        let performed_by_name = self
+            .user_service
+            .find_by_id(caller_id)
+            .await?
+            .map(|u| u.name)
+            .unwrap_or_default();
+
+        self.user_service
+            .update_global_role(target_user_id, GlobalRole::SystemAdmin)
+            .await?;
+
+        self.admin_repo
+            .insert_audit_entry(AuditLogEntry {
+                id: None,
+                action: AuditAction::Promotion,
+                group_id: None,
+                group_name: String::new(),
+                deleted_user_id: None,
+                deleted_user_name: String::new(),
+                successor_user_id: None,
+                successor_user_name: None,
+                target_user_id: Some(target_user_id),
+                target_user_name: Some(target_user.name),
+                performed_by: caller_id,
+                performed_by_name,
+                created_at: BsonDateTime::now(),
+            })
+            .await?;
+
+        Ok(())
+    }
+
+    // Revokes the target user's System Admin role. Refuses (409) to demote
+    // the last remaining System Admin — unlike Group Admin succession there's
+    // no successor to hand the role to, so the invariant is just "at least
+    // one must remain" rather than "someone must be named". Self-demotion is
+    // allowed as long as another System Admin still exists afterward.
+    pub async fn demote_user(
+        &self,
+        caller_id: ObjectId,
+        target_user_id: ObjectId,
+    ) -> Result<(), ApiError> {
+        self.rbac.require_system_admin(caller_id).await?;
+
+        let target_user = self
+            .user_service
+            .find_by_id(target_user_id)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+        if target_user.global_role != Some(GlobalRole::SystemAdmin) {
+            return Err(ApiError::Conflict(
+                "user is not a System Admin".to_string(),
+            ));
+        }
+        if self.user_service.count_system_admins().await? <= 1 {
+            return Err(ApiError::Conflict(
+                "cannot demote the last System Admin".to_string(),
+            ));
+        }
+        let performed_by_name = self
+            .user_service
+            .find_by_id(caller_id)
+            .await?
+            .map(|u| u.name)
+            .unwrap_or_default();
+
+        self.user_service
+            .clear_global_role(target_user_id)
+            .await?;
+
+        self.admin_repo
+            .insert_audit_entry(AuditLogEntry {
+                id: None,
+                action: AuditAction::Demotion,
+                group_id: None,
+                group_name: String::new(),
+                deleted_user_id: None,
+                deleted_user_name: String::new(),
+                successor_user_id: None,
+                successor_user_name: None,
+                target_user_id: Some(target_user_id),
+                target_user_name: Some(target_user.name),
+                performed_by: caller_id,
+                performed_by_name,
+                created_at: BsonDateTime::now(),
+            })
+            .await?;
+
+        Ok(())
     }
 
     // Read-only view of the succession/auto-deletion audit trail, System Admin
@@ -253,6 +393,11 @@ impl AdminService {
             &self.group_repo,
             &self.ticket_repo,
             &self.comment_repo,
+            &self.ai_repo,
+            &self.activity_repo,
+            &self.link_repo,
+            &self.reaction_repo,
+            &self.reference_repo,
             group_id,
         )
         .await?;

@@ -27,10 +27,11 @@ reconciliation.
 5. [`05-tickets.md`](./backend/05-tickets.md) — `ticket/`, the atomic counter, and the hybrid search
 6. [`06-admin.md`](./backend/06-admin.md) — `admin/` and the user-deletion succession flow
 7. [`07-comments.md`](./backend/07-comments.md) — `comment/`, threading, tombstones, and the two cascades
+8. [`08-ai.md`](./backend/08-ai.md) — `ai/`, the Gemini client, the two caching strategies, and the group report
 
 **Database** — [`db/`](./db/)
 - [`collections.md`](./db/collections.md) — field-by-field reference
-- [`indexes.md`](./db/indexes.md) — all 11 indexes, what each serves, and what's unindexed
+- [`indexes.md`](./db/indexes.md) — all 16 indexes, what each serves, and what's unindexed
 
 **Frontend** — [`frontend/`](./frontend/)
 1. [`01-session-and-routing.md`](./frontend/01-session-and-routing.md) — axios interceptors, `AuthContext`, routes, guards, auth forms
@@ -63,7 +64,7 @@ a demoted user loses access immediately.
 single-use refresh token in an httpOnly `SameSite=Strict` cookie, stored server-side only as
 a SHA-256 hash. All revocation lives at the refresh layer.
 
-**Build status.** Auth, groups, RBAC, tickets, comments, and admin are complete on the
-backend, and all of them now have a frontend. **AI is the one unbuilt feature** — empty files
-on both sides, scaffolded and never written, with a "Coming soon." placeholder holding its
-slot on the Ticket Detail page.
+**Build status.** Auth, groups, RBAC, tickets, comments, admin, and now AI are complete on the
+backend (`08-ai.md`). **The frontend is the one place AI is still unbuilt** — the Ticket Detail
+page's AI panel exists but its Summarize/Analyze actions are still disabled placeholders,
+not yet wired to the three backend endpoints.

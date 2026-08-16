@@ -1,7 +1,6 @@
 use actix_web::{App, test as actix_test, web};
 use mongodb::{Database, IndexModel, bson::doc, bson::oid::ObjectId, options::IndexOptions};
 use resolve::auth::models::{AuthResponse, RegisterRequest};
-use resolve::config::Config;
 use resolve::group::models::{
     AddMemberRequest, CreateGroupRequest, GroupResponse, GroupSummaryResponse, MemberResponse,
     Role, UpdateMemberRoleRequest, UserLookupResponse,
@@ -11,8 +10,6 @@ use resolve::server::routes;
 use resolve::state::AppState;
 use resolve::ticket::models::{CreateTicketRequest, TicketPriority, TicketResponse};
 use resolve::user::repository::UserRepository;
-
-const TEST_JWT_SECRET: &str = "test-secret";
 
 mod support;
 
@@ -52,12 +49,7 @@ async fn setup_db() -> (Database, String) {
 fn build_app_state(db: Database, uri: String) -> web::Data<AppState> {
     web::Data::new(AppState {
         db,
-        config: Config {
-            mongo_uri: uri,
-            jwt_secret: TEST_JWT_SECRET.to_string(),
-            cookie_secure: false,
-            frontend_origin: "http://localhost:5173".to_string(),
-        },
+        config: support::test_config(uri),
     })
 }
 
@@ -124,6 +116,7 @@ fn test_create_and_list_groups() {
         assert_eq!(groups[0].member_count, 1);
         // Brand-new group has no tickets yet.
         assert_eq!(groups[0].open_ticket_count, 0);
+        assert!(groups[0].last_activity_at.is_none());
 
         let group_id = ObjectId::parse_str(&group.id).unwrap();
         group_repo.delete_members_by_group(group_id).await.ok();
@@ -135,7 +128,8 @@ fn test_create_and_list_groups() {
     });
 }
 
-// 1b. Creating a ticket makes it show up in the group's open_ticket_count.
+// 1b. Creating a ticket makes it show up in the group's open_ticket_count,
+// and sets its last_activity_at.
 #[test]
 fn test_list_groups_reports_open_ticket_count() {
     support::runtime().block_on(async {
@@ -191,6 +185,9 @@ fn test_list_groups_reports_open_ticket_count() {
             .find(|g| g.id == group.id)
             .expect("created group should be listed");
         assert_eq!(listed.open_ticket_count, 2);
+        // Each created ticket writes a ticket_created activity entry, so a
+        // group with tickets always has a non-null last_activity_at.
+        assert!(listed.last_activity_at.is_some());
 
         // Leftover ticket docs are keyed to this now-deleted group's unique id,
         // so no other test in the shared db can observe them (same tolerance the

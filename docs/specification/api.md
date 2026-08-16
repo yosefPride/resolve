@@ -181,6 +181,9 @@ Response, per group (list-view shape, distinct from the plain group metadata ret
 - role — caller's role in that group
 - member_count
 - open_ticket_count — number of tickets in the group with status `open`
+- last_activity_at — the `occurred_at` of the group's most recent activity
+  entry (see "Activity Endpoint"), across every ticket in the group; `null`
+  for a brand-new group with no tickets yet
 
 ---
 
@@ -429,6 +432,195 @@ deleted.
 
 ---
 
+# Link Endpoints
+
+Link paths are nested under both the group and the ticket they belong to:
+`{id}` is the group id, `{ticket_id}` the ticket. Membership in `{id}` is
+required for every one of these (`GroupScoped`), and `{ticket_id}` must
+actually belong to `{id}` — same cross-group guard as Comment Endpoints.
+
+A link relates two tickets in the same group. It is stored directionally
+(`source_ticket_id` → `target_ticket_id`), but every response resolves the
+label from the viewpoint of `{ticket_id}` in the path — the caller never has
+to work out which side is which.
+
+## POST /groups/{id}/tickets/{ticket_id}/links
+
+Add a link from `{ticket_id}` to another ticket (any group member — no role
+split on creating one).
+
+Request:
+
+- target_ticket_id (must be a different ticket in the same group)
+- relation_type: `blocks` | `relates_to` | `duplicates`
+
+Response `201`: the created link (shape below), label resolved from
+`{ticket_id}`'s viewpoint — always `blocks` / `relates_to` / `duplicates`,
+never the inverse, since the request's own ticket is always the source.
+
+Rejected `400` if `target_ticket_id` equals `{ticket_id}` (no self-links) or
+doesn't resolve to a ticket in this group. `409` if the same
+(source, target, relation_type) link already exists — for `relates_to`
+specifically (symmetric), this check also covers the reverse direction, since
+a single link document represents the pair either way. `blocks` and
+`duplicates` are directional: "A blocks B" and "B blocks A" may coexist as two
+separate links.
+
+---
+
+## GET /groups/{id}/tickets/{ticket_id}/links
+
+Get every link touching `{ticket_id}`, on either side, oldest-first (any group
+member).
+
+Response `200`, per link:
+
+- id
+- group_id
+- label — resolved for `{ticket_id}`'s viewpoint: `blocks` | `is_blocked_by` |
+  `relates_to` | `duplicates` | `is_duplicated_by`
+- other_ticket_id, other_ticket_number, other_ticket_title,
+  other_ticket_status, other_ticket_priority — a summary of the ticket on the
+  other end, enough to render the row without a second request
+- created_by, created_by_name
+- created_at
+
+---
+
+## DELETE /groups/{id}/tickets/{ticket_id}/links/{link_id}
+
+Delete a link — its creator, or a Group Admin of `{id}`, only.
+
+Response `204`, no body. `403` if the caller is neither the creator nor a
+Group Admin; `404` if the link isn't one of `{ticket_id}`'s (on either side)
+in that group.
+
+Links are also removed when either ticket in the pair is deleted, and when
+their group is deleted.
+
+---
+
+### Link Rules:
+
+- Any group member may add a link between two tickets in their group
+- Only the link's creator or a Group Admin may delete it
+- No self-links; no duplicate (source, target, relation_type) — and for
+  `relates_to`, no duplicate in the reverse direction either
+- Links cannot be edited — only added and deleted
+
+---
+
+# Reference Endpoints
+
+Reference paths are nested the same way as Links: `{id}` is the group id,
+`{ticket_id}` the ticket, same membership and cross-group guards.
+
+A reference is an external URL attached to a single ticket — unlike a link, it
+doesn't relate two tickets to each other.
+
+## POST /groups/{id}/tickets/{ticket_id}/references
+
+Attach a reference to `{ticket_id}` (any group member).
+
+Request:
+
+- url (required, must start with `http://` or `https://`, max 2000 characters)
+- label (optional, max 200 characters) — when blank, defaults to the URL's
+  host (e.g. `https://github.com/org/repo/pull/12` → `github.com`)
+
+Response `201`: the created reference (shape below).
+
+Rejected `400` if `url` is blank, doesn't start with `http://`/`https://`, or
+either field exceeds its length limit.
+
+---
+
+## GET /groups/{id}/tickets/{ticket_id}/references
+
+Get `{ticket_id}`'s references, oldest-first (any group member).
+
+Response `200`, per reference:
+
+- id
+- group_id
+- ticket_id
+- label
+- url
+- created_by, created_by_name
+- created_at
+
+---
+
+## DELETE /groups/{id}/tickets/{ticket_id}/references/{reference_id}
+
+Delete a reference — its creator, or a Group Admin of `{id}`, only.
+
+Response `204`, no body. `403` if the caller is neither the creator nor a
+Group Admin; `404` if the reference isn't on that ticket in that group.
+
+References are also removed when their ticket is deleted, and when their
+group is deleted.
+
+---
+
+### Reference Rules:
+
+- Any group member may attach a reference to a ticket in their group
+- Only the reference's creator or a Group Admin may delete it
+- References cannot be edited — only added and deleted
+
+---
+
+# Activity Endpoint
+
+## GET /groups/{id}/tickets/{ticket_id}/activity
+
+Get `{ticket_id}`'s activity feed, newest-first (any group member). Same
+membership and cross-group guards as Comment/Link/Reference Endpoints.
+
+This is a read-only history: entries are written exclusively as a side effect
+of ticket, comment, link, and reference mutations elsewhere in the API — never
+accepted directly from a client.
+
+Response `200`, per entry:
+
+- id
+- group_id
+- ticket_id
+- actor_id, actor_name — who performed the action
+- event_type: `ticket_created` | `status_changed` | `priority_changed` |
+  `title_changed` | `description_changed` | `comment_added` |
+  `comment_deleted` | `link_added` | `link_removed`
+- old_value, new_value — populated for `status_changed`, `priority_changed`,
+  `title_changed`, `link_added`, `link_removed`; both null for every other
+  event type. `description_changed` deliberately carries no text (only the
+  fact that it changed) to avoid dumping a full diff into the feed.
+- comment_id — populated only for `comment_added`/`comment_deleted`
+- link_kind — populated only for `link_added`/`link_removed`: `relation` (a
+  Link Endpoint mutation) or `reference` (a Reference Endpoint mutation)
+- occurred_at
+
+An update that changes multiple fields in one request (e.g. one PATCH
+changing both `status` and `priority`) produces one entry per field that
+actually changed — not one combined entry — and only for fields whose value
+actually differs from before (re-submitting the same value logs nothing). A
+link mutation logs one entry on each side (both tickets in the relation),
+each phrased from that ticket's own viewpoint; a reference mutation logs a
+single entry, since it only touches one ticket.
+
+---
+
+### Activity Rules:
+
+- Read-only — there is no create/update/delete endpoint; entries are written
+  internally by the services above
+- Visible to any group member, not just Group Admins — this is history, not
+  an admin-only audit trail
+- Ticket-level cascade deletes (a whole ticket or group being removed) do not
+  themselves log activity — the entries go with them
+
+---
+
 # AI Endpoints (CORE FEATURE)
 
 ## POST /ai/groups/{id}/tickets/{ticket_id}/summarize
@@ -446,18 +638,6 @@ Returns:
 - severity estimate
 - suggested fix
 - classification
-
----
-
-## POST /ai/groups/{id}/report
-
-Group Admin only
-
-Returns:
-
-- group-wide analytics
-- ticket trends
-- workload distribution
 
 ---
 
@@ -531,28 +711,56 @@ Every succession or auto-deletion performed this way is recorded in `admin_audit
 
 ---
 
+## POST /admin/users/:id/promote
+
+Grant the target user the global System Admin role — System Admin only.
+
+No request body. Rejected (409) if the target is already a System Admin. 404 if the target doesn't exist.
+
+The very first System Admin can't be created through this endpoint, since it requires an existing System Admin to call it; that one is set directly against the database.
+
+The grant is recorded in `admin_audit_log` as a `promotion` entry, readable via `GET /admin/audit-log` below.
+
+---
+
+## POST /admin/users/:id/demote
+
+Revoke the target user's global System Admin role — System Admin only.
+
+No request body. Rejected (409) if the target isn't currently a System Admin, or if the target is the last remaining System Admin (there's no successor to name, unlike Group Admin succession — see docs/rbac.md, "System Admin Model" — so the rule is simply "at least one must remain"). 404 if the target doesn't exist. Self-demotion is allowed, as long as another System Admin still exists afterward.
+
+The revocation is recorded in `admin_audit_log` as a `demotion` entry, readable via `GET /admin/audit-log` below.
+
+---
+
 ## GET /admin/audit-log
 
-Read the succession / auto-deletion audit trail — System Admin only.
+Read the System Admin action audit trail — succession, auto-deletion, promotion, and demotion — System Admin only.
 
 Optional query filters, independent (either may be used alone, both may be combined, both may be omitted):
 
-- `group_id` — only entries for that group
-- `user_id` — only entries where that user was the one deleted
+- `group_id` — only entries for that group (promotion/demotion entries have none, so are excluded when this filter is set)
+- `user_id` — only entries where that user was the one deleted (promotion/demotion entries have no deleted user, so are excluded when this filter is set — filtering by the promoted/demoted user isn't supported)
 
 Entries are returned newest-first. The `*_name` fields are snapshots taken when
-the entry was written (the deleted user, and an auto-deleted group, no longer
-exist to be looked up at read time). Each entry:
+the entry was written, not lookups — for succession/group_auto_deleted the
+deleted user (and, for group_auto_deleted, the group) no longer exist to be
+looked up at read time; for promotion/demotion the target user still exists,
+but is snapshotted too, for consistency and so a later rename doesn't rewrite
+history. Fields are action-specific — each entry only populates the fields
+relevant to its action:
 
 - id
-- action (succession | group_auto_deleted)
-- group_id
-- group_name
-- deleted_user_id
-- deleted_user_name
-- successor_user_id (null when action = group_auto_deleted)
-- successor_user_name (null when action = group_auto_deleted)
-- performed_by (the System Admin who ran the deletion)
+- action (succession | group_auto_deleted | promotion | demotion)
+- group_id (succession, group_auto_deleted only)
+- group_name (succession, group_auto_deleted only)
+- deleted_user_id (succession, group_auto_deleted only)
+- deleted_user_name (succession, group_auto_deleted only)
+- successor_user_id (succession only)
+- successor_user_name (succession only)
+- target_user_id (promotion only — the user granted System Admin)
+- target_user_name (promotion only)
+- performed_by (the System Admin who performed the action)
 - performed_by_name
 - created_at
 

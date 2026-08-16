@@ -1,9 +1,14 @@
 use actix_web::{HttpResponse, ResponseError, http::StatusCode};
 use serde::Serialize;
 
+use crate::activity::repository::ActivityRepoError;
 use crate::admin::repository::AdminRepoError;
+use crate::ai::repository::AiRepoError;
 use crate::comment::repository::CommentRepoError;
 use crate::group::repository::GroupRepoError;
+use crate::link::repository::LinkRepoError;
+use crate::reaction::repository::ReactionRepoError;
+use crate::reference::repository::ReferenceRepoError;
 use crate::ticket::repository::TicketRepoError;
 use crate::user::repository::UserRepoError;
 
@@ -16,6 +21,7 @@ pub enum ApiError {
     DuplicateEmail,
     Conflict(String),
     Validation(String),
+    RateLimited(String),
     Internal,
 }
 
@@ -40,6 +46,7 @@ impl ApiError {
             ApiError::DuplicateEmail => "duplicate_email",
             ApiError::Conflict(_) => "conflict",
             ApiError::Validation(_) => "validation_error",
+            ApiError::RateLimited(_) => "rate_limited",
             ApiError::Internal => "internal_error",
         }
     }
@@ -55,6 +62,7 @@ impl ApiError {
             ApiError::DuplicateEmail => "email already in use".to_string(),
             ApiError::Conflict(message) => message.clone(),
             ApiError::Validation(message) => message.clone(),
+            ApiError::RateLimited(message) => message.clone(),
             ApiError::Internal => "internal server error".to_string(),
         }
     }
@@ -78,6 +86,7 @@ impl ResponseError for ApiError {
             ApiError::DuplicateEmail => StatusCode::CONFLICT,
             ApiError::Conflict(_) => StatusCode::CONFLICT,
             ApiError::Validation(_) => StatusCode::BAD_REQUEST,
+            ApiError::RateLimited(_) => StatusCode::TOO_MANY_REQUESTS,
             ApiError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -147,6 +156,39 @@ impl From<TicketRepoError> for ApiError {
 
 impl From<CommentRepoError> for ApiError {
     fn from(_: CommentRepoError) -> Self {
+        ApiError::Internal
+    }
+}
+
+impl From<AiRepoError> for ApiError {
+    fn from(_: AiRepoError) -> Self {
+        ApiError::Internal
+    }
+}
+
+impl From<ActivityRepoError> for ApiError {
+    fn from(_: ActivityRepoError) -> Self {
+        ApiError::Internal
+    }
+}
+
+impl From<LinkRepoError> for ApiError {
+    fn from(err: LinkRepoError) -> Self {
+        match err {
+            LinkRepoError::Duplicate => ApiError::Conflict("this link already exists".to_string()),
+            LinkRepoError::Database(_) => ApiError::Internal,
+        }
+    }
+}
+
+impl From<ReferenceRepoError> for ApiError {
+    fn from(_: ReferenceRepoError) -> Self {
+        ApiError::Internal
+    }
+}
+
+impl From<ReactionRepoError> for ApiError {
+    fn from(_: ReactionRepoError) -> Self {
         ApiError::Internal
     }
 }

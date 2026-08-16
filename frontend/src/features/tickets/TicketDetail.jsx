@@ -9,15 +9,17 @@ import {
   MoreVertical,
   Pencil,
 } from 'lucide-react';
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useDeleteTicket } from '../../hooks/useTickets';
 import { useComments } from '../../hooks/useComments';
 import { errorMessage } from '../../utils/errors';
 import { formatDateTime, formatRelativeTime } from '../../utils/format';
 import Button from '../../components/ui/Button';
+import DropdownMenu, { DropdownMenuItem } from '../../components/ui/DropdownMenu';
 import Modal from '../../components/ui/Modal';
+import ActivityList from '../activity/ActivityList';
 import AiPanel from '../ai/AiPanel';
 import CommentList from '../comments/CommentList';
+import LinksPanel from '../links/LinksPanel';
 import DescriptionMarkdown from './DescriptionMarkdown';
 import EditTicketForm from './EditTicketForm';
 import TicketMeta from './TicketMeta';
@@ -30,7 +32,7 @@ function TabButton({ isActive, onClick, icon: Icon, disabled, children }) {
       aria-selected={isActive}
       disabled={disabled}
       onClick={onClick}
-      className={`-mb-px inline-flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-slate-400 ${
+      className={`-mb-px inline-flex shrink-0 items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-slate-400 ${
         isActive
           ? 'border-sky-400 text-white'
           : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -93,39 +95,38 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
             >
               <Pencil className="h-3.5 w-3.5" /> Edit Issue
             </Button>
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger
-                aria-label="Issue actions"
-                className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
-              >
-                <MoreVertical className="h-4 w-4" />
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Portal>
-                <DropdownMenu.Content
-                  align="end"
-                  sideOffset={8}
-                  className="z-50 w-40 rounded-lg border border-white/10 bg-neutral-950 py-1 shadow-2xl shadow-black/50"
+            <DropdownMenu
+              trigger={
+                <button
+                  type="button"
+                  aria-label="Issue actions"
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
                 >
-                  <DropdownMenu.Item
-                    onSelect={() => setIsConfirmingDelete(true)}
-                    className="cursor-pointer px-4 py-2 text-sm text-red-400 outline-none transition-colors data-highlighted:bg-white/10"
-                  >
-                    Delete issue
-                  </DropdownMenu.Item>
-                </DropdownMenu.Content>
-              </DropdownMenu.Portal>
-            </DropdownMenu.Root>
+                  <MoreVertical className="h-4 w-4" />
+                </button>
+              }
+            >
+              <DropdownMenuItem variant="danger" onSelect={() => setIsConfirmingDelete(true)}>
+                Delete issue
+              </DropdownMenuItem>
+            </DropdownMenu>
           </div>
         )}
       </div>
 
-      {/* items-stretch (the grid default) so the rail matches the main
-          column's height — AiPanel below grows to fill what TicketMeta
-          leaves over. */}
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+      {/* flex-col below lg, same as the other app pages — a bare `grid`
+          track can be forced wider than the viewport by a wide descendant's
+          min-content (CSS Grid's automatic minimum size), which is what was
+          pushing content past the frame on mobile. flex-col doesn't have
+          that problem: it stretches children down to its own width instead
+          of letting one grow the container. items-stretch (the grid
+          default) at lg+ so the rail's cards align with the main column;
+          AiPanel has its own fixed height now (see AiPanel.jsx) rather than
+          stretching to match it. */}
+      <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-stretch">
         <div className="flex flex-col gap-6">
-          <div className="rounded-xl border border-white/10 bg-white/5 p-6">
-            <div className="flex items-center justify-between gap-4 text-sm text-slate-500">
+          <div className="break-words rounded-xl border border-white/10 bg-white/5 p-6">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-sm text-slate-500">
               <p>
                 <span className="font-medium">#{ticket.ticket_number}</span>
                 <span aria-hidden> · </span>
@@ -143,7 +144,7 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
           </div>
 
           <div className="flex flex-col gap-4">
-            <div role="tablist" className="flex gap-6 border-b border-white/10">
+            <div role="tablist" className="flex gap-6 overflow-x-auto border-b border-white/10">
               <TabButton
                 icon={FileText}
                 isActive={activeTab === 'details'}
@@ -163,13 +164,18 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
                   </span>
                 )}
               </TabButton>
-              {/* No ticket-relation or per-ticket event-log data yet —
-                  placeholders hold these tabs' spots until backend support
-                  exists. */}
-              <TabButton icon={Link2} isActive={false} disabled>
+              <TabButton
+                icon={Link2}
+                isActive={activeTab === 'links'}
+                onClick={() => setActiveTab('links')}
+              >
                 Links
               </TabButton>
-              <TabButton icon={Activity} isActive={false} disabled>
+              <TabButton
+                icon={Activity}
+                isActive={activeTab === 'activity'}
+                onClick={() => setActiveTab('activity')}
+              >
                 Activity
               </TabButton>
             </div>
@@ -181,7 +187,7 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
             <div
               className={
                 activeTab === 'details'
-                  ? 'h-128 overflow-y-auto rounded-xl border border-white/10 bg-white/5 p-6'
+                  ? 'h-128 overflow-y-auto break-words rounded-xl border border-white/10 bg-white/5 p-6'
                   : 'hidden'
               }
             >
@@ -202,12 +208,33 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
                 isVisible={activeTab === 'comments'}
               />
             </div>
+            <div
+              className={
+                activeTab === 'activity'
+                  ? 'h-128 overflow-y-auto rounded-xl border border-white/10 bg-white/5 p-6'
+                  : 'hidden'
+              }
+            >
+              <ActivityList groupId={groupId} ticketId={ticket.id} />
+            </div>
+            <div
+              className={
+                activeTab === 'links'
+                  ? 'h-128 overflow-y-auto rounded-xl border border-white/10 bg-white/5 p-6'
+                  : 'hidden'
+              }
+            >
+              <LinksPanel groupId={groupId} ticketId={ticket.id} isAdmin={isAdmin} />
+            </div>
           </div>
         </div>
 
         <aside className="flex min-h-0 flex-col gap-6">
           <TicketMeta ticket={ticket} teamName={teamName} groupId={groupId} isAdmin={isAdmin} />
-          <AiPanel ticket={ticket} />
+          {/* Keyed on ticket.id so AiPanel fully remounts on ticket-to-ticket
+              navigation — it resets its own activeConversationId selection
+              state that way instead of needing an effect to do it. */}
+          <AiPanel key={ticket.id} ticket={ticket} groupId={groupId} />
         </aside>
       </div>
 

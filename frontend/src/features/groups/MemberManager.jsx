@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { MoreVertical } from 'lucide-react';
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useNavigate } from 'react-router-dom';
 import { addMember, lookupUserByEmail, removeMember, updateMemberRole } from '../../services/groups.service';
 import { GROUP_ROLES, isGroupAdmin } from '../../utils/roles';
 import { errorMessage } from '../../utils/errors';
 import Button from '../../components/ui/Button';
+import DropdownMenu, { DropdownMenuItem } from '../../components/ui/DropdownMenu';
 import Input from '../../components/ui/Input';
 import Badge from '../../components/ui/Badge';
 
@@ -67,12 +67,12 @@ function AddMemberForm({ groupId }) {
       {error && <p className="text-sm text-red-500">{error}</p>}
 
       {found && (
-        <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-4 py-3">
-          <div>
-            <p className="text-sm font-medium text-white">{found.name}</p>
-            <p className="text-xs text-slate-400">{found.email}</p>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-white">{found.name}</p>
+            <p className="truncate text-xs text-slate-400">{found.email}</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="ghost"
               size="sm"
@@ -100,38 +100,27 @@ function AddMemberForm({ groupId }) {
 
 function MemberActionsMenu({ member, isSelf, canChangeRole, isBusy, onToggleRole, onRemove }) {
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger
-        disabled={isBusy}
-        aria-label="Member actions"
-        className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
-      >
-        <MoreVertical className="h-5 w-5" />
-      </DropdownMenu.Trigger>
-
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="end"
-          sideOffset={8}
-          className="z-50 w-40 rounded-lg border border-white/10 bg-neutral-950 py-1 shadow-2xl shadow-black/50"
+    <DropdownMenu
+      trigger={
+        <button
+          type="button"
+          disabled={isBusy}
+          aria-label="Member actions"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
         >
-          {canChangeRole && (
-            <DropdownMenu.Item
-              onSelect={onToggleRole}
-              className="cursor-pointer px-4 py-2 text-sm text-slate-300 outline-none transition-colors data-highlighted:bg-white/10"
-            >
-              {isGroupAdmin(member.role) ? 'Demote' : 'Promote'}
-            </DropdownMenu.Item>
-          )}
-          <DropdownMenu.Item
-            onSelect={onRemove}
-            className="cursor-pointer px-4 py-2 text-sm text-red-400 outline-none transition-colors data-highlighted:bg-white/10"
-          >
-            {isSelf ? 'Leave' : 'Remove'}
-          </DropdownMenu.Item>
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+          <MoreVertical className="h-5 w-5" />
+        </button>
+      }
+    >
+      {canChangeRole && (
+        <DropdownMenuItem onSelect={onToggleRole}>
+          {isGroupAdmin(member.role) ? 'Demote' : 'Promote'}
+        </DropdownMenuItem>
+      )}
+      <DropdownMenuItem variant="danger" onSelect={onRemove}>
+        {isSelf ? 'Leave' : 'Remove'}
+      </DropdownMenuItem>
+    </DropdownMenu>
   );
 }
 
@@ -187,13 +176,13 @@ export default function MemberManager({ groupId, members, myUserId, myRole }) {
           return (
             <li
               key={member.id}
-              className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-4 py-3"
+              className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-3"
             >
-              <div>
-                <p className="text-sm font-medium text-white">{member.name}</p>
-                <p className="text-xs text-slate-400">{member.email}</p>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-white">{member.name}</p>
+                <p className="truncate text-xs text-slate-400">{member.email}</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2">
                 <Badge>{isGroupAdmin(member.role) ? 'Team Admin' : 'Contributor'}</Badge>
                 {iAmAdmin && (
                   <MemberActionsMenu
