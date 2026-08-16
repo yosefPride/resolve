@@ -200,6 +200,30 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), Error> {
         )
         .await?;
 
+    // Enforces at most one reaction per (comment, user) — the actual
+    // one-reaction-per-user guard behind ReactionRepository::set_reaction's
+    // upsert (its filter on this same pair is what makes the write an
+    // update-in-place instead of racing this index). Its comment_id prefix
+    // also serves list_by_comment and delete_by_comment.
+    db.collection::<Document>("comment_reactions")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "comment_id": 1, "user_id": 1 })
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+        )
+        .await?;
+
+    // Serves ReactionRepository::delete_by_ticket/delete_by_group's cascade
+    // deletes — group_id alone is a valid prefix match for the group-only case.
+    db.collection::<Document>("comment_reactions")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "group_id": 1, "ticket_id": 1 })
+                .build(),
+        )
+        .await?;
+
     // Serves ReferenceRepository::list_by_ticket and both cascade deletes
     // (delete_by_ticket on the (group_id, ticket_id) prefix, delete_by_group
     // on group_id alone).

@@ -7,6 +7,8 @@ use crate::comment::models::{Comment, CommentResponse, CreateCommentInput};
 use crate::comment::repository::CommentRepository;
 use crate::errors::ApiError;
 use crate::rbac::service::RbacService;
+use crate::reaction::repository::ReactionRepository;
+use crate::reaction::service::summarize_reactions;
 use crate::ticket::models::{Ticket, TicketStatus};
 use crate::ticket::repository::TicketRepository;
 use crate::user::service::UserService;
@@ -15,6 +17,7 @@ pub struct CommentService {
     repo: CommentRepository,
     ticket_repo: TicketRepository,
     activity_repo: ActivityRepository,
+    reaction_repo: ReactionRepository,
     user_service: UserService,
     rbac: RbacService,
 }
@@ -25,6 +28,7 @@ impl CommentService {
             repo: CommentRepository::new(db),
             ticket_repo: TicketRepository::new(db),
             activity_repo: ActivityRepository::new(db),
+            reaction_repo: ReactionRepository::new(db),
             user_service: UserService::new(db),
             rbac: RbacService::new(db),
         }
@@ -95,7 +99,7 @@ impl CommentService {
                 link_kind: None,
             })
             .await?;
-        self.enrich_comment(comment).await
+        self.enrich_comment(comment, user_id).await
     }
 
     // Full thread in one response, oldest-first — no pagination (see
@@ -112,7 +116,7 @@ impl CommentService {
         let comments = self.repo.list_by_ticket(group_id, ticket_id).await?;
         let mut result = Vec::with_capacity(comments.len());
         for comment in comments {
-            result.push(self.enrich_comment(comment).await?);
+            result.push(self.enrich_comment(comment, user_id).await?);
         }
         Ok(result)
     }
@@ -149,6 +153,11 @@ impl CommentService {
         if !changed {
             return Err(ApiError::NotFound);
         }
+        // Cleared on both branches: a hard-deleted comment is gone outright,
+        // and a tombstoned one has its content replaced with the deleted
+        // placeholder, so there's nothing left on either for a reaction to
+        // mean anything against.
+        self.reaction_repo.delete_by_comment(comment_id).await?;
         // Recorded for both the hard-delete and tombstone (soft-delete)
         // paths — either way the user's delete action succeeded, and the
         // activity log doesn't distinguish the two.
@@ -186,9 +195,19 @@ impl CommentService {
     // CommentResponse needs the author's display name, which Comment doesn't
     // carry — mirrors TicketService::enrich_ticket. One find_by_id per
     // comment rather than a $lookup aggregation, same tradeoff made there.
-    async fn enrich_comment(&self, comment: Comment) -> Result<CommentResponse, ApiError> {
+    async fn enrich_comment(
+        &self,
+        comment: Comment,
+        viewer_id: ObjectId,
+    ) -> Result<CommentResponse, ApiError> {
         let author = self.user_service.find_by_id(comment.user_id).await?;
         let user_name = author.map(|u| u.name).unwrap_or_default();
+        // One reaction_repo query per comment, same one-lookup-per-row
+        // tradeoff already accepted above for user_name — see
+        // list_comments' doc comment on the enrichment loop being unbounded.
+        let comment_id = comment.id.expect("comment always has an id once loaded");
+        let reaction_rows = self.reaction_repo.list_by_comment(comment_id).await?;
+        let reactions = summarize_reactions(&reaction_rows, viewer_id);
         Ok(CommentResponse {
             id: comment.id.map(|id| id.to_hex()).unwrap_or_default(),
             group_id: comment.group_id.to_hex(),
@@ -200,6 +219,7 @@ impl CommentService {
             is_deleted: comment.is_deleted,
             created_at: DateTime::from_timestamp_millis(comment.created_at.timestamp_millis())
                 .unwrap_or_default(),
+            reactions,
         })
     }
 }

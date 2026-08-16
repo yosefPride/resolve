@@ -7,6 +7,7 @@ use crate::ai::repository::AiRepoError;
 use crate::comment::repository::CommentRepoError;
 use crate::group::repository::GroupRepoError;
 use crate::link::repository::LinkRepoError;
+use crate::reaction::repository::ReactionRepoError;
 use crate::reference::repository::ReferenceRepoError;
 use crate::ticket::repository::TicketRepoError;
 use crate::user::repository::UserRepoError;
@@ -182,6 +183,12 @@ impl From<LinkRepoError> for ApiError {
 
 impl From<ReferenceRepoError> for ApiError {
     fn from(_: ReferenceRepoError) -> Self {
+        ApiError::Internal
+    }
+}
+
+impl From<ReactionRepoError> for ApiError {
+    fn from(_: ReactionRepoError) -> Self {
         ApiError::Internal
     }
 }
