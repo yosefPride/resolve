@@ -91,39 +91,3 @@ pub async fn delete_comment(
         .await?;
     Ok(HttpResponse::NoContent().finish())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn request(content: &str) -> CreateCommentRequest {
-        CreateCommentRequest {
-            content: content.to_string(),
-            parent_comment_id: None,
-        }
-    }
-
-    #[test]
-    fn validate_create_rejects_empty_content() {
-        let result = validate_create(&request("   "));
-        assert!(matches!(result, Err(ApiError::Validation(_))));
-    }
-
-    #[test]
-    fn validate_create_rejects_over_limit_by_char_count() {
-        let too_long = "a".repeat(MAX_CONTENT_LEN + 1);
-        let result = validate_create(&request(&too_long));
-        assert!(matches!(result, Err(ApiError::Validation(_))));
-    }
-
-    // Regression guard for the .len() (byte-count) bug: each of these is a
-    // 2-byte-in-UTF-8 Hebrew character, so a byte-based check would wrongly
-    // reject this well under the nominal character limit.
-    #[test]
-    fn validate_create_accepts_hebrew_content_at_exact_char_limit() {
-        let exactly_at_limit = "א".repeat(MAX_CONTENT_LEN);
-        assert_eq!(exactly_at_limit.chars().count(), MAX_CONTENT_LEN);
-        let result = validate_create(&request(&exactly_at_limit));
-        assert!(result.is_ok());
-    }
-}

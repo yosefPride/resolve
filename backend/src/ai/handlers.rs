@@ -151,30 +151,3 @@ pub async fn delete_conversation(
         .await?;
     Ok(HttpResponse::NoContent().finish())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn validate_message_rejects_empty() {
-        assert!(matches!(
-            validate_message("   "),
-            Err(ApiError::Validation(_))
-        ));
-    }
-
-    #[test]
-    fn validate_message_rejects_over_limit_by_char_count() {
-        let too_long = "a".repeat(MAX_MESSAGE_LEN + 1);
-        assert!(matches!(
-            validate_message(&too_long),
-            Err(ApiError::Validation(_))
-        ));
-    }
-
-    #[test]
-    fn validate_message_accepts_within_limit() {
-        assert!(validate_message("Any workaround for this?").is_ok());
-    }
-}

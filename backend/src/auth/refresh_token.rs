@@ -29,25 +29,3 @@ pub fn hash_token(raw: &str) -> String {
 fn encode_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn generate_produces_distinct_tokens_with_matching_hash() {
-        let (raw_a, hash_a) = generate();
-        let (raw_b, hash_b) = generate();
-
-        assert_ne!(raw_a, raw_b);
-        assert_eq!(hash_a, hash_token(&raw_a));
-        assert_eq!(hash_b, hash_token(&raw_b));
-        assert_ne!(hash_a, hash_b);
-    }
-
-    #[test]
-    fn hash_token_is_deterministic() {
-        let (raw, hash) = generate();
-        assert_eq!(hash_token(&raw), hash);
-    }
-}

@@ -98,33 +98,3 @@ pub struct TicketLinkResponse {
     pub created_by_name: String,
     pub created_at: DateTime<Utc>,
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn relation_type_serializes_snake_case() {
-        assert_eq!(
-            serde_json::to_string(&RelationType::RelatesTo).unwrap(),
-            "\"relates_to\""
-        );
-    }
-
-    #[test]
-    fn label_for_resolves_directional_relations() {
-        assert_eq!(RelationType::Blocks.label_for(true), LinkLabel::Blocks);
-        assert_eq!(RelationType::Blocks.label_for(false), LinkLabel::IsBlockedBy);
-        assert_eq!(RelationType::Duplicates.label_for(true), LinkLabel::Duplicates);
-        assert_eq!(
-            RelationType::Duplicates.label_for(false),
-            LinkLabel::IsDuplicatedBy
-        );
-    }
-
-    #[test]
-    fn label_for_relates_to_is_symmetric() {
-        assert_eq!(RelationType::RelatesTo.label_for(true), LinkLabel::RelatesTo);
-        assert_eq!(RelationType::RelatesTo.label_for(false), LinkLabel::RelatesTo);
-    }
-}

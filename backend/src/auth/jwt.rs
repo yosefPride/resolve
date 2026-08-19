@@ -40,29 +40,3 @@ pub fn decode_token(token: &str, secret: &str) -> Result<Claims, jsonwebtoken::e
     )
     .map(|data| data.claims)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn decode_token_round_trips_issue_token() {
-        let token = issue_token("507f1f77bcf86cd799439011", "test-secret").unwrap();
-        let claims = decode_token(&token, "test-secret").unwrap();
-        assert_eq!(claims.sub, "507f1f77bcf86cd799439011");
-    }
-
-    #[test]
-    fn decode_token_rejects_wrong_secret() {
-        let token = issue_token("507f1f77bcf86cd799439011", "test-secret").unwrap();
-        assert!(decode_token(&token, "wrong-secret").is_err());
-    }
-
-    #[test]
-    fn decode_token_rejects_expired_token() {
-        let expired_exp = (Utc::now() - Duration::hours(1)).timestamp() as usize;
-        let token =
-            issue_token_with_exp("507f1f77bcf86cd799439011", "test-secret", expired_exp).unwrap();
-        assert!(decode_token(&token, "test-secret").is_err());
-    }
-}

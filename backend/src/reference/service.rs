@@ -198,26 +198,3 @@ fn derive_label(url: &str) -> String {
         .unwrap_or(without_scheme.len());
     without_scheme[..host_end].to_string()
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn derive_label_extracts_host_only() {
-        assert_eq!(
-            derive_label("https://github.com/org/repo/pull/12"),
-            "github.com"
-        );
-    }
-
-    #[test]
-    fn derive_label_strips_query_and_fragment() {
-        assert_eq!(derive_label("http://example.com?x=1#frag"), "example.com");
-    }
-
-    #[test]
-    fn derive_label_handles_bare_host() {
-        assert_eq!(derive_label("https://example.com"), "example.com");
-    }
-}

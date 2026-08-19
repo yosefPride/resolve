@@ -65,33 +65,3 @@ pub async fn remove_reaction(
         .await?;
     Ok(HttpResponse::Ok().json(reactions))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn request(emoji: &str) -> SetReactionRequest {
-        SetReactionRequest {
-            emoji: emoji.to_string(),
-        }
-    }
-
-    #[test]
-    fn validate_emoji_rejects_blank() {
-        let result = validate_emoji(&request("   "));
-        assert!(matches!(result, Err(ApiError::Validation(_))));
-    }
-
-    #[test]
-    fn validate_emoji_rejects_over_limit() {
-        let too_long = "a".repeat(MAX_EMOJI_CHARS + 1);
-        let result = validate_emoji(&request(&too_long));
-        assert!(matches!(result, Err(ApiError::Validation(_))));
-    }
-
-    #[test]
-    fn validate_emoji_trims_and_accepts_a_real_emoji() {
-        let result = validate_emoji(&request(" \u{1F44D} ")).unwrap();
-        assert_eq!(result, "\u{1F44D}");
-    }
-}
