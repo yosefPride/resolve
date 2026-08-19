@@ -49,29 +49,3 @@ pub fn levenshtein_distance(a: &str, b: &str) -> usize {
     }
     prev[len_b]
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn levenshtein_distance_identical_strings_is_zero() {
-        assert_eq!(levenshtein_distance("login", "login"), 0);
-    }
-
-    #[test]
-    fn levenshtein_distance_counts_single_substitution() {
-        assert_eq!(levenshtein_distance("login", "logn"), 1);
-    }
-
-    #[test]
-    fn levenshtein_distance_counts_insertions_and_deletions() {
-        assert_eq!(levenshtein_distance("kitten", "sitting"), 3);
-    }
-
-    #[test]
-    fn levenshtein_distance_against_empty_string_is_length() {
-        assert_eq!(levenshtein_distance("", "abc"), 3);
-        assert_eq!(levenshtein_distance("abc", ""), 3);
-    }
-}

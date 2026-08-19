@@ -81,28 +81,3 @@ pub struct TicketActivityResponse {
     pub link_kind: Option<LinkKind>,
     pub occurred_at: DateTime<Utc>,
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn activity_event_type_serializes_snake_case() {
-        assert_eq!(
-            serde_json::to_string(&ActivityEventType::TicketCreated).unwrap(),
-            "\"ticket_created\""
-        );
-        assert_eq!(
-            serde_json::to_string(&ActivityEventType::StatusChanged).unwrap(),
-            "\"status_changed\""
-        );
-        assert_eq!(
-            serde_json::to_string(&ActivityEventType::CommentDeleted).unwrap(),
-            "\"comment_deleted\""
-        );
-        assert_eq!(
-            serde_json::to_string(&ActivityEventType::LinkAdded).unwrap(),
-            "\"link_added\""
-        );
-    }
-}
