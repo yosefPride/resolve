@@ -283,26 +283,6 @@ export default function Sidebar({ className = '', collapsible = true, onNavigate
         <UserSection user={user} onLogout={logout} />
 
         <nav className="flex flex-col gap-1">
-          {/* No notifications backend yet — present but deliberately inert, so
-              the row reads as planned rather than broken. */}
-          <div
-            aria-disabled="true"
-            title={collapsed ? 'Notifications (coming soon)' : undefined}
-            className={`${ROW} cursor-not-allowed border-l-2 border-transparent text-slate-600 ${
-              collapsed ? 'justify-center px-2' : ''
-            }`}
-          >
-            <Bell className="h-4 w-4 shrink-0" />
-            {!collapsed && (
-              <>
-                Notifications
-                <Badge variant="outline" size="sm" className="ml-auto">
-                  soon
-                </Badge>
-              </>
-            )}
-          </div>
-
           {NAV_LINKS.map((link) => (
             <NavItem key={link.to} {...link} />
           ))}

@@ -52,14 +52,6 @@ export default function DemoSidebar({ className = '' }) {
       </div>
 
       <div className="flex flex-col gap-1">
-        <div className={`${ROW} border-l-2 border-transparent text-slate-600`}>
-          <Bell className="h-4 w-4 shrink-0" />
-          Notifications
-          <Badge variant="outline" size="sm" className="ml-auto">
-            soon
-          </Badge>
-        </div>
-
         {NAV.map(({ label, icon: Icon, isActive }) => (
           <div key={label} className={rowClasses(false, Boolean(isActive))}>
             <Icon className="h-4 w-4 shrink-0" />
