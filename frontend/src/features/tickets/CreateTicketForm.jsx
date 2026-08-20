@@ -46,6 +46,7 @@ export default function CreateTicketForm({ groupId, onCreated }) {
 
       <label className="flex flex-col gap-1 text-sm text-slate-300">
         Description
+        <span className="text-xs text-slate-500">Markdown is supported.</span>
         <textarea
           value={description}
           onChange={(event) => setDescription(event.target.value)}
