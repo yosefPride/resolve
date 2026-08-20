@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { formatDateTime } from '../../utils/format';
 import { listAuditLog } from '../../services/admin.service';
 import Badge from '../../components/ui/Badge';
+import Select from '../../components/ui/Select';
 
 const ACTION_LABELS = {
   succession: 'Succession',
@@ -66,34 +67,26 @@ export default function AuditLogPanel() {
       <div className="flex flex-wrap gap-3">
         <label className="flex flex-col gap-1 text-xs text-slate-400">
           Team
-          <select
-            value={groupFilter}
-            onChange={(event) => setGroupFilter(event.target.value)}
-            className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50"
-          >
+          <Select value={groupFilter} onChange={(event) => setGroupFilter(event.target.value)}>
             <option value="">All teams</option>
             {groupOptions.map((option) => (
               <option key={option.id} value={option.id}>
                 {option.name}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
 
         <label className="flex flex-col gap-1 text-xs text-slate-400">
           User
-          <select
-            value={userFilter}
-            onChange={(event) => setUserFilter(event.target.value)}
-            className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50"
-          >
+          <Select value={userFilter} onChange={(event) => setUserFilter(event.target.value)}>
             <option value="">All users</option>
             {userOptions.map((option) => (
               <option key={option.id} value={option.id}>
                 {option.name}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
       </div>
 

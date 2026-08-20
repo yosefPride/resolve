@@ -3,11 +3,9 @@ import { useCreateComment } from '../../hooks/useComments';
 import { errorMessage } from '../../utils/errors';
 import Button from '../../components/ui/Button';
 import EmojiPicker from '../../components/ui/EmojiPicker';
+import Textarea from '../../components/ui/Textarea';
 
 const MAX_CONTENT_LENGTH = 2000;
-
-const TEXTAREA_CLASS =
-  'rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50';
 
 // Counts Unicode code points, matching the backend's .chars().count(). Plain
 // value.length counts UTF-16 units instead, and the two disagree outside the
@@ -76,14 +74,14 @@ export default function CommentForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-2">
-      <textarea
+      <Textarea
         ref={textareaRef}
         value={content}
         onChange={(event) => setContent(event.target.value)}
         rows={isReply ? 2 : 3}
         autoFocus={autoFocus}
         placeholder={isReply ? 'Write a reply…' : 'Add a comment…'}
-        className={TEXTAREA_CLASS}
+        className="text-sm"
       />
 
       {error && <p className="text-sm text-red-500">{error}</p>}

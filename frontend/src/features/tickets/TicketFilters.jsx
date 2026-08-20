@@ -1,7 +1,5 @@
 import Input from '../../components/ui/Input';
-
-const SELECT_CLASS =
-  'rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50';
+import Select from '../../components/ui/Select';
 
 export default function TicketFilters({
   search,
@@ -25,34 +23,31 @@ export default function TicketFilters({
         className="flex-1 text-sm sm:max-w-xs"
       />
 
-      <select
+      <Select
         value={status}
         onChange={(event) => onStatusChange(event.target.value)}
         aria-label="Filter by status"
-        className={SELECT_CLASS}
       >
         <option value="">All statuses</option>
         <option value="open">Open</option>
         <option value="closed">Closed</option>
-      </select>
+      </Select>
 
-      <select
+      <Select
         value={priority}
         onChange={(event) => onPriorityChange(event.target.value)}
         aria-label="Filter by priority"
-        className={SELECT_CLASS}
       >
         <option value="">All priorities</option>
         <option value="low">Low</option>
         <option value="high">High</option>
         <option value="critical">Critical</option>
-      </select>
+      </Select>
 
-      <select
+      <Select
         value={creator}
         onChange={(event) => onCreatorChange(event.target.value)}
         aria-label="Filter by creator"
-        className={SELECT_CLASS}
       >
         <option value="">Everyone</option>
         {members.map((member) => (
@@ -60,7 +55,7 @@ export default function TicketFilters({
             {member.name}
           </option>
         ))}
-      </select>
+      </Select>
     </div>
   );
 }

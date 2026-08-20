@@ -3,12 +3,8 @@ import { useCreateTicket } from '../../hooks/useTickets';
 import { errorMessage } from '../../utils/errors';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-
-const SELECT_CLASS =
-  'rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50';
-
-const TEXTAREA_CLASS =
-  'rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50';
+import Select from '../../components/ui/Select';
+import Textarea from '../../components/ui/Textarea';
 
 export default function CreateTicketForm({ groupId, onCreated }) {
   const [title, setTitle] = useState('');
@@ -47,26 +43,21 @@ export default function CreateTicketForm({ groupId, onCreated }) {
       <label className="flex flex-col gap-1 text-sm text-slate-300">
         Description
         <span className="text-xs text-slate-500">Markdown is supported.</span>
-        <textarea
+        <Textarea
           value={description}
           onChange={(event) => setDescription(event.target.value)}
           required
           rows={4}
-          className={TEXTAREA_CLASS}
         />
       </label>
 
       <label className="flex flex-col gap-1 text-sm text-slate-300">
         Priority
-        <select
-          value={priority}
-          onChange={(event) => setPriority(event.target.value)}
-          className={SELECT_CLASS}
-        >
+        <Select value={priority} onChange={(event) => setPriority(event.target.value)}>
           <option value="low">Low</option>
           <option value="high">High</option>
           <option value="critical">Critical</option>
-        </select>
+        </Select>
       </label>
 
       {error && <p className="text-sm text-red-500">{error}</p>}
