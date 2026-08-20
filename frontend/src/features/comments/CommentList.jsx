@@ -5,8 +5,8 @@ import { errorMessage } from '../../utils/errors';
 import { formatDateTime, formatRelativeTime } from '../../utils/format';
 import Avatar from '../../components/ui/Avatar';
 import Button from '../../components/ui/Button';
+import ConfirmModal from '../../components/ui/ConfirmModal';
 import EmojiPicker from '../../components/ui/EmojiPicker';
-import Modal from '../../components/ui/Modal';
 import CommentForm from './CommentForm';
 
 // The API hands back one flat array, oldest-first. Map preserves insertion
@@ -320,22 +320,18 @@ export default function CommentList({ groupId, ticketId, isAdmin, isClosed, isVi
           disabled — there's nothing useful to click. */}
       {!isClosed && <CommentForm groupId={groupId} ticketId={ticketId} />}
 
-      <Modal isOpen={pendingDelete !== null} onClose={closeDeleteModal} title="Delete comment">
-        <p className="text-sm text-slate-300">
-          Are you sure you want to delete this comment? This cannot be undone.
-        </p>
-
-        {deleteError && <p className="mt-3 text-sm text-red-500">{deleteError}</p>}
-
-        <div className="mt-6 flex justify-end gap-3">
-          <Button variant="ghost" onClick={closeDeleteModal}>
-            Cancel
-          </Button>
-          <Button variant="danger" disabled={deleteComment.isPending} onClick={handleDelete}>
-            {deleteComment.isPending ? 'Deleting…' : 'Delete comment'}
-          </Button>
-        </div>
-      </Modal>
+      <ConfirmModal
+        isOpen={pendingDelete !== null}
+        onClose={closeDeleteModal}
+        title="Delete comment"
+        confirmLabel="Delete comment"
+        pendingLabel="Deleting…"
+        isPending={deleteComment.isPending}
+        error={deleteError}
+        onConfirm={handleDelete}
+      >
+        Are you sure you want to delete this comment? This cannot be undone.
+      </ConfirmModal>
     </div>
   );
 }
