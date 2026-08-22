@@ -10,7 +10,7 @@ use crate::admin::models::{
     AuditAction, AuditLogEntry, AuditLogEntryResponse, AutoDeleteGroupInfo, BlockedGroupInfo,
     DeletionCheckResponse,
 };
-use crate::activity::service::ActivityRepository;
+use crate::activity::repository::ActivityRepository;
 use crate::admin::repository::AdminRepository;
 use crate::ai::repository::AiRepository;
 use crate::comment::repository::CommentRepository;
@@ -20,7 +20,7 @@ use crate::group::repository::GroupRepository;
 use crate::group::service::purge_group_data;
 use crate::link::repository::LinkRepository;
 use crate::rbac::service::RbacService;
-use crate::reaction::service::ReactionRepository;
+use crate::reaction::repository::ReactionRepository;
 use crate::reference::repository::ReferenceRepository;
 use crate::ticket::repository::TicketRepository;
 use crate::user::models::{GlobalRole, UserResponse};

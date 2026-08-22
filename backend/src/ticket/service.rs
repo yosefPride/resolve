@@ -5,13 +5,13 @@ use mongodb::{
 };
 
 use crate::activity::models::{ActivityEventType, CreateActivityInput};
-use crate::activity::service::ActivityRepository;
+use crate::activity::repository::ActivityRepository;
 use crate::ai::repository::AiRepository;
 use crate::comment::repository::CommentRepository;
 use crate::errors::ApiError;
 use crate::link::repository::LinkRepository;
 use crate::rbac::service::RbacService;
-use crate::reaction::service::ReactionRepository;
+use crate::reaction::repository::ReactionRepository;
 use crate::reference::repository::ReferenceRepository;
 use crate::ticket::models::{
     CreateTicketInput, CreateTicketRequest, ListTicketsQuery, Ticket, TicketListResponse,
