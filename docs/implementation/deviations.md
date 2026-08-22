@@ -182,19 +182,6 @@ separate `ticket_id` and `group_id` indexes on both `comments` and
 **Resolution:** spec. [`data-model.md`](data-model.md) already records the
 as-built shape.
 
-### 3.4 The `counters` document is not deleted with its group
-
-`database.md` says of `counters`: "Deleted along with the group's tickets when
-the group is deleted." It is not. `group::purge_group_data` deletes members,
-tickets, comments, AI data, activity, links, reactions, references, and the
-group itself — the counter row is never touched, so it outlives the group.
-
-Harmless in practice (an `ObjectId` is never reused, so the orphan can never be
-read again), but it is an unbounded leak of one small document per deleted group,
-and the only entry here where the spec describes the *better* behavior.
-
-**Resolution:** code. One `delete_one` in `purge_group_data`.
-
 ---
 
 ## 4. Absolute rules that are narrower than stated
@@ -254,14 +241,7 @@ for the layers it describes.
 
 **Resolution:** accepted.
 
-### 5.2 `CLAUDE.md` points at the wrong doc paths
-
-Its "Required Docs (source of truth)" list names `docs/architecture.md`,
-`docs/backend.md`, and so on. Those files live under `docs/specification/`.
-
-**Resolution:** code (well — config). One-line fix in `CLAUDE.md`.
-
-### 5.3 There are no automated tests
+### 5.2 There are no automated tests
 
 No `tests/` directory, no `#[cfg(test)]` modules; frontend testing is manual by
 decision. Several backend comments still describe test-only affordances

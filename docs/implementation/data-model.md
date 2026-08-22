@@ -371,8 +371,10 @@ messages.
 
 **Deleting a group** runs `group::purge_group_data`, which does the above across
 every ticket in the group, then removes the tickets, the membership rows, and the
-group itself. It is also what runs when a group is auto-deleted because its only
-member was deleted.
+group itself. The group's `counters` document goes with it — that happens inside
+`TicketRepository::delete_by_group`, alongside the tickets, rather than as a
+separate step in `purge_group_data`. It is also what runs when a group is
+auto-deleted because its only member was deleted.
 
 **Deleting a user** does *not* delete their content. Tickets, comments, and
 activity keep the original `created_by` / `user_id` / `actor_id`, and the name
