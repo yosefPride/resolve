@@ -1,35 +1,24 @@
 import { useState } from 'react';
 import { renameGroup } from '../../services/groups.service';
-import { errorMessage } from '../../utils/errors';
+import { useSubmit } from '../../hooks/useSubmit';
 import Button from '../../components/ui/Button';
+import Field from '../../components/ui/Field';
 import Input from '../../components/ui/Input';
 
 export default function RenameGroupForm({ groupId, currentName, onRenamed }) {
   const [name, setName] = useState(currentName);
-  const [error, setError] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const trimmed = name.trim();
   const unchanged = trimmed === currentName;
 
-  async function handleSubmit(event) {
-    event.preventDefault();
-    setError('');
-    setIsSubmitting(true);
-    try {
-      await renameGroup(groupId, trimmed);
-      onRenamed();
-    } catch (err) {
-      setError(errorMessage(err, 'Failed to rename team.'));
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
+  const { error, isPending, submit } = useSubmit(async () => {
+    await renameGroup(groupId, trimmed);
+    onRenamed();
+  }, 'Failed to rename team.');
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <label className="flex flex-col gap-1 text-sm text-slate-300">
-        Team name
+    <form onSubmit={submit} className="flex flex-col gap-4">
+      <Field label="Team name">
         <Input
           type="text"
           name="name"
@@ -38,12 +27,12 @@ export default function RenameGroupForm({ groupId, currentName, onRenamed }) {
           required
           autoFocus
         />
-      </label>
+      </Field>
 
       {error && <p className="text-sm text-red-500">{error}</p>}
 
-      <Button type="submit" disabled={isSubmitting || trimmed === '' || unchanged} className="mt-2">
-        {isSubmitting ? 'Saving…' : 'Save'}
+      <Button type="submit" disabled={isPending || trimmed === '' || unchanged} className="mt-2">
+        {isPending ? 'Saving…' : 'Save'}
       </Button>
     </form>
   );

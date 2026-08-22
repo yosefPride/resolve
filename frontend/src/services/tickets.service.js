@@ -12,25 +12,24 @@ export function listTickets(groupId, filters = {}) {
   if (filters.creator) params.creator = filters.creator;
   if (filters.page) params.page = filters.page;
   if (filters.perPage) params.per_page = filters.perPage;
-  return api.get(`/groups/${groupId}/tickets`, { params }).then((res) => res.data);
+  return api.get(`/groups/${groupId}/tickets`, { params });
 }
 
 export function createTicket(groupId, { title, description, priority }) {
   return api
-    .post(`/groups/${groupId}/tickets`, { title, description, priority })
-    .then((res) => res.data);
+    .post(`/groups/${groupId}/tickets`, { title, description, priority });
 }
 
 export function getTicket(groupId, ticketId) {
-  return api.get(`/groups/${groupId}/tickets/${ticketId}`).then((res) => res.data);
+  return api.get(`/groups/${groupId}/tickets/${ticketId}`);
 }
 
 // changes: { title?, description?, priority?, status? } — at least one
 // required (the backend rejects an empty body).
 export function updateTicket(groupId, ticketId, changes) {
-  return api.patch(`/groups/${groupId}/tickets/${ticketId}`, changes).then((res) => res.data);
+  return api.patch(`/groups/${groupId}/tickets/${ticketId}`, changes);
 }
 
 export function deleteTicket(groupId, ticketId) {
-  return api.delete(`/groups/${groupId}/tickets/${ticketId}`).then((res) => res.data);
+  return api.delete(`/groups/${groupId}/tickets/${ticketId}`);
 }

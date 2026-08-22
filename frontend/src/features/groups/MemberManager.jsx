@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { addMember, lookupUserByEmail, removeMember, updateMemberRole } from '../../services/groups.service';
 import { GROUP_ROLES, isGroupAdmin } from '../../utils/roles';
 import { errorMessage } from '../../utils/errors';
+import { useSubmit } from '../../hooks/useSubmit';
 import Button from '../../components/ui/Button';
 import DropdownMenu, { DropdownMenuItem } from '../../components/ui/DropdownMenu';
 import Input from '../../components/ui/Input';
@@ -14,8 +15,13 @@ function AddMemberForm({ groupId }) {
   const queryClient = useQueryClient();
   const [email, setEmail] = useState('');
   const [found, setFound] = useState(null);
-  const [error, setError] = useState('');
-  const [isLookingUp, setIsLookingUp] = useState(false);
+
+  // One shared error line for both phases: the lookup surfaces through
+  // useSubmit, the add mutation through setError.
+  const { error, setError, isPending: isLookingUp, submit: handleLookup } = useSubmit(async () => {
+    setFound(null);
+    setFound(await lookupUserByEmail(groupId, email));
+  }, 'No user found with that email.');
 
   const addMutation = useMutation({
     mutationFn: ({ userId, role }) => addMember(groupId, userId, role),
@@ -28,20 +34,6 @@ function AddMemberForm({ groupId }) {
   });
 
   const isBusy = isLookingUp || addMutation.isPending;
-
-  async function handleLookup(event) {
-    event.preventDefault();
-    setError('');
-    setFound(null);
-    setIsLookingUp(true);
-    try {
-      setFound(await lookupUserByEmail(groupId, email));
-    } catch (err) {
-      setError(errorMessage(err, 'No user found with that email.'));
-    } finally {
-      setIsLookingUp(false);
-    }
-  }
 
   function handleConfirm(role) {
     setError('');

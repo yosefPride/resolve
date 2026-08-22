@@ -7,6 +7,7 @@ import { errorMessage } from '../../utils/errors';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
+import Table, { Td, Tr } from '../../components/ui/Table';
 
 export default function GroupsPanel() {
   const queryClient = useQueryClient();
@@ -60,30 +61,19 @@ export default function GroupsPanel() {
             {debouncedSearch ? `No teams match “${debouncedSearch}”.` : 'No teams found.'}
           </p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-white/10">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-white/10 text-xs font-medium tracking-wide text-slate-400 uppercase">
-                  <th className="px-4 py-3">Name</th>
-                  <th className="px-4 py-3">Created</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {groups.map((group) => (
-                  <tr key={group.id} className="border-b border-white/5 last:border-0 hover:bg-white/5">
-                    <td className="px-4 py-3 font-medium text-white">{group.name}</td>
-                    <td className="px-4 py-3 text-slate-400">{formatDate(group.created_at)}</td>
-                    <td className="px-4 py-3 text-right">
-                      <Button variant="dangerOutline" size="sm" onClick={() => setTarget(group)}>
-                        Delete team
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table columns={['Name', 'Created', { label: 'Actions', right: true }]}>
+            {groups.map((group) => (
+              <Tr key={group.id}>
+                <Td className="font-medium text-white">{group.name}</Td>
+                <Td className="text-slate-400">{formatDate(group.created_at)}</Td>
+                <Td className="text-right">
+                  <Button variant="dangerOutline" size="sm" onClick={() => setTarget(group)}>
+                    Delete team
+                  </Button>
+                </Td>
+              </Tr>
+            ))}
+          </Table>
         ))}
 
       <ConfirmModal

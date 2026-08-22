@@ -4,7 +4,7 @@ import api from '../lib/axios';
 // paginated the way tickets are. Replies carry a parent_comment_id; the tree
 // itself is assembled client-side (see CommentList).
 export function listComments(groupId, ticketId) {
-  return api.get(`/groups/${groupId}/tickets/${ticketId}/comments`).then((res) => res.data);
+  return api.get(`/groups/${groupId}/tickets/${ticketId}/comments`);
 }
 
 // parentCommentId omitted/null = a top-level comment on the ticket; set = a
@@ -15,14 +15,12 @@ export function createComment(groupId, ticketId, { content, parentCommentId }) {
     .post(`/groups/${groupId}/tickets/${ticketId}/comments`, {
       content,
       parent_comment_id: parentCommentId ?? null,
-    })
-    .then((res) => res.data);
+    });
 }
 
 export function deleteComment(groupId, ticketId, commentId) {
   return api
-    .delete(`/groups/${groupId}/tickets/${ticketId}/comments/${commentId}`)
-    .then((res) => res.data);
+    .delete(`/groups/${groupId}/tickets/${ticketId}/comments/${commentId}`);
 }
 
 // Sets (or replaces) the caller's own reaction on this comment — the backend
@@ -31,12 +29,10 @@ export function deleteComment(groupId, ticketId, commentId) {
 // second one. Returns the comment's full updated reaction summary.
 export function setReaction(groupId, ticketId, commentId, emoji) {
   return api
-    .put(`/groups/${groupId}/tickets/${ticketId}/comments/${commentId}/reactions`, { emoji })
-    .then((res) => res.data);
+    .put(`/groups/${groupId}/tickets/${ticketId}/comments/${commentId}/reactions`, { emoji });
 }
 
 export function removeReaction(groupId, ticketId, commentId) {
   return api
-    .delete(`/groups/${groupId}/tickets/${ticketId}/comments/${commentId}/reactions`)
-    .then((res) => res.data);
+    .delete(`/groups/${groupId}/tickets/${ticketId}/comments/${commentId}/reactions`);
 }
