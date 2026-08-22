@@ -1,70 +1,54 @@
-# Implementation Docs
+# Implementation docs
 
-**What the code actually does**, read out of `backend/src/` and `frontend/src/`.
+Two doc sets, deliberately kept apart:
 
-This is the counterpart to [`../specification/`](../specification/), which describes what the
-system is *supposed* to do. Where the two disagree, [`deviations.md`](./deviations.md) is the
-reconciliation.
+- **[`docs/specification/`](../specification/)** — what the system is *supposed*
+  to be. Architecture, API contract, database design, RBAC rules, AI integration.
+  Written before and alongside the build; it changes when a decision changes.
+- **`docs/implementation/`** (here) — what the code *actually does* right now,
+  written from the source. It changes when the code changes.
 
----
+When the two disagree, the code wins as a description of reality — but the
+disagreement is a fact worth recording rather than papering over, which is what
+`deviations.md` is for. Neither set is a build diary: there are no per-stage
+files, because git history already covers "when", and stage docs rot fastest.
 
-## Start here
+## Which file answers which question
 
-| Document | What it gives you |
-|---|---|
-| **[`backend-flow.md`](./backend-flow.md)** | What exists, the four core flows, the module dependency map, feature walkthroughs, and a reading order |
-| **[`data-model.md`](./data-model.md)** | Collections, relationships and cardinality, referential integrity, isolation model, atomicity |
-| **[`frontend-flow.md`](./frontend-flow.md)** | What exists, session/token handling, data-fetching patterns, feature walkthroughs, reading order |
-| **[`deviations.md`](./deviations.md)** | 9 open mismatches between code and spec, ranked by severity |
+| I want to know… | Read |
+| --- | --- |
+| How do I run this? What's the tech stack? | [root `README.md`](../../README.md) |
+| How does a request get authenticated and authorized? Where does feature X's code live? | [`backend-flow.md`](backend-flow.md) |
+| How does the session/token flow work in the browser? Where do I add a page, a hook, a UI primitive? | [`frontend-flow.md`](frontend-flow.md) |
+| What fields does collection X have? What's indexed, and why? What happens on delete? | [`data-model.md`](data-model.md) |
+| Why doesn't the code match the spec here? | [`deviations.md`](deviations.md) |
+| What's the exact request/response shape of an endpoint? | [`../specification/api.md`](../specification/api.md) |
+| What are the RBAC rules meant to be? | [`../specification/rbac.md`](../specification/rbac.md) |
 
-## Detail files
+## Reading order
 
-**Backend** — [`backend/`](./backend/)
-1. [`01-infrastructure.md`](./backend/01-infrastructure.md) — `main.rs`, `config.rs`, `db.rs`, `state.rs`, `routes.rs`, `errors/`, `utils/`
-2. [`02-auth.md`](./backend/02-auth.md) — `auth/` and `user/`
-3. [`03-rbac-and-middleware.md`](./backend/03-rbac-and-middleware.md) — the three extractors and `RbacService`, plus a route→guard table
-4. [`04-groups.md`](./backend/04-groups.md) — `group/`, including the sole-Group-Admin invariant
-5. [`05-tickets.md`](./backend/05-tickets.md) — `ticket/`, the atomic counter, and the hybrid search
-6. [`06-admin.md`](./backend/06-admin.md) — `admin/` and the user-deletion succession flow
-7. [`07-comments.md`](./backend/07-comments.md) — `comment/`, threading, tombstones, and the two cascades
-8. [`08-ai.md`](./backend/08-ai.md) — `ai/`, the Gemini client, the two caching strategies, and the group report
+New to the codebase: root `README.md` → `backend-flow.md` → `data-model.md` →
+`frontend-flow.md`. The backend is the source of truth for behavior, so it makes
+more sense before the client that consumes it.
 
-**Database** — [`db/`](./db/)
-- [`collections.md`](./db/collections.md) — field-by-field reference
-- [`indexes.md`](./db/indexes.md) — all 16 indexes, what each serves, and what's unindexed
+Changing something: check [`deviations.md`](deviations.md) first — the thing that
+looks wrong may be a recorded decision rather than a bug.
 
-**Frontend** — [`frontend/`](./frontend/)
-1. [`01-session-and-routing.md`](./frontend/01-session-and-routing.md) — axios interceptors, `AuthContext`, routes, guards, auth forms
-2. [`02-groups.md`](./frontend/02-groups.md) — team pages, `useGroup`, `MemberManager`
-3. [`03-admin.md`](./frontend/03-admin.md) — admin panels and `DeleteUserModal`
-4. [`04-account.md`](./frontend/04-account.md) — profile and password forms
-5. [`05-layout-and-ui.md`](./frontend/05-layout-and-ui.md) — layouts, sidebar, UI primitives, utils, styling
-6. [`06-libraries.md`](./frontend/06-libraries.md) — every dependency, frontend and backend, and notable absences
-7. [`07-tickets-and-comments.md`](./frontend/07-tickets-and-comments.md) — the `?group=` convention, ticket list/detail, the comment tree, dashboard tiles
+## Keeping these current
 
----
+These docs describe code, so they go stale the same way comments do. Practical
+rules:
 
-## The 60-second version
+- Change how auth, RBAC, module layout, or error handling works → update
+  `backend-flow.md` in the same change.
+- Add or reshape a collection, index, or cascade → update `data-model.md`.
+  It is written to be checkable against `backend/src/*/models.rs` and
+  `backend/src/db.rs`.
+- Add a route, layout, or data-layer convention → update `frontend-flow.md`.
+- Knowingly diverge from `docs/specification/` → add an entry to
+  [`deviations.md`](deviations.md) rather than quietly editing the spec to match.
+  When a divergence is resolved — the code changed, or the spec was updated —
+  delete the entry.
 
-**Stack.** Rust + Actix-web + MongoDB on the backend; React 19 + Vite + Tailwind v4 +
-React Query on the frontend. No TypeScript. Layered architecture throughout:
-`Handler → Service → Repository → Mongo`.
-
-**Multi-tenancy.** Groups are the tenant boundary. There is no "active group" anywhere —
-scope is always the `{id}` path segment. Isolation is enforced twice, by two different
-mechanisms: the `GroupScoped` extractor rejects non-members (403), and every tenant-data
-query filters on `group_id` so a foreign resource id simply isn't found (404).
-
-**RBAC.** Two independent layers that don't override each other: a global role
-(`users.global_role`, System Admin only) and a per-group role (`group_members.role`,
-Contributor or Group Admin). Roles are resolved per request and never carried in the JWT, so
-a demoted user loses access immediately.
-
-**Sessions.** Two tokens. A 15-minute stateless JWT held in JS memory, and a 30-day
-single-use refresh token in an httpOnly `SameSite=Strict` cookie, stored server-side only as
-a SHA-256 hash. All revocation lives at the refresh layer.
-
-**Build status.** Auth, groups, RBAC, tickets, comments, admin, and now AI are complete on the
-backend (`08-ai.md`). **The frontend is the one place AI is still unbuilt** — the Ticket Detail
-page's AI panel exists but its Summarize/Analyze actions are still disabled placeholders,
-not yet wired to the three backend endpoints.
+Prefer explaining *why* over restating *what*: the file listing is discoverable
+from the repo, the reasoning is not.

@@ -1,335 +1,269 @@
-# Backend Flow — Study Guide
+# Backend — as built
 
-Everything here is derived from reading the code in `backend/src/`, not from
-`docs/specification/`.
-Where the two disagree, see [`deviations.md`](./deviations.md).
+How the Actix-web backend is actually organized, and what happens to a request
+from the socket to the database and back. For the *intended* design, see
+[`docs/specification/backend.md`](../specification/backend.md) and
+[`rbac.md`](../specification/rbac.md); where the two disagree, the deviations are
+listed in [`deviations.md`](deviations.md).
 
-Detailed per-file breakdowns live in [`backend/`](./backend/):
-
-| File | Covers |
-|---|---|
-| [`backend/01-infrastructure.md`](./backend/01-infrastructure.md) | `main.rs`, `lib.rs`, `config.rs`, `db.rs`, `state.rs`, `server/routes.rs`, `errors/`, `utils/` |
-| [`backend/02-auth.md`](./backend/02-auth.md) | `auth/`, `user/` |
-| [`backend/03-rbac-and-middleware.md`](./backend/03-rbac-and-middleware.md) | `server/middleware.rs`, `rbac/` |
-| [`backend/04-groups.md`](./backend/04-groups.md) | `group/` |
-| [`backend/05-tickets.md`](./backend/05-tickets.md) | `ticket/` |
-| [`backend/06-admin.md`](./backend/06-admin.md) | `admin/` |
-| [`backend/07-comments.md`](./backend/07-comments.md) | `comment/`, and the two cascades it added |
-| [`backend/08-ai.md`](./backend/08-ai.md) | `ai/`, the Gemini client, and the two caching strategies |
+Stack: Rust (edition 2024), actix-web 4, MongoDB driver 3, `jsonwebtoken`,
+`bcrypt`, `reqwest` (for Gemini). No ORM — repositories talk to the driver
+directly.
 
 ---
 
-## 0. What actually exists
+## Startup
 
-Read this first — it saves you from explaining features that aren't there.
+`main.rs` runs a fixed sequence before the server binds:
 
-**Built and working:** auth (register/login/refresh/logout/profile/password), users,
-groups + membership + roles, RBAC enforcement, tickets (full CRUD + search + filters +
-pagination), comments (threaded, owner-or-admin delete, cascades), system-admin panel (user
-list, group list, user deletion with succession, audit log), and AI (`08-ai.md`: ticket
-summarize/analyze with content-based caching, group reports with a 1-hour TTL cache, all
-against the real Gemini API).
+1. **`Config::from_env`** — loads `.env` via `dotenvy`. `MONGO_URI` and
+   `JWT_SECRET` are required and a missing one aborts startup;
+   `COOKIE_SECURE` (default `true`), `FRONTEND_ORIGIN` (default
+   `http://localhost:5173`) and `GEMINI_API_KEY` are optional. The Gemini key
+   is deliberately optional: AI is advisory, so a missing key takes down only
+   the AI endpoints (per-request `Internal`), not the whole process.
+2. **`db::connect`** — opens the client and issues a `ping`, because the driver
+   connects lazily and would otherwise report success against an unreachable
+   server. The database is always named `resolve`.
+3. **`db::ensure_indexes`** — creates every index in `db.rs`'s `index_table`
+   (see [`data-model.md`](data-model.md)). Idempotent, runs on every boot.
+4. **One-time migrations** — `backfill_ticket_content_updated_at` and
+   `wipe_legacy_chat_messages`. Both are filtered so they are no-ops after the
+   first run.
+5. **Server** — `AppState { db, config }` is shared as `web::Data`, wrapped in
+   `Logger` and a CORS layer. CORS names `frontend_origin` explicitly rather
+   than using a wildcard, because the refresh cookie requires credentialed
+   requests and the CORS spec forbids combining those with `*`.
 
-**Backend-complete, frontend still pending:** the Ticket Detail page's AI panel exists in the
-UI but its Summarize/Analyze buttons are still disabled placeholders — the three backend
-endpoints (`08-ai.md`) aren't wired up to them yet.
+Everything is mounted under a single `/api/v1` scope. The bind address is fixed
+at `127.0.0.1:8080`.
 
-This matches the build order in `CLAUDE.md`: steps 1–7 are all done on the backend now; step 6
-(frontend) is partial for both comments and AI — neither has its UI fully wired up yet.
+## Module layout
 
----
+`lib.rs` / `main.rs` declare one module per feature. Almost every feature module
+has the same five files:
 
-## 1. The basic flows (short version)
+| File | Responsibility |
+| --- | --- |
+| `models.rs` | Documents and request/response DTOs. No behavior. |
+| `repository.rs` | MongoDB access only. No authorization, no business rules. |
+| `service.rs` | Business logic and every authorization check. |
+| `handlers.rs` | Thin Actix handlers: parse input, call the service, map to `HttpResponse`. Format validation (lengths, empty strings) lives here. |
+| `mod.rs` | Re-exports. |
 
-These four are the spine of the system. If you can explain these, you can explain the backend.
+The feature modules:
 
-### Flow A — Process startup
+- **`auth`** — registration, login, `/me`, password change, refresh, logout.
+  Extra files: `jwt.rs`, `refresh_token.rs`, `password.rs`, `claims.rs`.
+- **`user`** — user documents and lookups. No handlers of its own; it exists so
+  other modules (auth, rbac, admin, and every service that resolves a display
+  name) share one user access path.
+- **`group`** — groups and membership: create, rename, delete, list, member
+  add/remove/role-change, leave. Also owns `purge_group_data`, the cascade used
+  when a group is deleted.
+- **`rbac`** — no handlers, no models: just `RbacService`, the shared
+  authorization primitives (below).
+- **`ticket`** — ticket CRUD, per-group ticket numbering, filtering/search.
+- **`comment`** — comments on tickets, including threaded replies.
+- **`reaction`** — emoji reactions on comments (`PUT`/`DELETE`, one per user per
+  comment).
+- **`link`** — typed links between two tickets in the same group.
+- **`reference`** — external references attached to a ticket.
+- **`activity`** — the per-ticket activity log. Read-only over HTTP; entries are
+  written by the services that cause them.
+- **`admin`** — System Admin surface: user list, group list, promote/demote,
+  user deletion with succession, audit log.
+- **`ai`** — Gemini-backed summarize/analyze plus per-user chat conversations.
+  Extra file: `client.rs`.
 
-`main.rs::main`
-1. `Config::from_env()` — loads `.env`, reads `MONGO_URI`, `JWT_SECRET`, `COOKIE_SECURE`, `FRONTEND_ORIGIN`. Missing required var → process exits.
-2. `db::connect()` — builds a Mongo `Client` and immediately issues `{ping: 1}`, because the driver connects lazily and would otherwise report success without a real connection.
-3. `db::database()` — hardcoded database name `"resolve"`.
-4. `db::ensure_indexes()` — creates every index at boot (idempotent).
-5. Builds `AppState { db, config }`, wraps it in `web::Data` (an `Arc`), and shares one instance across all worker threads.
-6. `HttpServer::new(...)` runs the closure **once per worker thread**, each building an `App` with: CORS layer (explicit origin, credentials enabled), `Logger`, and everything mounted under `web::scope("/api/v1")`.
-7. Binds `127.0.0.1:8080` (hardcoded in `Config::bind_address`).
+Supporting modules: `config.rs`, `db.rs`, `state.rs`, `errors/`, `server/`
+(routes + extractors), and `utils/` (shared `RepoResult`, `insert_id`,
+`is_duplicate_key`, regex escaping for user-supplied search terms, and a
+Levenshtein distance used for typo-tolerant title search).
 
-### Flow B — Any authenticated request
+## Request lifecycle
 
 ```
 HTTP request
-  → Actix router matches a route in server/routes.rs
-  → Extractor runs (AuthenticatedUser | GroupScoped | SystemAdminUser)
-        - parses "Authorization: Bearer <jwt>"
-        - verifies JWT signature + exp (no DB hit)
-        - for GroupScoped: reads {id} from the path, DB lookup of group_members → role
-        - for SystemAdminUser: DB lookup of users.global_role
-  → Handler (handlers.rs) — validates the request body/query shape only
-  → Service (service.rs) — re-runs the RBAC check, applies business rules
-  → Repository (repository.rs) — the only place that touches MongoDB
-  → Response, or ApiError → JSON { error: { code, message } }
+  → CORS + Logger
+  → route match (server/routes.rs)
+  → extractor: AuthenticatedUser | GroupScoped | SystemAdminUser
+  → handler        (parse + format validation)
+  → service        (business rules + RBAC)
+  → repository     (Mongo query, always group-scoped)
+  → response, or ApiError → JSON error body
 ```
 
-The layer split is strict: handlers never touch Mongo, repositories never make
-authorization decisions. Services are the only layer that does both.
+### Extractors (`server/middleware.rs`)
 
-### Flow C — Session lifecycle (the two-token model)
+Authentication is not a middleware wrapper but three `FromRequest` extractors, so
+each route declares its own requirement in its handler signature:
 
-Two tokens with different jobs:
+- **`AuthenticatedUser`** — decodes the bearer token and yields `user_id`.
+  Entirely stateless: signature and `exp` only, no database lookup. That is safe
+  because access tokens live 15 minutes; revocation is the refresh token's job.
+  Used where authentication alone is the requirement.
+- **`GroupScoped`** — the tenant-scoped context. Decodes the token, parses the
+  `{id}` path segment as the group id, and calls `RbacService::require_member`.
+  Membership is therefore re-checked on every request, so a user removed from a
+  group is rejected on their next call rather than at token expiry. Handlers
+  scoped to a group take this and never parse a group id themselves.
+- **`SystemAdminUser`** — decodes the token and requires the global System Admin
+  role. Used by every `/admin` route.
 
-- **Access token (JWT)** — 15 minutes, stateless, sent as `Authorization: Bearer`. Never revoked individually; a stolen one just expires.
-- **Refresh token** — 30 days, random 32 bytes, delivered as an httpOnly `SameSite=Strict` cookie scoped to `/api/v1/auth`. Stored server-side only as a SHA-256 hash. **Single-use**: `POST /auth/refresh` revokes the presented token and issues a new one.
+The extractor is the request-level half of RBAC only. Service-layer checks still
+run underneath it — both layers are required.
 
-Revocation therefore lives entirely at the refresh-token layer. Logout revokes one
-token (per-device). Password change revokes all *other* tokens for that user.
+### RBAC (`rbac/service.rs`)
 
-### Flow D — Multi-tenancy (group isolation)
+`RbacService` answers one question: what is this user's relationship to this
+group, or to the system?
 
-There is no "active group" anywhere — not in the JWT, not in server state. Scope is
-always the `{id}` path segment. Isolation is enforced in **two independent places**:
+| Method | Rule |
+| --- | --- |
+| `require_member` | Returns the `GroupMember` (with role) or `Forbidden`. |
+| `require_group_admin` | Member *and* role is Group Admin. |
+| `require_system_admin` | Global role is System Admin. |
+| `require_owner_or_group_admin` | Pure function: Group Admin, or the resource's creator. |
 
-1. **RBAC** — `GroupScoped` extractor + `RbacService::require_member` reject a non-member with 403 (deliberately 403, not 404, so a non-member cannot probe whether a group id exists).
-2. **Repository filters** — every tenant-data query includes `group_id` in the filter document. `TicketRepository::find_by_id(group_id, ticket_id)` filters on **both**, so a valid ticket id paired with the wrong group id simply matches nothing → 404.
+Two deliberate absences: **group isolation** is not enforced here — it is
+enforced by every repository query filtering on `group_id` — and the
+**sole-Group-Admin succession guard** stays in `GroupService`, since it is
+membership business logic rather than a reusable primitive.
 
-These are separate mechanisms: #1 stops the wrong *person*, #2 stops the wrong *id*.
+Non-membership returns `Forbidden`, never `NotFound`, so a non-member cannot
+probe whether a group id exists. The same reasoning applies to a missing user in
+`require_system_admin`.
 
----
+### Errors (`errors/api_error.rs`)
 
-## 2. Module dependency map
+One enum, `ApiError`, implements Actix's `ResponseError` and is the return type
+of every handler and service. Every error serializes to the same body:
 
-Arrows mean "calls into". Nothing here is circular.
-
-```
-              config.rs ── db.rs ── state.rs (AppState { db, config })
-                                       │
-                     server/routes.rs ─┴─ server/middleware.rs
-                             │
-   ┌──────────┬──────────────┼───────────────┬────────────────┐
-   │          │              │               │                │
-auth/       group/        ticket/        comment/          admin/
-handlers    handlers      handlers       handlers          handlers
-   │          │              │               │                │
-auth/       group/        ticket/        comment/          admin/
-service     service       service        service           service
-   │          │              │               │                │
-   │          └── group/repository ◀─────────┼────────────────┘
-   │          └── ticket/repository ◀─────────┤   (admin/service reaches
-   │          └── comment/repository ◀────────┤    group + ticket + comment
-   │                     ▲       ▲            │    repositories directly)
-   │                     │       └────────────┘
-   │       ticket/service ┘  (comment cascade)
-   │
-   └── user/service ──── rbac/service ──── admin/repository
-            │                 │             (audit log only)
-      user/repository   (owns group/repository + user/service)
+```json
+{ "error": { "code": "forbidden", "message": "..." } }
 ```
 
-Read the cross-links as: every feature service owns an `RbacService`, and a handful of
-services reach into *another* feature's repository — always for a cascade or a count, listed
-below.
+| Variant | Status | Notes |
+| --- | --- | --- |
+| `InvalidCredentials` | 401 | |
+| `Unauthenticated` | 401 | Missing/invalid/expired token. |
+| `Forbidden` | 403 | Message is deliberately generic. |
+| `NotFound` | 404 | |
+| `DuplicateEmail` | 409 | |
+| `Conflict(String)` | 409 | Caller-supplied message. |
+| `Validation(String)` | 400 | Caller-supplied message. |
+| `RateLimited(String)` | 429 | Currently only AI chat. |
+| `Internal` | 500 | |
 
-**The diagram above predates the `ai/` module** — it isn't redrawn here to avoid getting the
-ASCII alignment wrong, but `ai/` slots in as a sixth column exactly like `comment/`:
-`ai/handlers.rs` → `ai/service.rs` → `ai/repository.rs`, with `ai/service.rs` additionally
-reaching into `ticket/repository.rs` (read-only, to load the ticket being summarized/analyzed,
-and to list a group's tickets for the report) the same way `comment/service.rs` does. See
-`08-ai.md` and the cross-feature edges below, which **are** current.
+Repository and driver errors never reach the client directly: `From` impls
+collapse `mongodb::error::Error`, bcrypt, and JWT failures into `Internal`, while
+domain-specific repo enums (`UserRepoError`, `GroupRepoError`, `LinkRepoError`)
+map their duplicate-key cases to `DuplicateEmail` / `Conflict`.
 
-Things worth knowing about this graph:
+## Authentication
 
-- **`rbac/service.rs` is the shared hub.** It owns `GroupRepository` + `UserService` and answers only one kind of question: "what is this user's relationship to this group / to the system?" Every feature service holds an `RbacService`.
-- **The cross-feature edges all point at cascades or counts**, and they're the only place the strict per-feature layering bends:
-  - `group/service.rs` → `ticket/repository.rs` (for `open_ticket_count`, and for the group cascade)
-  - `group/service.rs` → `comment/repository.rs` (group cascade)
-  - `group/service.rs` → `ai/repository.rs` (group cascade)
-  - `ticket/service.rs` → `comment/repository.rs` (ticket cascade)
-  - `ticket/service.rs` → `ai/repository.rs` (ticket cascade)
-  - `ai/service.rs` → `ticket/repository.rs` (load the ticket being summarized/analyzed; list a group's tickets for the report)
-  - `comment/service.rs` → `ticket/repository.rs` (verifying the path's ticket belongs to the path's group)
-  - `admin/service.rs` → `ticket/repository.rs`, `comment/repository.rs`, and `ai/repository.rs`, held **only** to pass into `purge_group_data`
-- **`purge_group_data` is a free function in `group/service.rs`**, not a method — that's what lets all three group-deleting paths (group service, admin group delete, admin sole-admin auto-delete) share one cascade instead of three copies. It cascades `group_members` → `tickets` + `counters` → `comments` → `ai_ticket_insights` + `ai_group_reports` → the group document, in that order.
-- **`admin/service.rs` bypasses `GroupService`** and talks to `GroupRepository` directly. Deliberate: the admin succession flow must do things `GroupService` forbids (reassigning roles it doesn't own), so it can't route through the group business rules.
-- **`errors/api_error.rs` depends on every repository's error enum** via `From` impls. That's what makes `?` work uniformly across all layers.
-- **Services are constructed per-request**, e.g. `GroupService::new(&state.db)` inside the handler. They're cheap (just `Collection` handles, which are themselves cheap clones over the shared connection pool). There's no DI container.
+Two tokens, with different jobs.
 
-### `lib.rs` vs `main.rs`
+**Access token** — a JWT (`sub` = user id, `exp`), 15-minute TTL, sent by the
+client as `Authorization: Bearer`. Verified statelessly.
 
-The crate builds twice. `main.rs` is the binary and declares `mod ai; mod comment; mod db;`
-plus the rest. `lib.rs` is the library used by the integration tests in `backend/tests/`,
-and exports a **subset**: `admin, ai, auth, comment, config, errors, group, rbac, server,
-state, ticket, user, utils` — everything except `db`. Tests build their own Mongo client via
-`tests/support/mod.rs` instead of using `db::connect`.
+**Refresh token** — 32 bytes of CSPRNG output, hex-encoded. Only its SHA-256
+hash is stored, so a leaked database cannot be used to mint sessions; SHA-256 is
+adequate (rather than bcrypt) precisely because the input is already
+high-entropy. TTL is 30 days, enforced both by the stored `expires_at` and by a
+MongoDB TTL index that reaps spent tokens without a cron job.
 
-`comment` and `ai` each joined that export list when their module was implemented — `ai`
-needed it so `tests/ai_*.rs` could import `resolve::ai::...`.
+It travels in a cookie scoped to `path=/api/v1/auth`, so it is never sent on
+unrelated API calls. `httpOnly` keeps it away from JS; `SameSite=Strict` is
+fixed (SameSite ignores port and, for same-domain hosts, subdomain — so it
+already covers both the local dev split and a production frontend/API subdomain
+split); `Secure` is config-driven because browsers refuse Secure cookies over
+plain HTTP.
 
----
+Notable route behaviors:
 
-## 3. Feature flows, end to end
+- `POST /auth/refresh` takes **no** access token — by the time a client needs to
+  refresh, its access token has usually expired. The cookie *is* the session
+  identifier. Refresh tokens are single-use and rotate on every call.
+- `POST /auth/logout` also needs no access token, and revokes only the token in
+  this request's cookie, so other devices stay signed in.
+- `POST /auth/me/password` revokes every *other* session: the request's own
+  refresh cookie is hashed and spared, so changing your password does not log
+  out the device you changed it on.
 
-### Register
+## Route map
 
-`POST /api/v1/auth/register` → `auth::handlers::register`
-1. `validate_register` — email contains `@`, password ≥ 8 chars, name non-blank.
-2. `AuthService::register` → `password::hash_password` (bcrypt cost 12) → `UserService::create` → `UserRepository::create` (insert into `users`).
-3. Unique index on `users.email` is what actually prevents duplicates; a duplicate-key error (code 11000) is mapped to `UserRepoError::DuplicateEmail` → `409 duplicate_email`.
-4. `AuthService::issue_session` — mints the JWT and inserts a `refresh_tokens` row.
-5. Handler returns `201` with `{ user, jwt }` and sets the refresh cookie.
+| Scope | Guard | Contents |
+| --- | --- | --- |
+| `/auth` | mixed | `register`, `login` (none); `me`, `me` PATCH, `me/password` (`AuthenticatedUser`); `refresh`, `logout` (cookie only). |
+| `/groups` | `AuthenticatedUser` for create/list; `GroupScoped` for everything under `/{id}` | Group CRUD, membership, and all nested resources: `tickets`, `comments`, `reactions`, `activity`, `links`, `references`. |
+| `/ai` | `GroupScoped` (`/ai/groups/{id}/tickets/{ticket_id}/…`) | `summarize`, `analyze`, and conversation create/list/delete plus message send/list. |
+| `/admin` | `SystemAdminUser` | `users`, `groups`, `groups/{id}` DELETE, `audit-log`, and `users/{id}/{deletion-check,delete,promote,demote}`. |
 
-### Login
+Every group-scoped path is `/groups/{id}/...`. There is no "active group" on the
+server: the group is always named explicitly in the path.
 
-Same tail as register, different head: `UserService::find_by_email` → `password::verify_password`.
-Both a missing user and a wrong password return the identical `InvalidCredentials` error, so the endpoint doesn't leak which emails are registered.
+## Cross-cutting behaviors
 
-### Refresh (token rotation)
+**Group isolation.** Every repository method takes `group_id` and puts it in the
+query filter. A ticket id from another group therefore reads as `NotFound`
+rather than leaking that it exists elsewhere. Services that receive both a group
+and a nested resource id (comments, activity, links, AI) re-verify that the
+ticket belongs to the group, because `GroupScoped` only proves membership in the
+group — not that the ticket is in it.
 
-`POST /auth/refresh` takes **no** `AuthenticatedUser` — by design, since the access token
-is usually already expired when a client needs to refresh.
-1. Read raw token from cookie.
-2. `refresh_token::hash_token` → SHA-256.
-3. `AuthRepository::find_active_by_hash` — filter is `{token_hash, revoked_at: null, expires_at: {$gt: now}}`. A replayed (already-rotated) token fails this filter naturally; there's no separate reuse-detection code.
-4. Revoke the found row by `_id`.
-5. `issue_session` for the same user → new JWT + new refresh row + new cookie.
+**Ticket numbering.** Each group has its own `ticket_number` sequence, allocated
+by an atomic counter (`TicketRepository::next_ticket_number`) and backed by a
+unique index on `(group_id, ticket_number)`.
 
-### Create group
+**Activity logging.** Ticket updates diff before/after values and record an event
+only when something actually changed. Entries carry the actor id; the display
+name is resolved at read time so later renames are reflected.
 
-`POST /groups` → `GroupService::create_group`: inserts into `groups`, then inserts a
-`group_members` row for the creator with `role: GroupAdmin`. **Two sequential writes, not a
-transaction** (documented as an accepted risk in the code comment). `owner_id` is stored on
-the group but is never used for authorization — every check reads `group_members.role`.
+**Cascade deletes.** Deleting a ticket clears its comments, reactions, activity,
+links (both directions, so no dangling relation is left on the other end),
+references, and AI insights/conversations. Deleting a group runs
+`group::purge_group_data` over the same surface for every ticket in it.
 
-### Create ticket
+**Uniqueness.** Application-level pre-checks (duplicate email, duplicate member,
+duplicate link) exist to produce good error messages; the unique index is what
+actually rejects a concurrent duplicate. `utils::is_duplicate_key` recognizes
+error code 11000 in both the write-error and command-error shapes.
 
-`POST /groups/{id}/tickets` → `GroupScoped` extractor (must be a member) → `validate_create`
-(title non-blank ≤ 200 chars, description non-blank) → `TicketService::create_ticket`:
-1. `RbacService::require_member` again (defense in depth).
-2. `TicketRepository::next_ticket_number` — `find_one_and_update` with `$inc` + `upsert` on the `counters` collection, keyed by `_id == group_id`. This is atomic, so two simultaneous creations in one group cannot collide.
-3. Insert the ticket with `status: Open` and `created_by` from the token — neither is accepted from the client.
-4. `enrich_ticket` — one extra `users` lookup to attach `created_by_name`.
+## AI module
 
-### List tickets (the interesting one)
+`AiProvider` is a trait, with `GeminiClient` as the production implementation, so
+the service can be exercised against a fake without network access. Model is
+`gemini-flash-latest` (an alias, not a pinned version — pinned `gemini-2.0-flash`
+returned quota-exhausted on this project, and the alias avoids re-pinning when
+Google retires dated names). `analyze` requests a JSON response schema so the
+output is parsed rather than scraped from prose.
 
-`GET /groups/{id}/tickets?q=&status=&priority=&creator=&page=&per_page=`
+Rules the module holds to:
 
-Split between Mongo and the process:
-- `status`, `priority`, `creator` are indexable exact-match fields → filtered **in Mongo** by `TicketRepository::list_by_group`.
-- `q` (free-text title search) has no Mongo-native equivalent here → done **in-process** by `TicketService::search_by_title`: case-insensitive substring first; if that yields nothing, fall back to Levenshtein distance against each word of each title, allowing `max(len/3, 1)` edits, sorted by distance.
-- **Pagination is applied after both**, in memory (`.skip(start).take(per_page)`), so `total` is the post-search count. `per_page` defaults to 20, clamped to 1..=100.
+- **Never writes domain state.** It only reads tickets and writes its own
+  `ai_ticket_insights`, `ai_conversations`, and `ai_chat_messages`.
+- **Cached where possible.** Summaries and analyses are stored per ticket and
+  reused while fresh — freshness is `content_updated_at` on the ticket, so
+  editing the title or description invalidates them but a status change does
+  not. Responses carry a `cached` flag.
+- **Chat is never cached** (each message is genuinely new) and is rate-limited to
+  10 user messages per hour per user, returning `RateLimited`. Only the last 20
+  messages are replayed as prompt context, bounding cost regardless of thread
+  length; the full history is still returned by the API.
+- **Conversations are owner-only.** Any member may start one, but no other
+  member — not even a Group Admin — can list, read, or delete someone else's.
+  This is intentionally stricter than comments, which are group-visible. A
+  conversation id belonging to another ticket or group reads as `NotFound`; a
+  real ownership mismatch is `Forbidden`.
+- Conversation titles are derived from the first message (truncated on a char
+  boundary), not generated by a model call.
 
-Note the cost model: the whole filtered set is pulled into memory before paging. Fine at
-current scale, but it's the one place the backend doesn't push work down to the database.
+## Tests
 
-### Post a comment (and the extra isolation check it needs)
-
-`POST /groups/{id}/tickets/{ticket_id}/comments` → `GroupScoped` (must be a member) →
-`validate_create` (content non-blank, ≤ 2000 **characters**) → `CommentService::create_comment`:
-1. `require_member` again (defense in depth).
-2. **`require_ticket_in_group`** — `TicketRepository::find_by_id(group_id, ticket_id)`, else `404`.
-3. If the ticket's status is `closed` → `409`. New comments only; reading and deleting existing ones is unaffected.
-4. If replying, the parent must be a comment on **this same ticket** (looked up with both ids in the filter), else `400`.
-5. Insert, then one `users` lookup to attach `user_name`.
-
-Step 2 is the interesting one, and it's why comments carry a check tickets don't need.
-`GroupScoped` proves only that the caller belongs to `{id}` — it says nothing about which
-group `{ticket_id}` belongs to. Filtering `comments.group_id` proves nothing either, since
-that value is written from the caller's own scope. Without step 2, a member of one group
-could attach a comment to another group's ticket.
-
-This is the case that sharpens Flow D's two-mechanism rule: the repository filter closes the
-gap only when the id being filtered is the one that could be foreign. For tickets it is
-(`find_by_id(group_id, ticket_id)`); for comments it isn't, so the check is explicit.
-
-### Delete a comment (tombstone vs. hard delete)
-
-`DELETE .../comments/{comment_id}` → `require_member` → fetch (filtered on group + ticket +
-id) → `require_owner_or_group_admin` (**the one place authorship grants a permission** —
-tickets deliberately give their creator nothing) → then `has_replies` decides:
-
-- **has replies** → tombstone: keep the row, set `is_deleted: true`, overwrite `content` with `"[comment deleted]"`. Its replies keep a parent that resolves.
-- **no replies** → hard delete.
-
-Deleting a thread bottom-up therefore removes it entirely; top-down leaves a chain of
-tombstones. `GET .../comments` returns tombstones like any other comment.
-
-### Cascading deletes
-
-Two cascades — one added with comments, extended when AI was built — both ordered
-child-before-parent so a mid-failure leaves the parent resolvable and the whole thing
-re-runnable:
-
-- **Delete a ticket** — `TicketService::delete_ticket`: `require_group_admin` → existence check (so a bogus id `404`s before any write) → `CommentRepository::delete_by_ticket` → `AiRepository::delete_by_ticket` → delete the ticket.
-- **Delete a group** — `purge_group_data`, a free function in `group/service.rs`: memberships → tickets + the `counters` row → comments → `ai_ticket_insights` + `ai_group_reports` → the group document. All three group-destroying paths call it (`GroupService::delete_group`, `AdminService::delete_group`, and the auto-delete loop in `AdminService::delete_user`), so the definition of "a group's data" lives in exactly one place.
-
-Neither uses a transaction, consistent with everything else here.
-
-### Summarize a ticket (and the cache check that usually short-circuits it)
-
-`POST /ai/groups/{id}/tickets/{ticket_id}/summarize` → `GroupScoped` (must be a member) →
-`AiService::summarize_ticket`:
-1. `require_member` again (defense in depth) → load the ticket, else `404`.
-2. Look up any existing `ai_ticket_insights` doc for this ticket. If one exists **and** its
-   `summary_source_updated_at` still matches the ticket's current `content_updated_at`,
-   return the stored `summary` with `cached: true` — **no Gemini call at all**.
-3. Otherwise: call Gemini (`AiProvider::summarize`) → upsert the insight doc (setting
-   `summary_source_updated_at` to the ticket's *current* `content_updated_at`) → return with
-   `cached: false`.
-
-`content_updated_at` (not the ticket's plain `updated_at`) is the fingerprint — it only moves
-on a title/description/priority edit, not a status change, so closing/reopening a ticket
-doesn't throw away a still-accurate cached summary. `analyze` is the same shape, against its
-own independent `analysis_source_updated_at` — the two field groups can be fresh/stale
-independently of each other. See `08-ai.md` for the full mechanism.
-
-### Generate a group report (time-based cache, not content-based)
-
-`POST /ai/groups/{id}/report` → `GroupScoped` → `AiService::generate_group_report`:
-1. `require_group_admin` (not just member — the only AI endpoint with this stricter check).
-2. Look up the group's most recent `ai_group_reports` doc. If one exists and is less than an
-   hour old, deserialize its stored data and return it with `cached: true`.
-3. Otherwise: pull every ticket in the group (in memory, same tradeoff as ticket search) →
-   count totals/open/closed/priority breakdown/recent-activity in a pure function → ask
-   Gemini to narrate those numbers into 2-4 sentences of prose (never to do the counting
-   itself) → insert a **new** report document (history is kept, not upserted-over) → return
-   with `cached: false`.
-
-Unlike the per-ticket cache, this one is time-based rather than content-based — tracking every
-ticket's `content_updated_at` across a whole group would be expensive to check precisely, so
-it just expires after a fixed window (one hour) instead.
-
-### Delete a user as System Admin (the most complex flow)
-
-Two endpoints, one plan-and-commit shape:
-
-`GET /admin/users/{id}/deletion-check` → `AdminService::deletion_check` → `build_plan`.
-`build_plan` walks every group the target belongs to and sorts each into one of three buckets:
-- **`plain_removals`** — target is a Contributor, or a Group Admin alongside other admins. Just drop the membership.
-- **`auto_delete`** — target is sole Group Admin *and* the only member. The group gets deleted.
-- **`blocked`** — target is sole Group Admin but other members exist. Requires an explicitly named successor.
-
-`POST /admin/users/{id}/delete` → `AdminService::delete_user`:
-1. **Re-derives the plan from scratch** rather than trusting the client's copy — membership can shift between check and commit.
-2. Validates every blocked group has a successor, and that each named successor is still a member. Any failure → `409`, **before any write happens**.
-3. Then executes: promote successor → remove target's membership → write audit entry; for auto-delete groups: delete members → delete group → write audit entry; then plain removals; **user document deleted last**, so a mid-failure retry is always safe.
-
-Not a Mongo transaction — sequential writes, ordered so partial failure is recoverable.
-Audit entries snapshot names (`group_name`, `deleted_user_name`, ...) at write time,
-because the referenced entities won't exist to look up later.
-
----
-
-## 4. Suggested reading order
-
-If you're studying this to explain it, read in this order — each file only depends on ones above it.
-
-1. `config.rs`, `state.rs`, `db.rs` — 200 lines total, gives you the whole environment.
-2. `errors/api_error.rs` — the error vocabulary every other file speaks.
-3. `server/routes.rs` — the complete API surface on one screen.
-4. `auth/jwt.rs`, `auth/password.rs`, `auth/refresh_token.rs` — three tiny, self-contained crypto helpers.
-5. `server/middleware.rs` — the three extractors. This is where authentication becomes authorization.
-6. `rbac/service.rs` — 88 lines, four functions, referenced by everything.
-7. `user/` then `auth/` — the simplest full vertical slice (handler → service → repo).
-8. `group/` — the first module with real business rules (sole-admin guard).
-9. `ticket/` — the first module with real query complexity (search, filters, paging, counters).
-10. `comment/` — small, and best read straight after `ticket/`: it's the same layering one level deeper, plus the self-referential entity and both cascades.
-11. `admin/` — the hardest, and it assumes you know groups already.
-12. `ai/` — the only module with a real external dependency; best read last since it reaches into `ticket/repository.rs` and its cascade wiring touches `ticket/service.rs` and `group/service.rs`'s `purge_group_data`, both of which you'll already know by this point.
+There are currently **no automated tests in the repository** — no `tests/`
+directory and no `#[cfg(test)]` modules. Several code comments still refer to
+test-only affordances that outlived their tests (`jwt::issue_token_with_exp`,
+`AiService::with_provider`, the free functions in `ai/service.rs` kept
+unit-testable). Verification today is manual, against a running backend.

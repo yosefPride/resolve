@@ -1,219 +1,253 @@
-# Deviations: Code vs. Specification
+# Deviations from the specification
 
-Every mismatch found while reading `backend/src/` and `frontend/src/` against
-`docs/specification/*` and `CLAUDE.md`. Ordered by severity.
+Where the code and [`docs/specification/`](../specification/) disagree, and why.
 
-Legend:
-- **Bug** — the code is wrong or does something harmful.
-- **Gap** — specified, simply not built yet.
-- **Doc drift** — the code is fine; the spec describes something else.
+This file exists so the spec can stay a statement of intent without quietly
+becoming false. Every entry names the spec file making the claim, what the code
+actually does, and what should happen about it. An entry is removed when it is
+resolved — either the code changed, or the spec was updated to match.
 
-This file lists **open** mismatches only. Once something is built or corrected it stops being
-a deviation — it's described as a normal part of the system in the relevant implementation
-doc instead, its entry is removed here, and the remainder are renumbered.
+Verified against the code on 2026-08-22.
 
-Re-check an entry against the tree before relying on it; the code moves faster than this
-document does.
+**Legend for the "Resolution" line:**
+`spec` = the spec should be updated; `code` = the code should change;
+`accepted` = a deliberate, permanent divergence that stays recorded here.
 
 ---
 
-## 1. System Admin can delete their own account — **Bug**
+## 1. Built but not specified
 
-**Spec** — `docs/specification/frontend.md` implies the admin's own row is special-cased,
-and the frontend comment in `features/users/UserTable.jsx` states it outright:
+### 1.1 Comment reactions are entirely absent from the spec
 
-```js
-// The caller's own row has no delete action (backend rejects self-deletion anyway).
-```
+Emoji reactions on comments are fully implemented — a `comment_reactions`
+collection, `PUT` and `DELETE /groups/{id}/tickets/{ticket_id}/comments/{comment_id}/reactions`,
+and a `reactions` array on every comment response. The word "reaction" does not
+appear anywhere in `docs/specification/`: not in `api.md`'s Comment Endpoints,
+not in `database.md`'s collection list, not in `frontend.md`'s feature list.
 
-**Code** — `AdminService::delete_user` never compares `caller_id` to `target_user_id`. There
-is no self-deletion guard anywhere in the backend, and no test covers it.
+**Resolution:** spec. Needs an endpoint pair in `api.md`, a collection in
+`database.md`, and the one-per-user-per-comment replace rule written down
+somewhere (see [`data-model.md`](data-model.md#comment_reactions)).
 
-**Consequence** — the UI hides the button, but `POST /admin/users/{own_id}/delete` succeeds.
-If that admin is the only System Admin, the system is left with no admin at all and no way
-to create one (nothing sets `global_role`; see #2).
+### 1.2 AI chat conversations are absent from the spec
 
-The inline comment asserting the backend rejects this is factually wrong and should be
-corrected either way.
+Seven implemented routes — conversation create/list/delete plus message
+send/list — are undocumented. `api.md` documents only `summarize` and `analyze`
+under AI Endpoints, and `ai-integration.md` describes AI purely as one-shot
+ticket analysis. Neither mentions conversations, and `database.md` has neither
+`ai_conversations` nor `ai_chat_messages`.
 
----
+This also carries the system's strictest ownership rule, which is written down
+nowhere: a conversation is private to its creator, and **no other member — not
+even a Group Admin — can list, read, or delete it**. That is deliberately unlike
+comments, which are group-visible. A rule that strong should not live only in a
+code comment.
 
-## 2. No way to create a System Admin — **Gap**
+**Resolution:** spec. Document the endpoints, both collections, and the
+ownership rule.
 
-**Spec** — `docs/specification/database.md` documents `users.global_role` and a full System
-Admin capability set.
+### 1.3 Rate limiting exists but no spec mentions it
 
-**Code** — `UserRepository::create` hardcodes `global_role: None`. No endpoint, service
-method, CLI command, or seed script ever sets it. `UserRepository` has no
-`update_global_role`.
+AI chat is capped at 10 user messages per hour per user, returning `429` with
+`ApiError::RateLimited`. `api.md`'s Status Codes list does not include `429` at
+all, and no spec file mentions rate limiting.
 
-**Consequence** — the entire `/admin` surface is unreachable on a fresh deployment until
-someone edits the `users` collection by hand in a Mongo shell. Worth stating explicitly when
-explaining the project — it's a bootstrap gap, not an oversight in the admin module itself.
+**Resolution:** spec. Add `429` to the status code list and the limit to the AI
+docs.
 
----
+### 1.4 `PATCH /groups/:id` (rename a group) is undocumented
 
-## 3. `GET /admin/analytics` doesn't exist — **Gap**
+The route exists and is Group-Admin-gated. `api.md`'s Group Endpoints section
+lists create, list, get, delete, and the member operations — but no rename.
 
-**Spec** — `docs/specification/api.md` lists it under System Admin Endpoints; `backend.md`
-lists "view system analytics (aggregated only)" as a capability.
+**Resolution:** spec.
 
-**Code** — not in `routes.rs`, no handler, no service method.
+### 1.5 Four backend modules and two frontend feature folders are missing from the structure lists
 
----
+`backend.md`'s module tree omits `activity/`, `link/`, `reaction/`,
+`reference/`, and `db.rs`. `frontend.md`'s `features/` tree omits `activity/`
+and `links/`.
 
-## 4. "EVERY database query MUST include group_id" is not literally true — **Doc drift**
-
-**Spec** — `docs/specification/backend.md`: *"EVERY database query MUST include group_id
-filter. No exceptions."* `database.md` repeats it as the "Multi-Tenancy Rule (CRITICAL)".
-
-**Code** — many queries legitimately don't, and cannot:
-- `users` — by `_id` or `email`; the admin list has no filter at all
-- `refresh_tokens` — by `token_hash` or `user_id`
-- `groups` — by `_id`; the admin list has no filter
-- `admin_audit_log` — filters are optional; unfiltered returns everything
-
-The actual rule the code follows is narrower and correct: **tenant data** (`tickets`,
-`comments`, `group_members`, `counters`) is always group-filtered; **non-tenant data** (users,
-sessions, group metadata, system audit) is not. The spec's absolute phrasing would flag
-correct code as a violation.
-
-One documented exception inside tenant data: `CommentRepository::has_replies` filters on
-`parent_comment_id` alone, and is only ever reached through a comment already fetched with a
-group-filtered query.
+**Resolution:** spec. Purely a stale listing — the modules follow the documented
+layering exactly.
 
 ---
 
-## 5. `database.md` documents the pre-threading `comments` shape — **Doc drift**
+## 2. Specified but not built
 
-**Spec** — `docs/specification/database.md`, `comments`: `_id, group_id, ticket_id, user_id,
-content, created_at`, plus two single-field indexes (`ticket_id`, `group_id`).
+### 2.1 `GET /admin/analytics` does not exist
 
-**Code** — `comment::models::Comment` stores two fields the spec doesn't mention, and both
-are load-bearing:
+`api.md` documents it ("System-level metrics (aggregated only)"), and it is
+load-bearing for three other claims: `architecture.md` lists "aggregated
+analytics" as a System Admin exception to group isolation, `backend.md` lists
+"view system analytics (aggregated only)" as a capability, and
+`ai-integration.md` has a whole "System Admin Analytics Rule" section about
+AI-generated summaries of group-level statistics.
 
-- `parent_comment_id: Option<ObjectId>` — self-referential, nullable, no depth limit. The entire threading feature hangs off it.
-- `is_deleted: bool` — marks a tombstone, which is what a comment becomes when it's deleted while it still has replies.
+None of it is implemented. `/admin` has users, groups, group delete, audit log,
+deletion-check, delete, promote, and demote — no analytics route.
 
-The indexes differ too. `db::ensure_indexes` creates one **compound** `(group_id, ticket_id)`
-— serving both the per-ticket read and, through its `group_id` prefix, the group-deletion
-cascade — plus `parent_comment_id`, which serves `has_replies`. Neither single-field index
-the spec lists is created.
+**Resolution:** undecided — either build it or cut it from four spec files. It
+should not stay documented-but-absent, since a reader currently has no way to
+tell it is aspirational.
 
-`docs/specification/api.md` was brought in line when the feature was built; `database.md`
-wasn't. The code is the sound half here — the fix is to update the spec. See
-[`db/collections.md`](./db/collections.md) and [`db/indexes.md`](./db/indexes.md) for the
-actual shape.
+### 2.2 AI bug clustering is not implemented
 
----
+`ai-integration.md` lists "Bug grouping (light clustering within a group)" as a
+capability and devotes a "Clustering Definition" section to it; `architecture.md`
+lists it too. Nothing in `ai/` clusters anything.
 
-## 6. `database.md`'s `ai_ticket_insights` schema doesn't mention the caching fields, and says nothing about `tickets` — **Doc drift**
+Note the near-miss: **bug *classification* is implemented** — `analyze` returns
+`classification` alongside `severity_prediction` and `suggested_fix`. Clustering
+(grouping similar tickets to each other) is the part that does not exist.
 
-**Spec** — `docs/specification/database.md`, `ai_ticket_insights`: `_id, group_id, ticket_id,
-summary, severity_prediction, suggested_fix, classification, created_at, updated_at`. Its
-`tickets` entry lists no `content_updated_at` field either — unsurprising, since that field
-didn't exist until the AI feature needed it.
+**Resolution:** undecided. Cut it or build it, but the two similar-sounding
+features should stop being conflated.
 
-**Code** — `ai::models::AiTicketInsight` stores two fields the spec doesn't mention:
-`summary_source_updated_at` and `analysis_source_updated_at`, both `Option<BsonDateTime>`.
-They're what make `docs/specification/ai-integration.md`'s own caching requirement ("cached
-per ticket... if ticket does not change, AI is not re-run") actually work — the spec mandates
-the caching behavior but doesn't say how staleness should be tracked, and "compare against a
-stored timestamp" is what fills that gap. Same shape as #5: the spec states a requirement,
-the implementation needs fields to satisfy it that the spec's schema listing never grew to
-include.
+### 2.3 Group-level AI reports do not exist
 
-Separately, `ticket::models::Ticket` gained a field the spec doesn't mention at all:
-`content_updated_at`, bumped only by title/description/priority edits (not status). This
-exists purely to serve the AI cache above — it's the timestamp
-`summary_source_updated_at`/`analysis_source_updated_at` are compared against, kept separate
-from the ticket's own `updated_at` specifically so closing/reopening a ticket doesn't
-invalidate a still-accurate cached summary/analysis. See
-[`backend/08-ai.md`](./backend/08-ai.md) and [`backend/05-tickets.md`](./backend/05-tickets.md)
-for the full picture.
+`architecture.md` lists "Group-level AI reports", `backend.md` lists "Group
+reports (async recommended)", and `frontend.md` places "AI reports (Group Admin
+only)" on the Group Dashboard as AI's secondary location. There is no such
+endpoint, and the dashboard has no AI surface — AI appears only on the ticket
+detail page.
 
----
+**Resolution:** undecided, same as 2.1 and 2.2. These three are one feature
+family: system/group-level AI aggregation was designed and never built.
 
-## 7. `GET /groups/:id/users/lookup` is Group-Admin-only, spec is ambiguous — **Doc drift**
+### 2.4 There is no "My groups" page
 
-**Spec** — `docs/specification/api.md` says "(Group Admin only)" in the prose, but places the
-endpoint outside the ticket/member sections where role requirements are listed structurally.
+`frontend.md` lists "My groups — list the groups you belong to, and create one"
+under Setup. No such page or route exists. In practice the group list is reached
+through the sidebar and the Tickets page's team dropdown, and the create-a-group
+prompt lives in the Tickets page's empty state. `/groups/:id` (group management)
+exists; `/groups` does not.
 
-**Code** — `GroupService::lookup_user_by_email` calls `require_group_admin` first. Behavior
-matches the prose; only the document's organization is inconsistent. Noted because it's the
-kind of thing that reads as a discrepancy on a quick scan.
+**Resolution:** spec. The behavior the page was meant to provide is covered
+elsewhere; the page itself was dropped.
 
 ---
 
-## 8. Small behavioral rough edges — **Bug (minor)**
+## 3. Built differently than described
 
-Found in code, not contradicted by any spec, but worth knowing:
+### 3.1 `GroupScoped` does not carry the caller's role
 
-**a. Setting a member's current role returns 404.**
-`GroupRepository::update_member_role` returns `modified_count > 0`, and
-`GroupService::update_member_role` maps `false` → `NotFound`. Promoting an existing Group
-Admin to Group Admin therefore 404s rather than being an idempotent no-op.
+Both `backend.md` ("Handlers receive the resolved `{ user_id, group_id, role }`")
+and `rbac.md` ("resolves the caller's current role in one lookup") describe the
+extractor as resolving and handing over the role. It does not: `GroupScoped` is
+`{ user_id, group_id }` only. It calls `require_member` to verify membership and
+discards the returned role; services re-derive it where a role check is needed.
 
-**b. `add_member` doesn't verify the target user exists.**
-No `find_by_id` on `target_user_id`. In practice the id comes from
-`lookup_user_by_email`, but a crafted request can insert a membership row pointing at
-nothing. `enrich_member` then renders empty name/email via `unwrap_or_default()`.
+The security posture is unchanged — membership is still checked per request, and
+role checks still run at the service layer — but the field the spec promises is
+not there, so anyone writing a handler against the documented shape will not find
+it.
 
-**c. Ticket title length is measured in bytes.**
-`handlers.rs` checks `input.title.len() > MAX_TITLE_LEN` — `String::len()` is bytes, not
-chars. A 200-character title in a non-Latin script is rejected. `title.chars().count()`
-would match intent. (Note `levenshtein_distance` in `utils/` *does* handle this correctly
-via `Vec<char>`, so the codebase is inconsistent with itself here.)
+**Resolution:** spec, most likely. Carrying the role would save a lookup on
+admin-gated routes, so changing the code instead is defensible; either way the
+two must be reconciled.
 
-**d. Group name has no length limit.**
-`validate_name` only rejects blank. Ticket titles are capped at 200; group names aren't
-capped at all.
+### 3.2 The access token lives in a module variable, not React context
 
-**e. Audit entries are written after the writes they describe.**
-In `AdminService::delete_user`, the role change and membership removal happen before
-`insert_audit_entry`. A crash between them loses the log line for a change that did occur.
-Given the no-transaction design this is a deliberate simplification, but it means the audit
-log is not a guaranteed-complete record.
+`frontend.md` says the JWT is "held in memory only (React context)". It is held
+in a module-scoped variable inside `lib/axios.js`, not in context at all —
+`AuthContext` holds the *user*, and calls `setAccessToken` to hand the token to
+the axios layer.
 
-**f. `DELETE /admin/groups/:id` is not audit-logged.**
-Only succession and auto-deletion write entries. A System Admin deleting a group outright
-leaves no trail — `docs/specification/rbac.md` does state this explicitly, so it's intended,
-but it's a real gap in the audit story.
+The security property the spec cares about is intact and arguably better: the
+token is in memory only, never in `localStorage`, and unreachable from React
+state. But someone auditing "where is the token" will look in the wrong file.
 
-**g. Nothing invalidates `['admin', 'auditLog']`.**
-Deleting a user writes audit entries, but no frontend code invalidates that query key. The
-admin must switch tabs to see them. Self-correcting in practice (tab switching remounts the
-panel).
+**Resolution:** spec.
+
+### 3.3 `database.md`'s collection fields are behind the code
+
+Four collections are missing fields that exist and matter:
+
+| Collection | Missing from `database.md` |
+| --- | --- |
+| `tickets` | `content_updated_at` — the AI cache fingerprint |
+| `comments` | `parent_comment_id`, `is_deleted` — threading and tombstoning |
+| `ai_ticket_insights` | `summary_source_updated_at`, `analysis_source_updated_at` |
+| `ai_conversations`, `ai_chat_messages` | the collections themselves (see 1.2) |
+
+The `comments` gap is the odd one: `api.md` documents threading and tombstoning
+in full, so the two spec files disagree with each other, not just with the code.
+
+The recommended indexes are also stale in two places — `database.md` suggests
+separate `ticket_id` and `group_id` indexes on both `comments` and
+`ai_ticket_insights`, where the code builds a compound `{group_id, ticket_id}`
+(unique, on insights) plus `{parent_comment_id}` on comments.
+
+**Resolution:** spec. [`data-model.md`](data-model.md) already records the
+as-built shape.
 
 ---
 
-## 9. Unused dependency — **Doc drift (trivial)**
+## 4. Absolute rules that are narrower than stated
 
-`backend/Cargo.toml` declares `uuid = { version = "1", features = ["v4", "serde"] }`.
-No `use uuid` anywhere in `src/`. Every identifier is a Mongo `ObjectId`. Leftover from
-an earlier design; safe to remove.
+These are not bugs. They are places where a spec sentence is written as
+universal, the code is correct, and a reader taking the sentence literally would
+be misled.
+
+### 4.1 "EVERY database query MUST include group_id filter. No exceptions."
+
+`backend.md` and `database.md` both state this unconditionally. Several
+collections are not group-scoped and cannot be: `users`, `refresh_tokens` (session
+data tied to a user), `admin_audit_log` (system data, explicitly called out
+elsewhere in `database.md` as not tenant data), and `counters` (keyed *by* group
+id as `_id`). Within AI, messages are listed by `conversation_id`, and the
+rate-limit count filters on role, user, and time.
+
+The rule the code actually follows: **every query against group-scoped business
+data filters on `group_id`.** That holds without exception, and it is the rule
+that matters. The universal phrasing just makes the correct code look like a
+violation.
+
+**Resolution:** spec — narrow the wording to group-scoped business data.
+
+### 4.2 "AI never writes to database"
+
+Stated in `architecture.md`, `backend.md`, and `ai-integration.md`. The AI module
+does write: `ai_ticket_insights`, `ai_conversations`, and `ai_chat_messages`.
+`ai-integration.md` even contradicts itself four sections later — "Result is
+stored (cached) and returned to frontend".
+
+The real rule, which the code follows exactly: **AI never writes domain state.**
+It reads tickets and never modifies them, or comments, or membership, or roles.
+It only writes its own AI-owned collections.
+
+**Resolution:** spec — restate as "never writes domain state".
+
+### 4.3 "Triggered by user actions or ticket creation"
+
+`ai-integration.md` says AI runs on user action *or* ticket creation. Creating a
+ticket fires no AI call; every AI call in the system originates from an explicit
+user action on the ticket detail page. This is consistent with AI being advisory
+and with the cost-control posture elsewhere in the same file.
+
+**Resolution:** spec.
 
 ---
 
-## Summary table
+## 5. Outside the spec, but worth recording here
 
-| # | Issue | Type | Severity |
-|---|---|---|---|
-| 1 | Admin can delete own account; UI comment claims otherwise | Bug | **High** |
-| 2 | No way to create a System Admin | Gap | **High** |
-| 3 | `GET /admin/analytics` missing | Gap | Low |
-| 4 | "every query needs group_id" is overstated | Doc drift | Low |
-| 5 | `database.md` missing `parent_comment_id` / `is_deleted`; wrong comment indexes | Doc drift | Low |
-| 6 | `database.md` missing the AI caching fields (`ai_ticket_insights` + `tickets.content_updated_at`) | Doc drift | Low |
-| 7 | Lookup endpoint role requirement placement | Doc drift | Trivial |
-| 8 | Assorted rough edges (a–g) | Bug (minor) | Low |
-| 9 | Unused `uuid` dependency | Doc drift | Trivial |
+### 5.1 The UI says "Team", everything else says "group"
 
-**The pattern worth noting:** where the code exists, it is careful, well-commented, and
-consistent with the spec — the backend's session model, isolation, succession logic, and now
-AI caching all do exactly what's documented, even where (#5, #6) the spec's own schema
-listing lagged behind what building the feature actually required. What's left is almost
-entirely **bootstrap and admin-lifecycle holes** (#1 and #2, which compound: an admin can
-delete the last admin account, and nothing can create a replacement) plus one remaining
-**genuine gap** (#3, `GET /admin/analytics`). Those are different kinds of problem and are
-worth separating when explaining the project.
+A deliberate, UI-only rename. Backend, API, database, and every prop, hook, query
+key, and route still use `group`/`groupId`; only user-visible strings changed.
+Not a bug, and not planned to be reconciled — the spec's vocabulary is correct
+for the layers it describes.
+
+**Resolution:** accepted.
+
+### 5.2 There are no automated tests
+
+No `tests/` directory, no `#[cfg(test)]` modules; frontend testing is manual by
+decision. Several backend comments still describe test-only affordances
+(`jwt::issue_token_with_exp`, `AiService::with_provider`, free functions in
+`ai/service.rs` kept unit-testable) whose tests no longer exist. No spec file
+claims tests exist, so this is not strictly a deviation — but anyone reading
+those comments will go looking for a suite that is not there.
+
+**Resolution:** undecided.

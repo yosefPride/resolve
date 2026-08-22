@@ -1,268 +1,181 @@
-# Frontend Flow — Study Guide
+# Frontend — as built
 
-Derived from the code in `frontend/src/`, not from `docs/specification/frontend.md`.
-Where the two disagree, see [`deviations.md`](./deviations.md).
+How the React client is actually organized: how a session is established, how the
+current team is chosen, and where each kind of code lives. For the *intended*
+design see [`docs/specification/frontend.md`](../specification/frontend.md);
+divergences are listed in [`deviations.md`](deviations.md).
 
-Detail files in [`frontend/`](./frontend/):
+Stack: React 19, Vite 8, React Router 7, TanStack Query 5, axios, Tailwind CSS 4
+(via `@tailwindcss/vite`), Radix UI (dialog + dropdown menu), `lucide-react` for
+icons, `react-markdown` + `remark-gfm` for ticket descriptions. Plain JavaScript
+with JSX — no TypeScript.
 
-| File | Covers |
-|---|---|
-| [`frontend/01-session-and-routing.md`](./frontend/01-session-and-routing.md) | `main.jsx`, `App.jsx`, `lib/axios.js`, `lib/AuthContext.jsx`, route guards, auth forms |
-| [`frontend/02-groups.md`](./frontend/02-groups.md) | `features/groups/`, `hooks/useGroup.js`, `pages/GroupManagementPage.jsx` |
-| [`frontend/03-admin.md`](./frontend/03-admin.md) | `features/admin/`, `features/users/`, `pages/AdminPage.jsx` |
-| [`frontend/04-account.md`](./frontend/04-account.md) | `features/account/`, `pages/AccountPage.jsx` |
-| [`frontend/05-layout-and-ui.md`](./frontend/05-layout-and-ui.md) | `components/layout/`, `components/ui/`, `components/marketing/`, `utils/` |
-| [`frontend/06-libraries.md`](./frontend/06-libraries.md) | Every external dependency, frontend and backend |
-| [`frontend/07-tickets-and-comments.md`](./frontend/07-tickets-and-comments.md) | `features/tickets/`, `features/comments/`, `hooks/useTickets.js`, `hooks/useComments.js`, both ticket pages, `DashboardStats` |
+The frontend is UI only. It never enforces permissions; it hides controls the
+user cannot use, and the backend rejects anything that slips through.
 
----
-
-## 0. What actually exists
-
-**AI is the only feature still missing a UI.** Everything else the backend serves has a
-frontend now.
-
-**Built:** landing page, register/login, session bootstrap + silent refresh, dashboard
-(greeting + cross-team stats), account page (profile + password), team management (members,
-roles, rename, delete, leave), admin panel (users, teams, audit log, user deletion with
-succession), sidebar/app shell, tickets (list, filters, create, edit, detail), and comments
-(threaded replies, delete, closed-ticket handling).
-
-**Empty files (0 bytes) — scaffolded, never written.** All eight, verified against the
-tree — the AI feature plus three unrelated leftovers:
-```
-features/ai/AiInsightCard.jsx    hooks/useAI.js
-features/ai/AiPanel.jsx          services/ai.service.js
-features/ai/GroupReportView.jsx
-
-components/layout/PageWrapper.jsx    services/users.service.js
-utils/validators.js
-```
-
-`PageWrapper.jsx` was a layout abstraction that never got extracted; `users.service.js` is
-superseded by `admin.service.js`; `validators.js` lost out to inline per-form validation.
-None of the three is on anyone's path.
-
-One thing you'll notice running the app: the **Ticket Detail page's "AI" section renders a
-"Coming soon." placeholder**, holding the layout slot `docs/specification/frontend.md`
-describes. The Comments section directly above it used to say the same thing and no longer
-does.
+**Naming.** The UI says "Team" wherever the backend, API, and database say
+"group". This is a deliberate, UI-only rename: props, hooks, query keys, and
+routes all still use `group`/`groupId`, and only user-visible strings changed.
+Seeing both words in this document is expected, not a bug.
 
 ---
 
-## 1. The basic flows (short version)
+## Composition root
 
-### Flow A — App boot and session restoration
-
-The single most important flow in the frontend, because everything else assumes it finished.
+`main.jsx` nests the providers in a fixed order:
 
 ```
-main.jsx
-  → QueryClientProvider (React Query, retry: 1)
-    → BrowserRouter
-      → AuthProvider          ← blocks the whole app while status === 'loading'
-        → App (routes)
+StrictMode
+ └ QueryClientProvider   (queries retry once, not the default three)
+    └ BrowserRouter
+       └ AuthProvider    (blocks on session bootstrap)
+          └ App
 ```
 
-`AuthProvider` on mount:
-1. Registers an unauthorized handler with the axios module.
-2. Calls `bootstrapSession()` → `POST /auth/refresh` → store JWT in memory → `GET /auth/me`.
-3. Success → `user` set, `status: 'authenticated'`. Failure → `status: 'unauthenticated'`.
-4. **While `status === 'loading'` it renders `<Spinner />` and nothing else** — no route renders until the session question is settled, which is what prevents a logged-in user from flashing the login page on refresh.
+`AuthProvider` sits inside the router because it navigates on logout and on a
+failed refresh.
 
-`bootstrapPromise` is **module-scoped, not component state**. React StrictMode double-invokes
-effects in dev; since refresh tokens are single-use, a genuine second `POST /auth/refresh`
-would 401 and flip a valid session to logged-out. Hoisting the promise out of the component
-makes the second invocation reuse the first call.
+## Session and the access token
 
-### Flow B — Token handling on every request
+The access token is held **in a module variable in `lib/axios.js`** — never in
+`localStorage` or `sessionStorage`, so it does not survive a reload and is not
+reachable by injected script. Durability comes from the refresh cookie, which is
+`httpOnly` and set by the backend.
 
-`lib/axios.js` holds the access token in a **module-level variable** — never `localStorage`,
-never `sessionStorage`. The reasoning: the refresh token is deliberately httpOnly to keep it
-away from JS, so leaving the access token in a JS-readable store would undo that.
+**Boot.** `AuthContext` calls `POST /auth/refresh` once on mount; on success it
+stores the returned JWT and fetches `/auth/me`. The in-flight promise is
+module-scoped rather than component state, because React StrictMode invokes
+effects twice in development and refresh tokens are single-use — a genuine second
+call would 401 and flip a valid session to logged out. Until it settles the app
+renders a spinner, so no route ever renders in an unknown auth state. Status is
+one of `loading` / `authenticated` / `unauthenticated`.
 
-- **Request interceptor** — attaches `Authorization: Bearer <token>` when a token is set.
-- **Response interceptor** — on a `401` that isn't already a retry and isn't on `/auth/login`, `/auth/register`, or `/auth/refresh`: refresh once, replay the original request with the new token. If the refresh itself fails: clear the token and invoke the unauthorized handler (which resets auth state and navigates to `/login`).
-- **`refreshPromise` deduplication** — concurrent 401s share one in-flight refresh. Without it, the second request would present an already-rotated (revoked) token and fail.
-- **`withCredentials: true`** — required for the refresh cookie to be sent/received cross-origin.
-- **`timeout: 15000`** — a dropped network would otherwise leave a request pending forever, hanging the UI on "Loading…". A timeout rejects with no `error.response`, which is the same shape `utils/errors.js` already handles.
+**Per request.** A request interceptor attaches `Authorization: Bearer <token>`
+when one is set. `withCredentials` is on so the refresh cookie travels.
 
-### Flow C — Data fetching
+**On 401.** The response interceptor transparently refreshes and retries the
+original request once, except on `/auth/login`, `/auth/register`, and
+`/auth/refresh`. Concurrent 401s share a single in-flight refresh promise —
+without that, the second request would arrive with an already-rotated token. If
+the refresh itself fails, the token is cleared and a handler registered by
+`AuthContext` resets state and navigates to `/login`.
 
-Two coexisting patterns, and knowing which is which saves confusion:
+**Response shape.** The success interceptor unwraps `response.data`, so service
+functions return the parsed body directly. Errors are *not* unwrapped: they
+reject with the full axios error, because call sites need `err.response`.
+A 15-second timeout means a silently dropped network rejects instead of hanging
+on "Loading…" forever; a timeout has no `error.response`, which is the same
+shape every call site already handles.
 
-**React Query** — used for anything shared or cached: `['groups']` (sidebar, group stats, and
-the dashboard), `['group', id]` / `['group', id, 'members']`, `['tickets', groupId, filters]`,
-`['ticket', groupId, ticketId]`, `['comments', groupId, ticketId]`,
-`['admin', 'users', search]`, `['admin', 'groups', search]`, `['admin', 'auditLog']`,
-`['admin', 'deletionCheck', userId]`. Mutations invalidate the relevant key rather than
-manually refetching.
+## Routing
 
-Note `['groups']` carries `open_ticket_count`, so every ticket mutation invalidates it as
-well as its own keys — comment mutations deliberately don't, since a comment can't change
-that number.
+`App.jsx` declares two layout groups plus a bare catch-all:
 
-**Plain `useState` + `async` handlers** — used for one-shot forms with no shared state:
-login, register, profile, password change, create/rename team, create/edit issue, the comment
-composer, and the delete/leave confirmations.
+| Route | Layout | Guard |
+| --- | --- | --- |
+| `/`, `/register`, `/login` | `MarketingLayout` | none |
+| `/dashboard`, `/tickets`, `/tickets/:ticketId`, `/account`, `/groups/:id` | `AppLayout` | `ProtectedRoute` |
+| `/admin` | `AppLayout` | `ProtectedRoute` + `AdminRoute` |
+| `*` | its own | none |
 
-The dividing line is roughly "does anything else on screen need this data?"
+The auth gate wraps the shared layout rather than each page, so `AppLayout`'s
+chrome does not remount while navigating between app pages. `AdminRoute` stays on
+the `/admin` leaf because it is an extra role check layered on top of
+authentication. `NotFoundPage` sits outside both groups deliberately: it picks
+its own chrome based on auth state, and a nested `*` in either group would race
+the other on route ranking.
 
-### Flow D — Authorization in the UI
+## No active group
 
-Purely cosmetic, and the code says so repeatedly. Three layers:
+There is no globally held "current group", mirroring the backend rule that every
+group-scoped call names its group in the path. Instead:
 
-1. **`ProtectedRoute`** — `status === 'unauthenticated'` → `<Navigate to="/login" replace />`.
-2. **`AdminRoute`** — wraps `ProtectedRoute`, then `isSystemAdmin(user)` → else `<Navigate to="/dashboard" replace />`.
-3. **Conditional rendering** — e.g. `MemberManager` only renders the actions menu and add-member form when `iAmAdmin`.
+- `/groups/:id` takes the group from the **route param**.
+- `/tickets` and `/tickets/:ticketId` take it from a **`?group=<id>` query
+  param**, so a link or a refresh restores exactly the same view. `TicketsPage`
+  defaults to the user's first team when the param is absent and rewrites the URL
+  (`replace: true`); switching teams sets the param, and `TicketList` is keyed on
+  the group id so a switch remounts rather than showing stale rows.
+- The dashboard spans teams by fetching each group's tickets in parallel
+  (`useDashboardOverview` over `useQueries`) and merging client-side. Each
+  request is still an ordinary RBAC-scoped `/groups/{id}/tickets` call — never a
+  cross-group query. It caps at 100 tickets per group, so very large groups
+  undercount in that widget.
 
-The backend re-enforces every one of these. `AdminRoute`'s own comment states the guard is
-UI-only.
+## Directory layout
 
----
+| Path | Contents |
+| --- | --- |
+| `pages/` | One component per route. Reads URL params, composes feature components, handles top-level loading/error/empty states. |
+| `features/<domain>/` | The real UI for a domain: `account`, `activity`, `admin`, `ai`, `auth`, `comments`, `dashboard`, `groups`, `links`, `tickets`, `users`. |
+| `components/ui/` | Presentational primitives, domain-free: `Button`, `Input`, `Textarea`, `Select`, `Field`, `Badge`, `Avatar`, `Table`, `Pagination`, `Spinner`, `StatTile`, `Modal`, `ConfirmModal`, `DropdownMenu`, `EmojiPicker`. |
+| `components/layout/` | `MarketingLayout`, `AppLayout`, `Sidebar`, `Header`, `Footer`. |
+| `components/marketing/` | Landing page sections plus the self-contained product demo under `marketing/demo/`. |
+| `services/` | One module per API area; thin `api.get/post/...` wrappers that own URL construction. The only place endpoint paths appear. |
+| `hooks/` | TanStack Query hooks and small shared behaviors. |
+| `lib/` | Cross-cutting wiring: `axios.js`, `AuthContext.jsx`, `authContext.js`, `ProtectedRoute.jsx`, `AdminRoute.jsx`. |
+| `utils/` | Pure helpers: `errors.js`, `format.js`, `roles.js`. |
 
-## 2. Directory map and dependency direction
+The dependency direction is one-way: `pages → features → components/ui`, with
+`hooks → services → lib/axios` underneath. UI primitives never import from
+`features/`, and nothing but `services/` builds an API URL.
 
-```
-main.jsx ──── App.jsx ──── pages/*  ──── features/*  ──── services/*  ──── lib/axios.js
-   │             │             │              │
-   │             │             └──────────────┴──── components/ui/*
-   │             │                                  components/layout/*
-   │             └──── lib/ProtectedRoute, lib/AdminRoute
-   │
-   └──── lib/AuthContext.jsx ──── services/auth.service.js
-                │
-                └──── lib/authContext.js  (the bare createContext)
-                          ▲
-                          └──── hooks/useAuth.js
-```
+`lib/authContext.js` holds only `createContext(...)`; the provider lives in
+`AuthContext.jsx`. They are split so the context object can be imported without
+pulling in a component, which keeps Vite's fast refresh working.
 
-Layer rules, consistently followed:
+## Data layer
 
-- **`services/*`** are the only modules that import `lib/axios`. Each exports plain async functions returning `res.data`. No React, no state.
-- **`features/*`** are feature-scoped components. They may call services directly or via React Query.
-- **`pages/*`** compose features and own page-level layout. They are thin.
-- **`components/ui/*`** are presentational primitives with no data access.
-- **`hooks/*`** wrap React Query or pure state logic.
+Server state is TanStack Query; only genuinely local state (form fields, open
+modals, drawer state) is React state. There is no Redux/Zustand store.
 
-### The `authContext.js` / `AuthContext.jsx` split
+Query keys are hierarchical, so an invalidation at a prefix clears everything
+below it:
 
-Two files that look redundant but aren't:
-- `lib/authContext.js` — just `export const AuthContext = createContext(null)`.
-- `lib/AuthContext.jsx` — the `AuthProvider` component.
+| Key | Query |
+| --- | --- |
+| `['groups']` | The user's groups. |
+| `['group', groupId]`, `['group', groupId, 'members']` | Group detail and its members. |
+| `['tickets', groupId, filters]` | A filtered ticket page. |
+| `['ticket', groupId, ticketId]` | One ticket. |
+| `['comments' \| 'activity' \| 'links' \| 'references' \| …, groupId, ticketId]` | Ticket-scoped collections. |
 
-The split exists for **React Fast Refresh**: a module exporting both a component and a
-non-component breaks HMR boundaries. Keeping the bare context in its own file lets
-`hooks/useAuth.js` import it without pulling in the provider.
+Conventions worth knowing:
 
----
+- Ticket list queries use `placeholderData: keepPreviousData` so filtering and
+  paging swap rows in place instead of flashing a loading state. Admin search
+  does the same.
+- Every ticket mutation also invalidates `['groups']`, because a group's
+  `open_ticket_count` (shown in the sidebar and group stats) changes with it.
+- `hooks/ticketResourceHooks.js` builds the list/create/delete hook triple shared
+  by ticket-scoped collections such as links and references. Resources whose
+  mutations must touch other keys stay hand-written.
+- `useSubmit` is the shared form choreography — clear error, run action, map a
+  failure through `errorMessage`, track pending. Forms with field-level errors or
+  special-cased status codes (profile, password change, comment) keep their own
+  handlers rather than growing options on the hook.
+- `errorMessage` (`utils/errors.js`) is the single place an axios error becomes
+  user-facing text: no `response` means a network/timeout message, otherwise the
+  API's `{ error: { message } }` body, falling back to the caller's default.
+- `utils/roles.js` mirrors the API's serialized role values exactly
+  (`contributor` / `group_admin`, and `SystemAdmin` for the global role).
 
-## 3. Feature flows, end to end
+## UI conventions
 
-### Register / Login
-`RegisterForm` / `LoginForm` hold local form state → call `register`/`login` from `useAuth()`
-→ `AuthProvider` calls the service, stores the JWT via `setAccessToken`, sets `user` and
-`status` → the form navigates to `/dashboard`. Errors go through `errorMessage(err, fallback)`.
+Tailwind utility classes are written inline; there is no CSS-module or
+styled-components layer, and `main.css` holds only the Tailwind entry plus a few
+globals. Interactive primitives that need real accessibility semantics (dialog,
+dropdown) wrap Radix; everything else is hand-rolled in `components/ui`. Icons
+are named imports from `lucide-react` — no inline SVG.
 
-Note these two mutate auth state through the **context**, not the service, so the session
-lives in exactly one place.
+`AppLayout` renders one `Sidebar` implementation two ways: docked from the `md`
+breakpoint up, and a slide-in drawer below it. Visibility is CSS-driven
+(`hidden md:flex` / `md:hidden`) so resizing the window never remounts the nav or
+drops its state. Pages render content only — the layout supplies the framed
+panel and padding.
 
-### Logout
-`useAuth().logout()` → `POST /auth/logout` (clears the httpOnly cookie server-side) →
-`setAccessToken(null)` → clear `user` → `status: 'unauthenticated'` → `navigate('/login')`.
+## Tests
 
-### Create a team
-`Sidebar`'s `TeamsSection` renders a `+` button → `Modal` with `CreateGroupForm` →
-`POST /groups` → `onCreated` invalidates `['groups']`, closes the modal, and expands the
-section so the new team is visible.
-
-### View / manage a team
-`/groups/:id` → `GroupManagementPage` → `useGroup(id)` fires two parallel queries
-(`GET /groups/:id` and `GET /groups/:id/users`) under a shared `['group', id]` prefix.
-
-The page derives `myRole` by finding **its own user in the members list** — the backend does
-return the caller's role via `GET /groups` (`GroupSummaryResponse.role`), but this page uses
-the members array it already has. From `iAmAdmin` it branches: admins get rename + delete;
-non-admins get "Leave team".
-
-`MemberManager` handles add (email lookup → confirm → add with a role), promote/demote, and
-remove/leave. Every mutation invalidates `['group', id, 'members']`.
-
-### Read and post comments
-
-`TicketDetail` renders `<CommentList groupId ticketId isAdmin isClosed />`, which is the
-whole feature's entry point. Full breakdown in
-[`frontend/07-tickets-and-comments.md`](./frontend/07-tickets-and-comments.md).
-
-The API returns the thread **flat and oldest-first**; `buildCommentTree` assembles it
-client-side in one pass — a `Map` of id → node, then each node is pushed onto its parent's
-`replies`. `Map` preserves insertion order, so roots and replies both come out oldest-first
-with no sorting.
-
-Three details that are easy to miss and all deliberate:
-
-- **Visual nesting stops at `MAX_INDENT_DEPTH = 4`.** Deeper replies keep their real depth in the tree but stop indenting, so a long back-and-forth can't squeeze the text column to nothing on a phone. Past the cap, a **quoted-parent block** (author + first line of the comment being answered, WhatsApp-style) carries the structure instead — though it renders at *every* depth, not just past the cap.
-- **A reply whose parent isn't in the payload is promoted to a root** rather than dropped. Normally impossible, since a comment with replies gets tombstoned instead of deleted — but the backend's `has_replies` check and the delete that follows aren't atomic, so a reply created in that window can point at an id that's already gone.
-- **A closed ticket removes the composer entirely** rather than disabling it, because `POST` would 409. If the ticket is closed by someone else while a reply box is open, the refetch drops the open box too. `CommentForm` still handles a 409 on submit, for the window between render and submit.
-
-`useComments` deliberately **does not invalidate `['groups']`** on mutation — a comment
-doesn't change `open_ticket_count`, so the sidebar and `GroupStats` numbers can't go stale
-from one. Delete invalidates and refetches rather than removing the comment from the cache,
-since only the server knows whether a given delete produced a tombstone or a real removal.
-
-`CommentForm` counts content length with `[...value].length` (code points), matching the
-backend's `.chars().count()`. Plain `.length` counts UTF-16 units, which disagree outside the
-BMP — `'😀'.length` is 2 where the backend counts 1. Same reason the textarea carries no
-`maxLength`.
-
-### Admin: delete a user
-`UsersPanel` → `DeleteUserModal`, which mirrors the backend's plan-then-commit shape:
-`GET /admin/users/:id/deletion-check` → render a `<select>` per blocked group and a warning
-per auto-delete group → `POST /admin/users/:id/delete` with the chosen successors.
-A `409` (server re-derived a different plan) shows the message **and refetches the check in
-place** without closing the modal.
-
-The `chosenSuccessor(group)` helper **derives** validity instead of syncing state: it returns
-a stored pick only if that person is still in `eligible_successors`. After a 409 re-check,
-a now-invalid pick silently falls back to empty and re-disables the submit button — no
-`useEffect` pruning required.
-
----
-
-## 4. Conventions worth knowing
-
-**"Groups" in the API, "Teams" in the UI.** The backend, routes (`/groups/:id`), services,
-and query keys all say *group*; every user-facing string says *Team* ("Team Admin", "Create
-team", "No teams yet"). This is an intentional UI-only rename, not drift. Likewise
-*tickets* → "Issues" in nav labels while the route stays `/tickets`.
-
-**Error handling is uniform.** `utils/errors.js::errorMessage(err, fallback)` returns a
-network message when there's no `err.response` (covers offline, CORS, and the 15s timeout),
-otherwise `err.response.data.error.message`, otherwise the fallback. A few places branch on
-`err.response.data.error.code` first to attach a *field-level* error instead — `ProfileForm`
-on `duplicate_email`, `ChangePasswordForm` on `invalid_credentials`.
-
-**Roles are string comparisons in `utils/roles.js`**, and the two conventions differ:
-group roles are snake_case (`'group_admin'`), the global role is PascalCase
-(`'SystemAdmin'`). That mirrors the backend's serde attributes exactly — `Role` has
-`rename_all = "snake_case"`, `GlobalRole` has no rename.
-
-**No automated tests.** No Vitest, no Testing Library, no test files. Verification is manual.
-
-**No TypeScript**, per `CLAUDE.md`. Plain JSX with no prop-types either.
-
----
-
-## 5. Suggested reading order
-
-1. `lib/axios.js` — 85 lines, and the interceptor logic explains most of the session model.
-2. `lib/AuthContext.jsx` + `lib/authContext.js` + `hooks/useAuth.js` — the session state machine.
-3. `App.jsx` — the whole route table, plus `ProtectedRoute` / `AdminRoute`.
-4. `utils/errors.js`, `utils/roles.js`, `utils/format.js` — 50 lines total, used everywhere.
-5. `services/*.js` — the complete API surface the frontend actually uses.
-6. `features/auth/` — the simplest full feature (form → context → service).
-7. `hooks/useGroup.js` + `pages/GroupManagementPage.jsx` + `features/groups/` — the first real React Query usage.
-8. `hooks/useTickets.js` + `pages/TicketsPage.jsx` + `features/tickets/` — filters, pagination, and the `?group=` convention.
-9. `features/comments/CommentList.jsx` — the only tree-building component, and the one place client-side structure is derived rather than rendered straight.
-10. `features/admin/DeleteUserModal.jsx` — the most complex component in the app.
-11. `components/layout/Sidebar.jsx` — the largest file (321 lines), and mostly presentational.
+There are **no automated frontend tests** by decision; verification is manual in
+the browser. `npm run lint` (ESLint 10, with the React Hooks and React Refresh
+plugins) is the only automated check.

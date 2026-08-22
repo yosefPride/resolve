@@ -1,224 +1,413 @@
-# Data Model
+# Data model — as built
 
-Derived from the Rust structs and Mongo queries in `backend/src/`, not from
-`docs/specification/database.md`. Where the two disagree, see [`deviations.md`](./deviations.md).
+Every MongoDB collection as it exists in code, with its fields, its indexes, and
+the rules that keep it consistent. Field names below are the **stored** names
+(what the Rust structs serialize to), not the API response shapes — those differ
+in that ids come back as hex strings and timestamps as RFC 3339.
 
-Detail files:
-- [`db/collections.md`](./db/collections.md) — field-by-field, per collection
-- [`db/indexes.md`](./db/indexes.md) — every index, and which query it serves
-
----
-
-## Database
-
-MongoDB. Single database, name **hardcoded** as `"resolve"` in `db::database()`. Connection
-string comes from `MONGO_URI` (the `.env.example` shows a `mongodb+srv://` Atlas cluster).
-
-There is no ORM/ODM and no migration system. Schema lives entirely in the Rust structs, and
-`serde` is what enforces it on read: a document that doesn't deserialize into its struct
-fails the query. Indexes are created at boot by `db::ensure_indexes()`.
+Source of truth: `backend/src/*/models.rs` for documents, `backend/src/db.rs` for
+indexes. The intended design lives in
+[`docs/specification/database.md`](../specification/database.md).
 
 ---
 
-## Collections that actually exist
+## Conventions
 
-Eleven, of which **nine are written by application code**:
-
-| Collection | Rust type | Written by | Purpose |
-|---|---|---|---|
-| `users` | `user::models::User` | `UserRepository` | Accounts + global role |
-| `refresh_tokens` | `auth::models::RefreshTokenDoc` | `AuthRepository` | Session records |
-| `groups` | `group::models::Group` | `GroupRepository` | Tenant boundary |
-| `group_members` | `group::models::GroupMember` | `GroupRepository` | Membership + group role (the RBAC table) |
-| `tickets` | `ticket::models::Ticket` | `TicketRepository` | Core business entity |
-| `counters` | `ticket::models::TicketCounter` | `TicketRepository` | Per-group ticket-number sequence |
-| `comments` | `comment::models::Comment` | `CommentRepository` | Threaded ticket discussion |
-| `admin_audit_log` | `admin::models::AuditLogEntry` | `AdminRepository` | Succession / auto-deletion trail |
-| `ai_ticket_insights` | `ai::models::AiTicketInsight` | `AiRepository` | Cached per-ticket summary/analysis (`08-ai.md`) |
-| `ai_group_reports` | `ai::models::AiGroupReport` | `AiRepository` | Cached group analytics reports, TTL-expired after 30 days |
-| `ai_chat_messages` | `ai::models::ChatMessage` | `AiRepository` | Per-ticket chat thread with the AI, one document per message (`08-ai.md`) |
+- **Ids.** Every document's primary key is `_id` (`ObjectId`), mapped to a Rust
+  `id: Option<ObjectId>` that is skipped on serialize so Mongo assigns it. One
+  collection keys on a natural id instead: `counters`, whose `_id` is the group
+  id.
+- **Timestamps** are BSON `DateTime` (UTC milliseconds), converted to
+  `chrono::DateTime<Utc>` at the response boundary.
+- **Enums** serialize `snake_case` (`contributor`, `group_admin`, `open`,
+  `relates_to`, …). The one exception is `GlobalRole`, which has no rename and
+  therefore serializes as `SystemAdmin` — the frontend's `utils/roles.js`
+  mirrors this asymmetry deliberately.
+- **Group isolation.** Every tenant-scoped collection carries `group_id`, and
+  every repository query filters on it. There are no cross-group queries.
+- **No schema validation** is configured in MongoDB; shape is enforced entirely
+  by serde on read and write. A document that fails to deserialize fails the
+  whole query, which is why new non-optional fields need a backfill (see
+  *Migrations* below).
+- **Referential integrity** is application-level. Nothing cascades in the
+  database; deletes are done explicitly by services.
 
 ---
 
-## Entity-relationship overview
+## Collections
+
+### `users`
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `_id` | ObjectId | |
+| `email` | String | Login identity; unique. |
+| `password_hash` | String | bcrypt. Never leaves the backend. |
+| `name` | String | Display name. |
+| `global_role` | `"SystemAdmin"` \| null | The entire global RBAC layer. Null = ordinary user. |
+| `created_at` | DateTime | |
+
+Indexes: `{ email: 1 }` unique.
+
+The global role is deliberately a nullable single-variant enum rather than a
+boolean, so additional global roles can be added without a migration.
+
+### `refresh_tokens`
+
+One document per outstanding refresh token — effectively one per logged-in
+device.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `_id` | ObjectId | |
+| `user_id` | ObjectId | |
+| `token_hash` | String | SHA-256 of the raw token. The raw value is never stored. |
+| `created_at` | DateTime | |
+| `expires_at` | DateTime | 30 days out. |
+| `revoked_at` | DateTime \| null | Set on rotation (tokens are single-use) or logout. |
+
+Indexes: `{ token_hash: 1 }` unique; `{ expires_at: 1 }` TTL (expire-after 0, so
+Mongo's reaper drops rows once `expires_at` passes — no cron job).
+
+Revoked-but-unexpired rows stick around until the TTL catches them; validity
+checks read `revoked_at`, so that is harmless.
+
+### `groups`
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `_id` | ObjectId | The tenant boundary. |
+| `name` | String | Not unique — two teams may share a name. |
+| `owner_id` | ObjectId | The creator. Historical only: it confers no permission. |
+| `created_at` | DateTime | |
+
+Indexes: none beyond `_id`.
+
+`owner_id` is *not* the authorization path. Permission comes from the caller's
+row in `group_members`, so an owner who was later demoted has no admin rights,
+and an owner who left the group has none at all.
+
+### `group_members`
+
+The join table that carries the group-scoped RBAC layer.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `_id` | ObjectId | |
+| `group_id` | ObjectId | |
+| `user_id` | ObjectId | |
+| `role` | `contributor` \| `group_admin` | |
+| `joined_at` | DateTime | |
+
+Indexes: `{ group_id: 1, user_id: 1 }` unique — this is the membership lookup on
+every group-scoped request, and the constraint behind the duplicate-member
+rejection; `{ user_id: 1 }` plain, because "list my groups" filters on `user_id`
+alone and the compound index cannot serve it (`user_id` is not its prefix).
+
+**Invariant:** a group always has at least one `group_admin`. Enforced in
+`GroupService` (not in RBAC, and not by the database) on member removal, role
+change, and leave; the only path around it is System Admin user deletion, which
+must name a successor first and writes an audit entry.
+
+### `tickets`
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `_id` | ObjectId | |
+| `group_id` | ObjectId | |
+| `ticket_number` | i64 | Per-group running number, the human-facing id. |
+| `title` | String | |
+| `description` | String | Rendered as Markdown by the client. |
+| `status` | `open` \| `closed` | |
+| `priority` | `low` \| `high` \| `critical` | |
+| `created_by` | ObjectId | |
+| `created_at` | DateTime | |
+| `updated_at` | DateTime | Bumped by every edit, status included. |
+| `content_updated_at` | DateTime | Bumped only by title/description/priority edits. |
+
+Indexes: `{ group_id: 1 }`; `{ group_id: 1, status: 1 }`;
+`{ group_id: 1, created_by: 1 }`; `{ group_id: 1, ticket_number: 1 }` unique.
+
+The two update timestamps exist to keep AI caching correct: the model only ever
+reads title and description, so closing or reopening a ticket must not throw away
+a good cached summary. `content_updated_at` is the cache fingerprint;
+`updated_at` is the general "last touched" value.
+
+### `counters`
+
+Backs the per-group ticket sequence. One document per group.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `_id` | ObjectId | The group id — the natural key, so no separate index. |
+| `ticket_seq` | i64 | Last allocated number. |
+
+Allocated by an atomic `find_one_and_update` with `$inc`, so concurrent creates
+cannot collide. The unique index on `(group_id, ticket_number)` is the backstop.
+Numbers are never reused: deleting a ticket does not decrement the counter.
+
+### `comments`
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `_id` | ObjectId | |
+| `group_id` | ObjectId | |
+| `ticket_id` | ObjectId | |
+| `parent_comment_id` | ObjectId \| null | Null for a top-level comment. One level of threading. |
+| `user_id` | ObjectId | Author. |
+| `content` | String | |
+| `is_deleted` | bool | Tombstone flag. |
+| `created_at` | DateTime | |
+
+Indexes: `{ group_id: 1, ticket_id: 1 }` (list, plus both cascade deletes, which
+use a prefix of it); `{ parent_comment_id: 1 }` (the has-replies check).
+
+**Delete is conditional.** A comment with no replies is hard-deleted. A comment
+that has replies is tombstoned instead — `is_deleted` flips to true and `content`
+is replaced with `[comment deleted]` — so its replies keep a valid
+`parent_comment_id` to point at rather than referencing a vanished id. A
+tombstoned comment's reactions are cleared at the same time.
+
+### `comment_reactions`
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `_id` | ObjectId | |
+| `group_id`, `ticket_id`, `comment_id` | ObjectId | Denormalized so cascades filter directly. |
+| `user_id` | ObjectId | |
+| `emoji` | String | |
+| `created_at` | DateTime | |
+
+Indexes: `{ comment_id: 1, user_id: 1 }` unique;
+`{ group_id: 1, ticket_id: 1 }` for cascades.
+
+One reaction per user per comment, enforced by the unique index and an upsert on
+that key rather than a check-then-write. Picking a different emoji **replaces**
+the existing reaction. Clients never see individual rows — the API returns
+per-emoji counts plus a `reacted_by_me` flag.
+
+### `ticket_activity`
+
+The per-ticket history. Insert-only, and never written from a client request —
+services write entries as a side effect of their own mutations.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `_id` | ObjectId | |
+| `group_id`, `ticket_id` | ObjectId | |
+| `actor_id` | ObjectId | Name resolved at read time, so renames are reflected. |
+| `event_type` | enum | `ticket_created`, `status_changed`, `priority_changed`, `title_changed`, `description_changed`, `comment_added`, `comment_deleted`, `link_added`, `link_removed`. |
+| `old_value`, `new_value` | String \| null | Populated for status/priority/title and link events. |
+| `comment_id` | ObjectId \| null | Comment events only. No comment text is ever copied here. |
+| `link_kind` | `relation` \| `reference` \| null | Link events only. |
+| `occurred_at` | DateTime | |
+
+Indexes: `{ group_id: 1, ticket_id: 1, occurred_at: -1 }` (the per-ticket
+newest-first list, plus cascades); `{ group_id: 1, occurred_at: -1 }` (the
+group's latest activity — the compound index above cannot serve a sort on
+`occurred_at` without pinning `ticket_id`, which sits between them).
+
+**One entry per discrete change.** A single PATCH touching status, priority, and
+title writes three rows, so the timeline reads as granular events rather than an
+opaque "ticket updated". `description_changed` deliberately stores no before/after
+values: a raw text dump is not useful in a timeline.
+
+### `ticket_links`
+
+Typed relations between two tickets in the same group.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `_id` | ObjectId | |
+| `group_id` | ObjectId | Both tickets are in it — links never cross groups. |
+| `source_ticket_id`, `target_ticket_id` | ObjectId | Direction as stored. |
+| `relation_type` | `blocks` \| `relates_to` \| `duplicates` | |
+| `created_by` | ObjectId | |
+| `created_at` | DateTime | |
+
+Indexes:
+`{ group_id: 1, source_ticket_id: 1, target_ticket_id: 1, relation_type: 1 }`
+unique (its `(group_id, source_ticket_id)` prefix also serves list/delete);
+`{ group_id: 1, target_ticket_id: 1 }` for the target-side branch, since a ticket
+can sit on either end.
+
+**One document per relation, never two.** `relates_to` is symmetric, so the
+service checks both directions before inserting. `blocks` and `duplicates` are
+directional, and the inverse reading ("is blocked by", "is duplicated by") is
+derived at read time from which side the viewing ticket is on — it is not stored.
+Deleting a ticket removes links where it appears on either side, so no dangling
+half is left behind.
+
+### `ticket_references`
+
+External URLs attached to a ticket (a PR, a doc, a thread) — distinct from
+`ticket_links`, which relate two tickets to each other.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `_id` | ObjectId | |
+| `group_id`, `ticket_id` | ObjectId | |
+| `label` | String | Always populated: falls back to the URL's host. |
+| `url` | String | |
+| `created_by` | ObjectId | |
+| `created_at` | DateTime | |
+
+Indexes: `{ group_id: 1, ticket_id: 1 }`.
+
+### `ai_ticket_insights`
+
+The AI cache. **One document per ticket**, upserted in place rather than
+appended.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `_id` | ObjectId | |
+| `group_id`, `ticket_id` | ObjectId | |
+| `summary` | String \| null | |
+| `summary_source_updated_at` | DateTime \| null | Snapshot of the ticket's `content_updated_at` when the summary was generated. |
+| `severity_prediction`, `suggested_fix`, `classification` | String \| null | The analysis triple. |
+| `analysis_source_updated_at` | DateTime \| null | Same snapshot, for the analysis. |
+| `created_at`, `updated_at` | DateTime | |
+
+Indexes: `{ group_id: 1, ticket_id: 1 }` unique.
+
+A field group is **fresh** iff its values are present *and* its source timestamp
+still equals the ticket's current `content_updated_at`. Summary and analysis
+track their fingerprints separately, because they are independent calls — an edit
+can invalidate one that has run while the other never has.
+
+### `ai_conversations`
+
+A private, per-user chat thread on a ticket.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `_id` | ObjectId | |
+| `group_id`, `ticket_id` | ObjectId | |
+| `user_id` | ObjectId | The owner, fixed at creation. |
+| `title` | String \| null | Null until the first message; derived from it, not model-generated. |
+| `created_at`, `updated_at` | DateTime | `updated_at` bumps on each message. |
+
+Indexes: `{ group_id: 1, ticket_id: 1, user_id: 1, updated_at: -1 }` — equality
+fields first, sort field last; its prefix also covers the cascades.
+
+Ownership here is stricter than anywhere else in the system: no other member, not
+even a Group Admin, can list, read, or delete someone else's conversation.
+
+### `ai_chat_messages`
+
+One document per message — a conversation is a sequence, not a latest value.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `_id` | ObjectId | |
+| `conversation_id` | ObjectId | |
+| `group_id`, `ticket_id` | ObjectId | Denormalized so cascades delete by them directly. |
+| `role` | `user` \| `assistant` | Provider-agnostic by design. |
+| `user_id` | ObjectId \| null | Null for assistant messages. |
+| `content` | String | |
+| `created_at` | DateTime | |
+
+Indexes: `{ conversation_id: 1, created_at: 1 }` (one thread, oldest-first);
+`{ group_id: 1, ticket_id: 1 }` (cascades);
+`{ role: 1, user_id: 1, created_at: 1 }` (the rate-limit count — equality on role
+and user, range on time).
+
+The rate-limit index is global per user rather than per conversation, matching the
+rule it serves: 10 user messages per hour per person, across all tickets.
+
+### `admin_audit_log`
+
+System Admin actions worth a permanent trail. Not tenant data: written by System
+Admin, never read by group-scoped business logic.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `_id` | ObjectId | |
+| `action` | `succession` \| `group_auto_deleted` \| `promotion` \| `demotion` | |
+| `group_id` | ObjectId \| null | Succession / auto-delete only. |
+| `group_name` | String | Snapshotted. |
+| `deleted_user_id`, `deleted_user_name` | ObjectId \| null, String | The user being deleted. |
+| `successor_user_id`, `successor_user_name` | ObjectId \| null, String \| null | Succession only. |
+| `target_user_id`, `target_user_name` | ObjectId \| null, String \| null | Promotion/demotion only. |
+| `performed_by`, `performed_by_name` | ObjectId, String | The acting admin. |
+| `created_at` | DateTime | |
+
+Indexes: `{ group_id: 1 }` and `{ deleted_user_id: 1 }`, serving the viewer's two
+independent filters.
+
+Most fields are optional because they are action-specific; only `performed_by`
+and `action` are universal. **Names are snapshotted at write time** — the whole
+point of the log is to survive the deletion of the things it references, so ids
+often cannot be resolved by the time anyone reads it. Every name field carries
+`#[serde(default)]` so entries written before a field existed still deserialize
+rather than failing the entire query.
+
+---
+
+## Relationships
 
 ```
-                    ┌─────────────────┐
-                    │      users      │
-                    │  _id            │
-                    │  email (unique) │
-                    │  password_hash  │
-                    │  global_role?   │
-                    └────────┬────────┘
-                             │
-        ┌────────────────────┼─────────────────────┬──────────────────┐
-        │ 1                  │ 1                   │ 1                │ 1
-        │                    │                     │                  │
-        ▼ N                  ▼ N                   ▼ N                ▼ N
-┌───────────────┐   ┌─────────────────┐   ┌──────────────┐   ┌─────────────────┐
-│refresh_tokens │   │  group_members  │   │   tickets    │   │ admin_audit_log │
-│  user_id ─────┘   │  user_id ───────┘   │  created_by ─┘   │ deleted_user_id ┘
-│  token_hash   │   │  group_id ──┐   │   │  group_id ──┐│   │ performed_by    │
-│  expires_at   │   │  role       │   │   │             ││   │ successor_user_id│
-└───────────────┘   └─────────────┼───┘   └─────────────┼┘   │ group_id        │
-                                  │                     │    └────────┬────────┘
-                                  │  N                  │ N           │ N
-                                  ▼                     ▼             ▼
-                          ┌──────────────────────────────────────────────┐
-                          │                   groups                     │
-                          │  _id, name, owner_id, created_at             │
-                          └──────────────────┬───────────────────────────┘
-                                             │ 1
-                                             ▼ 1
-                                      ┌──────────────┐
-                                      │   counters   │
-                                      │ _id==group_id│
-                                      │ ticket_seq   │
-                                      └──────────────┘
+users ──< group_members >── groups
+                              │
+                              └──< tickets ──< comments ──< comment_reactions
+                                     ├──< ticket_activity
+                                     ├──< ticket_links (both ends, same group)
+                                     ├──< ticket_references
+                                     ├──── ai_ticket_insights  (1:1)
+                                     └──< ai_conversations ──< ai_chat_messages
 
-           tickets ──1──▶ N──┐
-                             ▼            ┌──── self-reference (any depth)
-                    ┌──────────────────┐  │
-                    │     comments     │◀─┘
-                    │  _id             │
-                    │  group_id  ──────┼──▶ groups   (denormalized, not via ticket)
-                    │  ticket_id ──────┼──▶ tickets
-                    │  parent_comment_id?  (null = top-level)
-                    │  user_id   ──────┼──▶ users
-                    │  content         │
-                    │  is_deleted      │
-                    └──────────────────┘
+users ──< refresh_tokens
+admin_audit_log — references users/groups by snapshotted id + name, no live FK
 ```
 
-### Relationship table
+## Cascades
 
-| From | To | Cardinality | Implemented as |
-|---|---|---|---|
-| `users` | `refresh_tokens` | **1-to-many** | `refresh_tokens.user_id` |
-| `users` ↔ `groups` | — | **many-to-many** | join collection `group_members`, which carries `role` as join-row data |
-| `groups` | `group_members` | **1-to-many** | `group_members.group_id` |
-| `users` | `group_members` | **1-to-many** | `group_members.user_id` |
-| `groups` | `tickets` | **1-to-many** | `tickets.group_id` |
-| `users` | `tickets` | **1-to-many** (as creator) | `tickets.created_by` |
-| `groups` | `counters` | **1-to-1** | `counters._id == group_id` |
-| `groups` | `admin_audit_log` | **1-to-many** | `admin_audit_log.group_id` |
-| `users` | `admin_audit_log` | **1-to-many**, three separate ways | `deleted_user_id`, `performed_by`, `successor_user_id` |
-| `tickets` | `comments` | **1-to-many** | `comments.ticket_id` |
-| `groups` | `comments` | **1-to-many** | `comments.group_id` — denormalized, *not* resolved through the ticket |
-| `users` | `comments` | **1-to-many** (as author) | `comments.user_id` |
-| `comments` | `comments` | **1-to-many, self-referential** | `comments.parent_comment_id`, nullable, **no depth limit** |
-| `tickets` | `ai_ticket_insights` | **1-to-1** | `ai_ticket_insights.ticket_id` — one document, upserted in place per generation, not a fresh row each time |
-| `groups` | `ai_ticket_insights` | **1-to-many** | `ai_ticket_insights.group_id` — denormalized, same reasoning as `comments.group_id` below |
-| `groups` | `ai_group_reports` | **1-to-many** | `ai_group_reports.group_id` — a fresh document per generation (history), TTL-expired after 30 days |
-| `users` | `ai_group_reports` | **1-to-many** (as generator) | `ai_group_reports.generated_by` |
-| `tickets` | `ai_chat_messages` | **1-to-many** | `ai_chat_messages.ticket_id` — one ongoing conversation's worth of messages, no separate thread id |
-| `groups` | `ai_chat_messages` | **1-to-many** | `ai_chat_messages.group_id` — denormalized, same reasoning as `comments.group_id` |
-| `users` | `ai_chat_messages` | **1-to-many** (as author) | `ai_chat_messages.user_id` — `null` on an assistant message, so this relationship only holds for the user-authored half of the thread |
+Nothing cascades in the database; services do it explicitly.
 
-The entity-relationship diagram above predates the AI module and doesn't show these seven —
-see [`backend/08-ai.md`](./backend/08-ai.md) for the full field-by-field breakdown.
+**Deleting a ticket** clears its comments, comment reactions, activity, links
+(matching on either end), references, AI insights, conversations, and chat
+messages.
 
-`comments` is the schema's only self-reference, and the only place a child row duplicates its
-grandparent's id (`group_id`) rather than joining up through its parent. That duplication is
-deliberate: it keeps every comment query group-filterable on its own, and makes the
-group-deletion cascade a single `delete_many({group_id})` instead of a fan-out over tickets.
+**Deleting a group** runs `group::purge_group_data`, which does the above across
+every ticket in the group, then removes the tickets, the membership rows, and the
+group itself. The group's `counters` document goes with it — that happens inside
+`TicketRepository::delete_by_group`, alongside the tickets, rather than as a
+separate step in `purge_group_data`. It is also what runs when a group is
+auto-deleted because its only member was deleted.
 
----
+**Deleting a user** does *not* delete their content. Tickets, comments, and
+activity keep the original `created_by` / `user_id` / `actor_id`, and the name
+lookup falls back to an empty string, so history stays intact rather than
+silently reattributing or vanishing.
 
-## The one many-to-many, and why it carries data
+## Uniqueness and races
 
-`group_members` is not a bare join table — it's the RBAC store. Its `role` field is an
-attribute *of the relationship*, not of either entity:
+Six unique indexes double as concurrency guards: `users.email`,
+`refresh_tokens.token_hash`, `group_members(group_id, user_id)`,
+`tickets(group_id, ticket_number)`, `ticket_links(…)`, and
+`comment_reactions(comment_id, user_id)`. The application-level pre-checks exist
+to produce good error messages; the index is what actually rejects a concurrent
+duplicate. `utils::is_duplicate_key` recognizes error 11000 in both shapes it
+arrives in — a `WriteError` on plain inserts, a `CommandError` on
+`find_one_and_update`.
 
-- The same user is `group_admin` in one group and `contributor` in another. Role is meaningless without both ids.
-- Every authorization decision reads this row (`GroupRepository::find_member`), never `users` and never `groups.owner_id`.
+## Index management and migrations
 
-Consequences worth stating:
-- A user with zero `group_members` rows can log in and see nothing but their account page.
-- `groups.owner_id` exists but is **decorative** — deleting the owner's membership does not transfer or revoke anything, and no query filters on it.
-- The invariant "every group has ≥1 `group_admin` row" is enforced only in application code (`GroupService::guard_sole_admin_removal`), never by the database.
+`db::ensure_indexes` runs on every boot from a single table in `db.rs`, so
+indexes are code, not an operational step. Adding one means adding a row.
 
----
+Two one-time migrations also run at every boot and are written to be idempotent:
 
-## Referential integrity: there is none
+- `backfill_ticket_content_updated_at` — copies `updated_at` into
+  `content_updated_at` for tickets predating that field. Required rather than
+  optional: without it those documents fail to deserialize and 500 any read that
+  touches them. It uses a pipeline update, since a plain `$set` cannot copy
+  another field's value.
+- `wipe_legacy_chat_messages` — drops chat messages from the old
+  single-shared-thread-per-ticket model (no `conversation_id`, several users'
+  messages interleaved with no owner). There was no principled way to split those
+  into per-user conversations after the fact, so they are removed rather than
+  migrated.
 
-MongoDB enforces no foreign keys, and this codebase adds no application-level equivalent
-except where noted. What that means in practice:
-
-| Situation | Actual behavior |
-|---|---|
-| User deleted while they created tickets | Tickets keep the dangling `created_by`. `TicketService::enrich_ticket` renders `created_by_name` as `""`. |
-| User deleted while a member of groups | Handled — `AdminService::delete_user` removes every membership first. |
-| User deleted while they authored comments | Comments keep the dangling `user_id`. `CommentService::enrich_comment` renders `user_name` as `""`. |
-| Group deleted | Handled — `purge_group_data` cascades memberships, tickets, the `counters` row, and comments, deleting the group document last. |
-| Ticket deleted | Handled — `TicketService::delete_ticket` cascades the ticket's comments first, then the ticket. |
-| Comment deleted while it has replies | Handled by **tombstoning** instead of deleting: the row survives with `is_deleted: true` so its replies' `parent_comment_id` still resolves. A leaf comment is hard-deleted. |
-| Membership added for a nonexistent `user_id` | Possible via a hand-crafted `POST /groups/{id}/users`; `enrich_member` renders empty name/email. |
-| Audit log references deleted entities | Handled by design — names are snapshotted at write time (`group_name`, `deleted_user_name`, ...) precisely because the ids won't resolve later. |
-
-The audit log is the only place the schema deliberately denormalizes to survive deletion.
-Everywhere else, joins are done at read time by a second query (`enrich_member`,
-`enrich_ticket`) and tolerate a missing target by substituting an empty string.
-
----
-
-## Isolation model
-
-Two tiers of data:
-
-**Tenant data — must always be queried with `group_id`:**
-`tickets`, `comments`, `group_members`, `counters` (whose `_id` *is* the group id).
-
-Every query in `TicketRepository` includes `group_id` in its filter document, including
-single-document reads: `find_by_id(group_id, ticket_id)` filters on both `_id` and
-`group_id`. That's what makes a ticket id from another group unresolvable rather than
-merely unauthorized. `CommentRepository` does the same one level deeper —
-`find_by_id(group_id, ticket_id, comment_id)` filters on all three.
-
-**One documented exception:** `CommentRepository::has_replies` filters on
-`parent_comment_id` alone. It's only ever called on a comment already fetched through a
-group-filtered `find_by_id`, so the boundary has been established before it runs.
-
-The comment module also shows the limit of the filter-shape mechanism. Filtering
-`comments.group_id` proves nothing when `group_id` is the *caller's own* — it's the
-`ticket_id` in the path that could belong elsewhere. `CommentService::require_ticket_in_group`
-is the explicit check that covers it, and it exists because a live test found the gap.
-
-**Non-tenant data — legitimately queried without `group_id`:**
-`users` (by `_id`/`email`, or listed system-wide by admin), `refresh_tokens` (by
-`token_hash`/`user_id`), `groups` (by `_id`, or listed system-wide by admin),
-`admin_audit_log` (system metadata).
-
-This distinction matters: `docs/specification/backend.md` states "EVERY database query MUST
-include group_id filter. No exceptions." Taken literally that's false of the working code —
-the real rule is the tenant/non-tenant split above.
-
----
-
-## ID and type conventions
-
-- **`_id`** is always a Mongo `ObjectId`. In Rust it's `Option<ObjectId>` with `#[serde(rename = "_id", skip_serializing_if = "Option::is_none")]`, so `None` on insert lets Mongo generate it. The repository then returns the struct with the id filled in from `inserted_id`, avoiding a read-after-write.
-- **`counters` is the exception** — its `_id` is the group's `ObjectId`, non-optional, giving a natural 1-to-1 with `groups` and free uniqueness.
-- **Timestamps are stored as `mongodb::bson::DateTime`** (BSON date, millisecond precision) and converted to `chrono::DateTime<Utc>` in every `*Response` type, which serializes to RFC3339 for the API. Conversions use `.unwrap_or_default()`, so an out-of-range value yields the epoch rather than a panic.
-- **Enums are stored as strings**, using each type's serde representation. `Role`, `TicketStatus`, `TicketPriority`, and `AuditAction` all use `rename_all = "snake_case"`. **`GlobalRole` does not** — it stores `"SystemAdmin"`. Queries that filter on an enum use `bson::to_bson(&value)` rather than a literal, so the rename stays the single source of truth (the one exception is `count_open_by_group`, which matches the literal `"open"`).
-- **IDs cross the API as hex strings**, parsed back to `ObjectId` at the handler boundary via `parse_id`, which maps a bad id to `400 validation_error`.
-
----
-
-## Atomicity and consistency
-
-**No Mongo transactions are used anywhere.** Two multi-write flows accept that explicitly:
-
-1. `GroupService::create_group` — insert group, then insert the creator's membership. A failure between them leaves a group with no members.
-2. `AdminService::delete_user` — many writes across groups, ordered so the user document is deleted **last**, making a retry after partial failure safe and convergent.
-3. The two cascades — `purge_group_data` and `TicketService::delete_ticket` — use the same ordering trick: children first, the parent document last, so a mid-failure leaves the parent still resolvable and the cascade re-runnable.
-
-Where atomicity actually matters, it's pushed into single-document operations:
-
-- **`counters`** — `find_one_and_update` + `$inc` + `upsert` allocates a ticket number atomically. No check-then-insert race.
-- **Unique indexes** do the work that check-then-insert would otherwise do racily: `users.email` (duplicate registration), `group_members (group_id, user_id)` (duplicate membership), `tickets (group_id, ticket_number)` (sequence collision). In each case the repository inserts optimistically and maps error code `11000` to a domain error → `409`.
-- **`refresh_tokens.expires_at`** carries a TTL index (`expireAfterSeconds: 0`), so Mongo's background reaper deletes spent and expired sessions with no cleanup job.
-
-Single-use refresh tokens are enforced by *query shape* rather than a lock:
-`find_active_by_hash` filters `{token_hash, revoked_at: null, expires_at: {$gt: now}}`, so a
-replayed token simply isn't found.
+Both filter on the condition they fix, so they are no-ops after the first run.
