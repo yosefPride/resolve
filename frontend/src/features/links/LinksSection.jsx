@@ -11,10 +11,8 @@ import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
+import Select from '../../components/ui/Select';
 import { PRIORITY_VARIANT, STATUS_VARIANT, capitalize } from '../tickets/badgeVariants';
-
-const SELECT_CLASS =
-  'rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50';
 
 // blocks/is_blocked_by draw the eye (red) since blocked work is the case that
 // most needs attention; duplicates/is_duplicated_by are muted (informational,
@@ -169,15 +167,11 @@ function AddLinkForm({ groupId, ticketId, onDone, onCancel }) {
 
       <label className="flex flex-col gap-1 text-sm text-slate-300">
         Relation
-        <select
-          value={relationType}
-          onChange={(event) => setRelationType(event.target.value)}
-          className={SELECT_CLASS}
-        >
+        <Select value={relationType} onChange={(event) => setRelationType(event.target.value)}>
           <option value="blocks">Blocks</option>
           <option value="relates_to">Relates to</option>
           <option value="duplicates">Duplicates</option>
-        </select>
+        </Select>
       </label>
 
       {error && <p className="text-sm text-red-500">{error}</p>}

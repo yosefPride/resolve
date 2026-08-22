@@ -4,6 +4,7 @@ import Modal from '../../components/ui/Modal';
 import { deletionCheck, deleteUser } from '../../services/admin.service';
 import { errorMessage } from '../../utils/errors';
 import Button from '../../components/ui/Button';
+import Select from '../../components/ui/Select';
 
 // Drives the admin user-deletion flow for a single target user:
 //   GET /admin/users/:id/deletion-check  → classify the target's groups
@@ -116,12 +117,11 @@ export default function DeleteUserModal({ user, onClose, onDeleted }) {
                 <label className="text-xs text-slate-400">
                   Promote a member to Team Admin:
                 </label>
-                <select
+                <Select
                   value={chosenSuccessor(group)}
                   onChange={(event) =>
                     setSuccessors((prev) => ({ ...prev, [group.group_id]: event.target.value }))
                   }
-                  className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50"
                 >
                   <option value="" disabled>
                     Select a successor…
@@ -131,7 +131,7 @@ export default function DeleteUserModal({ user, onClose, onDeleted }) {
                       {member.name} ({member.email})
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
             ))}
 

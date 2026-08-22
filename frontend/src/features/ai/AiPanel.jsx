@@ -3,10 +3,9 @@ import { ChevronDown, Maximize2, Minimize2, Send, SquarePen, Trash2 } from 'luci
 import { useState } from 'react';
 import brandMark from '../../assets/brand-mark.svg';
 import Avatar from '../../components/ui/Avatar';
-import Button from '../../components/ui/Button';
+import ConfirmModal from '../../components/ui/ConfirmModal';
 import DropdownMenu, { DropdownMenuItem } from '../../components/ui/DropdownMenu';
 import Input from '../../components/ui/Input';
-import Modal from '../../components/ui/Modal';
 import { useAuth } from '../../hooks/useAuth';
 import {
   useConversationMessages,
@@ -431,35 +430,21 @@ function ChatPanel({
         </div>
       </form>
 
-      <Modal
+      <ConfirmModal
         isOpen={confirmingDeleteId !== null}
         onClose={() => {
           setConfirmingDeleteId(null);
           setDeleteError('');
         }}
         title="Delete conversation"
+        confirmLabel="Delete conversation"
+        pendingLabel="Deleting…"
+        isPending={deleteConversation.isPending}
+        error={deleteError}
+        onConfirm={handleDeleteConversation}
       >
-        <p className="text-sm text-slate-300">
-          This permanently deletes this conversation and its messages. This cannot be undone.
-        </p>
-
-        {deleteError && <p className="mt-3 text-sm text-red-500">{deleteError}</p>}
-
-        <div className="mt-6 flex justify-end gap-3">
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setConfirmingDeleteId(null);
-              setDeleteError('');
-            }}
-          >
-            Cancel
-          </Button>
-          <Button variant="danger" disabled={deleteConversation.isPending} onClick={handleDeleteConversation}>
-            {deleteConversation.isPending ? 'Deleting…' : 'Delete conversation'}
-          </Button>
-        </div>
-      </Modal>
+        This permanently deletes this conversation and its messages. This cannot be undone.
+      </ConfirmModal>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import Modal from '../../components/ui/Modal';
+import ConfirmModal from '../../components/ui/ConfirmModal';
 import { formatDate } from '../../utils/format';
 import { listGroups, deleteGroup } from '../../services/admin.service';
 import { errorMessage } from '../../utils/errors';
@@ -32,7 +32,6 @@ export default function GroupsPanel() {
   });
 
   function closeModal() {
-    if (deleteMutation.isPending) return; // don't abandon an in-flight delete
     setTarget(null);
     setDeleteError('');
   }
@@ -87,34 +86,19 @@ export default function GroupsPanel() {
           </div>
         ))}
 
-      <Modal isOpen={!!target} onClose={closeModal} title="Delete team">
-        <div className="flex flex-col gap-4">
-          <p className="text-sm text-slate-300">
-            Delete <span className="font-semibold text-white">{target?.name}</span> and all of its
-            data? This cannot be undone.
-          </p>
-
-          {deleteError && <p className="text-sm text-red-500">{deleteError}</p>}
-
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="ghost"
-              onClick={closeModal}
-              disabled={deleteMutation.isPending}
-              className="border border-white/10"
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="danger"
-              onClick={handleConfirmDelete}
-              disabled={deleteMutation.isPending}
-            >
-              {deleteMutation.isPending ? 'Deleting…' : 'Delete team'}
-            </Button>
-          </div>
-        </div>
-      </Modal>
+      <ConfirmModal
+        isOpen={!!target}
+        onClose={closeModal}
+        title="Delete team"
+        confirmLabel="Delete team"
+        pendingLabel="Deleting…"
+        isPending={deleteMutation.isPending}
+        error={deleteError}
+        onConfirm={handleConfirmDelete}
+      >
+        Delete <span className="font-semibold text-white">{target?.name}</span> and all of its
+        data? This cannot be undone.
+      </ConfirmModal>
     </>
   );
 }

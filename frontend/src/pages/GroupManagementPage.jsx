@@ -10,6 +10,7 @@ import { errorMessage } from '../utils/errors';
 import MemberManager from '../features/groups/MemberManager';
 import GroupStats from '../features/groups/GroupStats';
 import RenameGroupForm from '../features/groups/RenameGroupForm';
+import ConfirmModal from '../components/ui/ConfirmModal';
 import Modal from '../components/ui/Modal';
 import Button from '../components/ui/Button';
 
@@ -140,67 +141,39 @@ export default function GroupManagementPage() {
         <RenameGroupForm groupId={id} currentName={group.name} onRenamed={handleRenamed} />
       </Modal>
 
-      <Modal
+      <ConfirmModal
         isOpen={isConfirmingLeave}
         onClose={() => {
           setIsConfirmingLeave(false);
           setLeaveError('');
         }}
         title="Leave team"
+        confirmLabel="Leave team"
+        pendingLabel="Leaving…"
+        isPending={isLeaving}
+        error={leaveError}
+        onConfirm={handleLeave}
       >
-        <p className="text-sm text-slate-300">
-          Are you sure you want to leave <span className="font-semibold text-white">{group.name}</span>? You'll
-          lose access to its issues, and a Team Admin would need to add you back to rejoin.
-        </p>
+        Are you sure you want to leave <span className="font-semibold text-white">{group.name}</span>? You'll
+        lose access to its issues, and a Team Admin would need to add you back to rejoin.
+      </ConfirmModal>
 
-        {leaveError && <p className="mt-3 text-sm text-red-500">{leaveError}</p>}
-
-        <div className="mt-6 flex justify-end gap-3">
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setIsConfirmingLeave(false);
-              setLeaveError('');
-            }}
-          >
-            Cancel
-          </Button>
-          <Button variant="danger" disabled={isLeaving} onClick={handleLeave}>
-            {isLeaving ? 'Leaving…' : 'Leave team'}
-          </Button>
-        </div>
-      </Modal>
-
-      <Modal
+      <ConfirmModal
         isOpen={isConfirmingDelete}
         onClose={() => {
           setIsConfirmingDelete(false);
           setDeleteError('');
         }}
         title="Delete team"
+        confirmLabel="Delete team"
+        pendingLabel="Deleting…"
+        isPending={isDeleting}
+        error={deleteError}
+        onConfirm={handleDelete}
       >
-        <p className="text-sm text-slate-300">
-          Are you sure you want to delete <span className="font-semibold text-white">{group.name}</span>? This
-          cannot be undone.
-        </p>
-
-        {deleteError && <p className="mt-3 text-sm text-red-500">{deleteError}</p>}
-
-        <div className="mt-6 flex justify-end gap-3">
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setIsConfirmingDelete(false);
-              setDeleteError('');
-            }}
-          >
-            Cancel
-          </Button>
-          <Button variant="danger" disabled={isDeleting} onClick={handleDelete}>
-            {isDeleting ? 'Deleting…' : 'Delete team'}
-          </Button>
-        </div>
-      </Modal>
+        Are you sure you want to delete <span className="font-semibold text-white">{group.name}</span>? This
+        cannot be undone.
+      </ConfirmModal>
 
     </section>
   );

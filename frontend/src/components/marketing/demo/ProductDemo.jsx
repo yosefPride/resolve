@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import Input from '../../ui/Input';
 import Badge from '../../ui/Badge';
 import Pagination from '../../ui/Pagination';
+import Select from '../../ui/Select';
 import DemoSidebar from './DemoSidebar';
 import { PRIORITY_VARIANT, STATUS_VARIANT, capitalize } from '../../../features/tickets/badgeVariants';
 import {
@@ -24,9 +25,6 @@ import {
 // as broken on a public page.
 
 const PER_PAGE = 10;
-
-const SELECT_CLASS =
-  'rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400/50 focus:ring-1 focus:ring-sky-400/50';
 
 // Search deliberately only looks at what the row actually shows — title,
 // reporter and issue number. Matching on `description` too would be easy, but a
@@ -95,11 +93,10 @@ export default function ProductDemo() {
             onChange={(event) => setQuery(event.target.value)}
             className="flex-1 text-sm sm:max-w-xs"
           />
-          <select
+          <Select
             value={status}
             onChange={(event) => setStatus(event.target.value)}
             aria-label="Filter by status"
-            className={SELECT_CLASS}
           >
             <option value="">All statuses</option>
             {DEMO_STATUSES.map((option) => (
@@ -107,12 +104,11 @@ export default function ProductDemo() {
                 {capitalize(option)}
               </option>
             ))}
-          </select>
-          <select
+          </Select>
+          <Select
             value={priority}
             onChange={(event) => setPriority(event.target.value)}
             aria-label="Filter by priority"
-            className={SELECT_CLASS}
           >
             <option value="">All priorities</option>
             {DEMO_PRIORITIES.map((option) => (
@@ -120,12 +116,11 @@ export default function ProductDemo() {
                 {capitalize(option)}
               </option>
             ))}
-          </select>
-          <select
+          </Select>
+          <Select
             value={creator}
             onChange={(event) => setCreator(event.target.value)}
             aria-label="Filter by creator"
-            className={SELECT_CLASS}
           >
             <option value="">Everyone</option>
             {demoCreators().map((name) => (
@@ -133,7 +128,7 @@ export default function ProductDemo() {
                 {name}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
 
         <div className="flex flex-col gap-4 px-5 py-4">

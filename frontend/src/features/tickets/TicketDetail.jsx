@@ -14,6 +14,7 @@ import { useComments } from '../../hooks/useComments';
 import { errorMessage } from '../../utils/errors';
 import { formatDateTime, formatRelativeTime } from '../../utils/format';
 import Button from '../../components/ui/Button';
+import ConfirmModal from '../../components/ui/ConfirmModal';
 import DropdownMenu, { DropdownMenuItem } from '../../components/ui/DropdownMenu';
 import Modal from '../../components/ui/Modal';
 import ActivityList from '../activity/ActivityList';
@@ -247,39 +248,25 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
         />
       </Modal>
 
-      <Modal
+      <ConfirmModal
         isOpen={isConfirmingDelete}
         onClose={() => {
           setIsConfirmingDelete(false);
           setDeleteError('');
         }}
         title="Delete issue"
+        confirmLabel="Delete issue"
+        pendingLabel="Deleting…"
+        isPending={deleteMutation.isPending}
+        error={deleteError}
+        onConfirm={handleDelete}
       >
-        <p className="text-sm text-slate-300">
-          Are you sure you want to delete{' '}
-          <span className="font-semibold text-white">
-            #{ticket.ticket_number} {ticket.title}
-          </span>
-          ? This cannot be undone.
-        </p>
-
-        {deleteError && <p className="mt-3 text-sm text-red-500">{deleteError}</p>}
-
-        <div className="mt-6 flex justify-end gap-3">
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setIsConfirmingDelete(false);
-              setDeleteError('');
-            }}
-          >
-            Cancel
-          </Button>
-          <Button variant="danger" disabled={deleteMutation.isPending} onClick={handleDelete}>
-            {deleteMutation.isPending ? 'Deleting…' : 'Delete issue'}
-          </Button>
-        </div>
-      </Modal>
+        Are you sure you want to delete{' '}
+        <span className="font-semibold text-white">
+          #{ticket.ticket_number} {ticket.title}
+        </span>
+        ? This cannot be undone.
+      </ConfirmModal>
     </div>
   );
 }
