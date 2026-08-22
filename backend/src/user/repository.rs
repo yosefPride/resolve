@@ -7,7 +7,7 @@ use mongodb::{
 };
 
 use crate::user::models::{CreateUserInput, GlobalRole, User};
-use crate::utils::substring_regex;
+use crate::utils::{insert_id, is_duplicate_key, substring_regex};
 
 #[derive(Debug)]
 pub enum UserRepoError {
@@ -36,17 +36,6 @@ impl From<mongodb::error::Error> for UserRepoError {
     }
 }
 
-// Duplicate-key surfaces as a WriteError on insert_one but as a CommandError
-// on find_one_and_update (findAndModify is a command, not a plain write).
-fn is_duplicate_key(err: &mongodb::error::Error) -> bool {
-    use mongodb::error::{ErrorKind, WriteFailure};
-    match err.kind.as_ref() {
-        ErrorKind::Write(WriteFailure::WriteError(e)) => e.code == 11000,
-        ErrorKind::Command(e) => e.code == 11000,
-        _ => false,
-    }
-}
-
 pub struct UserRepository {
     collection: Collection<User>,
 }
@@ -67,11 +56,7 @@ impl UserRepository {
             global_role: None,
             created_at: BsonDateTime::now(),
         };
-        let result = self.collection.insert_one(&user).await?;
-        let id = result
-            .inserted_id
-            .as_object_id()
-            .expect("insert_one always returns an ObjectId");
+        let id = insert_id(&self.collection, &user).await?;
         Ok(User {
             id: Some(id),
             ..user

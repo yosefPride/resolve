@@ -2,7 +2,7 @@ use chrono::DateTime;
 use mongodb::{Database, bson::oid::ObjectId};
 
 use crate::activity::models::{ActivityEventType, CreateActivityInput, LinkKind};
-use crate::activity::repository::ActivityRepository;
+use crate::activity::service::ActivityRepository;
 use crate::errors::ApiError;
 use crate::rbac::service::RbacService;
 use crate::reference::models::{

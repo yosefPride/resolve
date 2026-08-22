@@ -1,5 +1,3 @@
-use std::fmt;
-
 use futures::TryStreamExt;
 use mongodb::{
     Collection, Database,
@@ -8,27 +6,7 @@ use mongodb::{
 };
 
 use crate::ticket::models::{CreateTicketInput, Ticket, TicketCounter, TicketPriority, TicketStatus};
-
-#[derive(Debug)]
-pub enum TicketRepoError {
-    Database(mongodb::error::Error),
-}
-
-impl fmt::Display for TicketRepoError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            TicketRepoError::Database(e) => write!(f, "database error: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for TicketRepoError {}
-
-impl From<mongodb::error::Error> for TicketRepoError {
-    fn from(err: mongodb::error::Error) -> Self {
-        TicketRepoError::Database(err)
-    }
-}
+use crate::utils::{RepoResult, insert_id};
 
 pub struct TicketRepository {
     tickets: Collection<Ticket>,
@@ -47,7 +25,7 @@ impl TicketRepository {
     // means two tickets created in the same group at the same instant still
     // get distinct numbers, with no separate check-then-insert race
     // (docs/database.md, "counters").
-    pub async fn next_ticket_number(&self, group_id: ObjectId) -> Result<i64, TicketRepoError> {
+    pub async fn next_ticket_number(&self, group_id: ObjectId) -> RepoResult<i64> {
         let counter = self
             .counters
             .find_one_and_update(
@@ -61,7 +39,7 @@ impl TicketRepository {
         Ok(counter.ticket_seq)
     }
 
-    pub async fn insert_ticket(&self, input: CreateTicketInput) -> Result<Ticket, TicketRepoError> {
+    pub async fn insert_ticket(&self, input: CreateTicketInput) -> RepoResult<Ticket> {
         let now = BsonDateTime::now();
         let ticket = Ticket {
             id: None,
@@ -76,11 +54,7 @@ impl TicketRepository {
             updated_at: now,
             content_updated_at: now,
         };
-        let result = self.tickets.insert_one(&ticket).await?;
-        let id = result
-            .inserted_id
-            .as_object_id()
-            .expect("insert_one always returns an ObjectId");
+        let id = insert_id(&self.tickets, &ticket).await?;
         Ok(Ticket {
             id: Some(id),
             ..ticket
@@ -95,11 +69,10 @@ impl TicketRepository {
         &self,
         group_id: ObjectId,
         ticket_id: ObjectId,
-    ) -> Result<Option<Ticket>, TicketRepoError> {
-        Ok(self
-            .tickets
+    ) -> RepoResult<Option<Ticket>> {
+        self.tickets
             .find_one(doc! { "_id": ticket_id, "group_id": group_id })
-            .await?)
+            .await
     }
 
     // status/priority/creator are exact-match, indexable fields, so they're
@@ -112,7 +85,7 @@ impl TicketRepository {
         status: Option<TicketStatus>,
         priority: Option<TicketPriority>,
         creator: Option<ObjectId>,
-    ) -> Result<Vec<Ticket>, TicketRepoError> {
+    ) -> RepoResult<Vec<Ticket>> {
         let mut filter = doc! { "group_id": group_id };
         if let Some(status) = status {
             filter.insert(
@@ -129,8 +102,7 @@ impl TicketRepository {
         if let Some(creator) = creator {
             filter.insert("created_by", creator);
         }
-        let cursor = self.tickets.find(filter).await?;
-        cursor.try_collect().await.map_err(Into::into)
+        self.tickets.find(filter).await?.try_collect().await
     }
 
     // Filtered on group_id as well as _id, same isolation guarantee as
@@ -140,33 +112,33 @@ impl TicketRepository {
         group_id: ObjectId,
         ticket_id: ObjectId,
         changes: Document,
-    ) -> Result<Option<Ticket>, TicketRepoError> {
-        Ok(self
-            .tickets
+    ) -> RepoResult<Option<Ticket>> {
+        self.tickets
             .find_one_and_update(
                 doc! { "_id": ticket_id, "group_id": group_id },
                 doc! { "$set": changes },
             )
             .return_document(ReturnDocument::After)
-            .await?)
+            .await
     }
 
     pub async fn delete_ticket(
         &self,
         group_id: ObjectId,
         ticket_id: ObjectId,
-    ) -> Result<bool, TicketRepoError> {
-        let result = self
+    ) -> RepoResult<bool> {
+        Ok(self
             .tickets
             .delete_one(doc! { "_id": ticket_id, "group_id": group_id })
-            .await?;
-        Ok(result.deleted_count > 0)
+            .await?
+            .deleted_count
+            > 0)
     }
 
     // Cascade target for group deletion: every ticket of the group plus the
     // counter that backs its ticket_number sequence. The counter's _id *is* the
     // group_id (see next_ticket_number), so it is a single delete_one.
-    pub async fn delete_by_group(&self, group_id: ObjectId) -> Result<u64, TicketRepoError> {
+    pub async fn delete_by_group(&self, group_id: ObjectId) -> RepoResult<u64> {
         let result = self.tickets.delete_many(doc! { "group_id": group_id }).await?;
         self.counters.delete_one(doc! { "_id": group_id }).await?;
         Ok(result.deleted_count)
@@ -174,10 +146,9 @@ impl TicketRepository {
 
     // status is stored as its snake_case serialization ("open"/"closed"), so we
     // match the string directly rather than round-tripping through the enum.
-    pub async fn count_open_by_group(&self, group_id: ObjectId) -> Result<u64, TicketRepoError> {
-        Ok(self
-            .tickets
+    pub async fn count_open_by_group(&self, group_id: ObjectId) -> RepoResult<u64> {
+        self.tickets
             .count_documents(doc! { "group_id": group_id, "status": "open" })
-            .await?)
+            .await
     }
 }

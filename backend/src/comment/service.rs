@@ -2,12 +2,12 @@ use chrono::DateTime;
 use mongodb::{Database, bson::oid::ObjectId};
 
 use crate::activity::models::{ActivityEventType, CreateActivityInput};
-use crate::activity::repository::ActivityRepository;
+use crate::activity::service::ActivityRepository;
 use crate::comment::models::{Comment, CommentResponse, CreateCommentInput};
 use crate::comment::repository::CommentRepository;
 use crate::errors::ApiError;
 use crate::rbac::service::RbacService;
-use crate::reaction::repository::ReactionRepository;
+use crate::reaction::service::ReactionRepository;
 use crate::reaction::service::summarize_reactions;
 use crate::ticket::models::{Ticket, TicketStatus};
 use crate::ticket::repository::TicketRepository;

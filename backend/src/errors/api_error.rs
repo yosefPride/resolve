@@ -1,15 +1,8 @@
 use actix_web::{HttpResponse, ResponseError, http::StatusCode};
 use serde::Serialize;
 
-use crate::activity::repository::ActivityRepoError;
-use crate::admin::repository::AdminRepoError;
-use crate::ai::repository::AiRepoError;
-use crate::comment::repository::CommentRepoError;
 use crate::group::repository::GroupRepoError;
 use crate::link::repository::LinkRepoError;
-use crate::reaction::repository::ReactionRepoError;
-use crate::reference::repository::ReferenceRepoError;
-use crate::ticket::repository::TicketRepoError;
 use crate::user::repository::UserRepoError;
 
 #[derive(Debug)]
@@ -125,6 +118,9 @@ impl From<jsonwebtoken::errors::Error> for ApiError {
     }
 }
 
+// Also covers every repository without a domain-specific error enum — those
+// return mongodb::error::Error directly (utils::RepoResult), and it collapses
+// to Internal here.
 impl From<mongodb::error::Error> for ApiError {
     fn from(_: mongodb::error::Error) -> Self {
         ApiError::Internal
@@ -142,36 +138,6 @@ impl From<GroupRepoError> for ApiError {
     }
 }
 
-impl From<AdminRepoError> for ApiError {
-    fn from(_: AdminRepoError) -> Self {
-        ApiError::Internal
-    }
-}
-
-impl From<TicketRepoError> for ApiError {
-    fn from(_: TicketRepoError) -> Self {
-        ApiError::Internal
-    }
-}
-
-impl From<CommentRepoError> for ApiError {
-    fn from(_: CommentRepoError) -> Self {
-        ApiError::Internal
-    }
-}
-
-impl From<AiRepoError> for ApiError {
-    fn from(_: AiRepoError) -> Self {
-        ApiError::Internal
-    }
-}
-
-impl From<ActivityRepoError> for ApiError {
-    fn from(_: ActivityRepoError) -> Self {
-        ApiError::Internal
-    }
-}
-
 impl From<LinkRepoError> for ApiError {
     fn from(err: LinkRepoError) -> Self {
         match err {
@@ -181,15 +147,4 @@ impl From<LinkRepoError> for ApiError {
     }
 }
 
-impl From<ReferenceRepoError> for ApiError {
-    fn from(_: ReferenceRepoError) -> Self {
-        ApiError::Internal
-    }
-}
-
-impl From<ReactionRepoError> for ApiError {
-    fn from(_: ReactionRepoError) -> Self {
-        ApiError::Internal
-    }
-}
 

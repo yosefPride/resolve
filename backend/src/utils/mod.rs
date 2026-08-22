@@ -1,4 +1,38 @@
 use mongodb::bson::Regex;
+use mongodb::bson::oid::ObjectId;
+
+/// Result type shared by every repository whose only failure mode is "the
+/// database broke". ApiError already maps `mongodb::error::Error` to Internal
+/// (errors/api_error.rs), so those repositories need no error enum of their
+/// own; repositories with domain-specific failures (duplicate email/member/
+/// link) keep a small enum and map through [`is_duplicate_key`].
+pub type RepoResult<T> = Result<T, mongodb::error::Error>;
+
+/// Inserts `value` and returns the ObjectId Mongo assigned it, so callers can
+/// hand back the stored document as `T { id: Some(id), ..value }`.
+pub async fn insert_id<T: serde::Serialize + Send + Sync>(
+    collection: &mongodb::Collection<T>,
+    value: &T,
+) -> RepoResult<ObjectId> {
+    let result = collection.insert_one(value).await?;
+    Ok(result
+        .inserted_id
+        .as_object_id()
+        .expect("insert_one always returns an ObjectId"))
+}
+
+/// True when `err` is MongoDB's duplicate-key rejection (code 11000) from a
+/// unique index. It surfaces as a WriteError on plain inserts but as a
+/// CommandError on find_one_and_update (findAndModify is a command, not a
+/// plain write), so both shapes are checked.
+pub fn is_duplicate_key(err: &mongodb::error::Error) -> bool {
+    use mongodb::error::{ErrorKind, WriteFailure};
+    match err.kind.as_ref() {
+        ErrorKind::Write(WriteFailure::WriteError(e)) => e.code == 11000,
+        ErrorKind::Command(e) => e.code == 11000,
+        _ => false,
+    }
+}
 
 /// Escapes regex metacharacters so user-supplied text matches literally when
 /// embedded in a MongoDB `$regex` query. Without this, input like `a(b` would

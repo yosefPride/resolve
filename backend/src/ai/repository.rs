@@ -1,5 +1,3 @@
-use std::fmt;
-
 use futures::TryStreamExt;
 use mongodb::{
     Collection, Database,
@@ -8,27 +6,7 @@ use mongodb::{
 };
 
 use crate::ai::models::{AiConversation, AiTicketInsight, ChatMessage, ChatRole};
-
-#[derive(Debug)]
-pub enum AiRepoError {
-    Database(mongodb::error::Error),
-}
-
-impl fmt::Display for AiRepoError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            AiRepoError::Database(e) => write!(f, "database error: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for AiRepoError {}
-
-impl From<mongodb::error::Error> for AiRepoError {
-    fn from(err: mongodb::error::Error) -> Self {
-        AiRepoError::Database(err)
-    }
-}
+use crate::utils::{RepoResult, insert_id};
 
 pub struct AiRepository {
     insights: Collection<AiTicketInsight>,
@@ -52,7 +30,7 @@ impl AiRepository {
         &self,
         group_id: ObjectId,
         ticket_id: ObjectId,
-    ) -> Result<Option<AiTicketInsight>, AiRepoError> {
+    ) -> RepoResult<Option<AiTicketInsight>> {
         Ok(self
             .insights
             .find_one(doc! { "group_id": group_id, "ticket_id": ticket_id })
@@ -68,7 +46,7 @@ impl AiRepository {
         ticket_id: ObjectId,
         summary: &str,
         source_updated_at: BsonDateTime,
-    ) -> Result<AiTicketInsight, AiRepoError> {
+    ) -> RepoResult<AiTicketInsight> {
         let now = BsonDateTime::now();
         let insight = self
             .insights
@@ -104,7 +82,7 @@ impl AiRepository {
         suggested_fix: &str,
         classification: &str,
         source_updated_at: BsonDateTime,
-    ) -> Result<AiTicketInsight, AiRepoError> {
+    ) -> RepoResult<AiTicketInsight> {
         let now = BsonDateTime::now();
         let insight = self
             .insights
@@ -143,7 +121,7 @@ impl AiRepository {
         &self,
         group_id: ObjectId,
         ticket_id: ObjectId,
-    ) -> Result<u64, AiRepoError> {
+    ) -> RepoResult<u64> {
         let insights_deleted = self
             .insights
             .delete_many(doc! { "group_id": group_id, "ticket_id": ticket_id })
@@ -168,7 +146,7 @@ impl AiRepository {
     // collections — insights, chat messages, and conversations are different
     // documents but the same cascade concern, so callers get one number
     // rather than needing to track three.
-    pub async fn delete_by_group(&self, group_id: ObjectId) -> Result<u64, AiRepoError> {
+    pub async fn delete_by_group(&self, group_id: ObjectId) -> RepoResult<u64> {
         let insights_deleted = self
             .insights
             .delete_many(doc! { "group_id": group_id })
@@ -195,7 +173,7 @@ impl AiRepository {
         group_id: ObjectId,
         ticket_id: ObjectId,
         user_id: ObjectId,
-    ) -> Result<AiConversation, AiRepoError> {
+    ) -> RepoResult<AiConversation> {
         let now = BsonDateTime::now();
         let conversation = AiConversation {
             id: None,
@@ -206,11 +184,7 @@ impl AiRepository {
             created_at: now,
             updated_at: now,
         };
-        let result = self.conversations.insert_one(&conversation).await?;
-        let id = result
-            .inserted_id
-            .as_object_id()
-            .expect("insert_one always returns an ObjectId");
+        let id = insert_id(&self.conversations, &conversation).await?;
         Ok(AiConversation {
             id: Some(id),
             ..conversation
@@ -226,7 +200,7 @@ impl AiRepository {
         group_id: ObjectId,
         ticket_id: ObjectId,
         user_id: ObjectId,
-    ) -> Result<Vec<AiConversation>, AiRepoError> {
+    ) -> RepoResult<Vec<AiConversation>> {
         let cursor = self
             .conversations
             .find(doc! { "group_id": group_id, "ticket_id": ticket_id, "user_id": user_id })
@@ -242,7 +216,7 @@ impl AiRepository {
     pub async fn find_conversation(
         &self,
         conversation_id: ObjectId,
-    ) -> Result<Option<AiConversation>, AiRepoError> {
+    ) -> RepoResult<Option<AiConversation>> {
         Ok(self
             .conversations
             .find_one(doc! { "_id": conversation_id })
@@ -257,7 +231,7 @@ impl AiRepository {
         &self,
         conversation_id: ObjectId,
         title_if_unset: &str,
-    ) -> Result<(), AiRepoError> {
+    ) -> RepoResult<()> {
         self.conversations
             .update_one(
                 doc! { "_id": conversation_id, "title": null },
@@ -280,7 +254,7 @@ impl AiRepository {
     pub async fn list_conversation_messages(
         &self,
         conversation_id: ObjectId,
-    ) -> Result<Vec<ChatMessage>, AiRepoError> {
+    ) -> RepoResult<Vec<ChatMessage>> {
         let cursor = self
             .chat_messages
             .find(doc! { "conversation_id": conversation_id })
@@ -297,7 +271,7 @@ impl AiRepository {
         role: ChatRole,
         user_id: Option<ObjectId>,
         content: &str,
-    ) -> Result<ChatMessage, AiRepoError> {
+    ) -> RepoResult<ChatMessage> {
         let message = ChatMessage {
             id: None,
             conversation_id,
@@ -308,11 +282,7 @@ impl AiRepository {
             content: content.to_string(),
             created_at: BsonDateTime::now(),
         };
-        let result = self.chat_messages.insert_one(&message).await?;
-        let id = result
-            .inserted_id
-            .as_object_id()
-            .expect("insert_one always returns an ObjectId");
+        let id = insert_id(&self.chat_messages, &message).await?;
         Ok(ChatMessage {
             id: Some(id),
             ..message
@@ -326,7 +296,7 @@ impl AiRepository {
     pub async fn delete_conversation(
         &self,
         conversation_id: ObjectId,
-    ) -> Result<u64, AiRepoError> {
+    ) -> RepoResult<u64> {
         let conversation_deleted = self
             .conversations
             .delete_one(doc! { "_id": conversation_id })
@@ -350,7 +320,7 @@ impl AiRepository {
         &self,
         user_id: ObjectId,
         since: BsonDateTime,
-    ) -> Result<u64, AiRepoError> {
+    ) -> RepoResult<u64> {
         let role = bson::to_bson(&ChatRole::User).expect("ChatRole always serializes");
         Ok(self
             .chat_messages
