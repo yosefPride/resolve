@@ -13,6 +13,11 @@ with JSX — no TypeScript.
 The frontend is UI only. It never enforces permissions; it hides controls the
 user cannot use, and the backend rejects anything that slips through.
 
+**Naming.** The UI says "Team" wherever the backend, API, and database say
+"group". This is a deliberate, UI-only rename: props, hooks, query keys, and
+routes all still use `group`/`groupId`, and only user-visible strings changed.
+Seeing both words in this document is expected, not a bug.
+
 ---
 
 ## Composition root
