@@ -101,13 +101,22 @@ System Admin cannot access:
 
 ## Required Docs (source of truth)
 
-- docs/architecture.md
-- docs/backend.md
-- docs/frontend.md
-- docs/api.md
-- docs/database.md
-- docs/rbac.md
-- docs/ai-integration.md
+Design intent — what the system is supposed to be:
+
+- docs/specification/architecture.md
+- docs/specification/backend.md
+- docs/specification/frontend.md
+- docs/specification/api.md
+- docs/specification/database.md
+- docs/specification/rbac.md
+- docs/specification/ai-integration.md
+
+As built — what the code actually does, and where it diverges from the above:
+
+- docs/implementation/backend-flow.md
+- docs/implementation/frontend-flow.md
+- docs/implementation/data-model.md
+- docs/implementation/deviations.md
 
 ---
 
