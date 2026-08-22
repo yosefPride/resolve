@@ -1,5 +1,3 @@
-use std::fmt;
-
 use futures::TryStreamExt;
 use mongodb::{
     Collection, Database,
@@ -7,27 +5,7 @@ use mongodb::{
 };
 
 use crate::reaction::models::{CommentReaction, SetReactionInput};
-
-#[derive(Debug)]
-pub enum ReactionRepoError {
-    Database(mongodb::error::Error),
-}
-
-impl fmt::Display for ReactionRepoError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ReactionRepoError::Database(e) => write!(f, "database error: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for ReactionRepoError {}
-
-impl From<mongodb::error::Error> for ReactionRepoError {
-    fn from(err: mongodb::error::Error) -> Self {
-        ReactionRepoError::Database(err)
-    }
-}
+use crate::utils::RepoResult;
 
 pub struct ReactionRepository {
     reactions: Collection<CommentReaction>,
@@ -45,7 +23,7 @@ impl ReactionRepository {
     // rather than adding a second row. The unique index in db.rs is the
     // actual one-reaction-per-user guard; this filter is what makes the
     // write an update-in-place instead of a duplicate-key error.
-    pub async fn set_reaction(&self, input: SetReactionInput) -> Result<(), ReactionRepoError> {
+    pub async fn set_reaction(&self, input: SetReactionInput) -> RepoResult<()> {
         let reaction = CommentReaction {
             id: None,
             group_id: input.group_id,
@@ -69,23 +47,24 @@ impl ReactionRepository {
         &self,
         comment_id: ObjectId,
         user_id: ObjectId,
-    ) -> Result<bool, ReactionRepoError> {
-        let result = self
+    ) -> RepoResult<bool> {
+        Ok(self
             .reactions
             .delete_one(doc! { "comment_id": comment_id, "user_id": user_id })
-            .await?;
-        Ok(result.deleted_count > 0)
+            .await?
+            .deleted_count
+            > 0)
     }
 
     // Every reaction on one comment, for building its ReactionSummary list.
     // Called once per comment from CommentService::enrich_comment — the same
     // one-query-per-row tradeoff that module already accepts for user_name.
-    pub async fn list_by_comment(
-        &self,
-        comment_id: ObjectId,
-    ) -> Result<Vec<CommentReaction>, ReactionRepoError> {
-        let cursor = self.reactions.find(doc! { "comment_id": comment_id }).await?;
-        cursor.try_collect().await.map_err(Into::into)
+    pub async fn list_by_comment(&self, comment_id: ObjectId) -> RepoResult<Vec<CommentReaction>> {
+        self.reactions
+            .find(doc! { "comment_id": comment_id })
+            .await?
+            .try_collect()
+            .await
     }
 
     // Cascade target for a single comment's deletion (CommentService::
@@ -95,12 +74,12 @@ impl ReactionRepository {
     // group/ticket-filtered: only ever called on a comment_id already
     // resolved through CommentRepository::find_by_id, same as
     // CommentRepository::has_replies.
-    pub async fn delete_by_comment(&self, comment_id: ObjectId) -> Result<u64, ReactionRepoError> {
-        let result = self
+    pub async fn delete_by_comment(&self, comment_id: ObjectId) -> RepoResult<u64> {
+        Ok(self
             .reactions
             .delete_many(doc! { "comment_id": comment_id })
-            .await?;
-        Ok(result.deleted_count)
+            .await?
+            .deleted_count)
     }
 
     // Cascade target for a single ticket's deletion (TicketService::
@@ -110,21 +89,21 @@ impl ReactionRepository {
         &self,
         group_id: ObjectId,
         ticket_id: ObjectId,
-    ) -> Result<u64, ReactionRepoError> {
-        let result = self
+    ) -> RepoResult<u64> {
+        Ok(self
             .reactions
             .delete_many(doc! { "group_id": group_id, "ticket_id": ticket_id })
-            .await?;
-        Ok(result.deleted_count)
+            .await?
+            .deleted_count)
     }
 
     // Cascade target for a whole group's deletion (purge_group_data) —
     // mirrors CommentRepository::delete_by_group.
-    pub async fn delete_by_group(&self, group_id: ObjectId) -> Result<u64, ReactionRepoError> {
-        let result = self
+    pub async fn delete_by_group(&self, group_id: ObjectId) -> RepoResult<u64> {
+        Ok(self
             .reactions
             .delete_many(doc! { "group_id": group_id })
-            .await?;
-        Ok(result.deleted_count)
+            .await?
+            .deleted_count)
     }
 }

@@ -4,7 +4,6 @@ use mongodb::bson::oid::ObjectId;
 
 use crate::auth::jwt;
 use crate::errors::ApiError;
-use crate::group::models::Role;
 use crate::rbac::service::RbacService;
 use crate::state::AppState;
 
@@ -70,19 +69,19 @@ impl FromRequest for AuthenticatedUser {
 
 // --- GroupScoped ---
 
-// The tenant-scoped request context: caller identity plus their live role in
-// the group named by the `{id}` path segment. One membership lookup happens
-// here (via RbacService::require_member) so the role is always current — a user
-// removed or demoted mid-token is rejected on their very next request rather
-// than at token expiry. Handlers scoped to a group take this and never parse a
-// group id themselves; repositories receive `group_id` from it.
+// The tenant-scoped request context: caller identity plus the group named by
+// the `{id}` path segment. One membership lookup happens here (via
+// RbacService::require_member) so membership is always current — a user
+// removed mid-token is rejected on their very next request rather than at
+// token expiry. Handlers scoped to a group take this and never parse a group
+// id themselves; repositories receive `group_id` from it. The caller's role is
+// not carried: the service layer re-derives it where a role check is needed.
 //
 // Service-layer role checks still run underneath (docs/rbac.md mandates both
 // layers) — this extractor is the request-level half, not a replacement.
 pub struct GroupScoped {
     pub user_id: ObjectId,
     pub group_id: ObjectId,
-    pub role: Role,
 }
 
 impl FromRequest for GroupScoped {
@@ -107,15 +106,11 @@ impl FromRequest for GroupScoped {
             let group_id = ObjectId::parse_str(&group_id_raw)
                 .map_err(|_| ApiError::Validation("invalid id".to_string()))?;
 
-            let member = RbacService::new(&state.db)
+            RbacService::new(&state.db)
                 .require_member(group_id, user_id)
                 .await?;
 
-            Ok(GroupScoped {
-                user_id,
-                group_id,
-                role: member.role,
-            })
+            Ok(GroupScoped { user_id, group_id })
         })
     }
 }

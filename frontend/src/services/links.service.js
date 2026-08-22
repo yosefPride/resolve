@@ -4,7 +4,7 @@ import api from '../lib/axios';
 // from `ticketId`'s side — each entry's `label` is already resolved for that
 // viewpoint (blocks vs is_blocked_by, etc.), no client-side direction math.
 export function listLinks(groupId, ticketId) {
-  return api.get(`/groups/${groupId}/tickets/${ticketId}/links`).then((res) => res.data);
+  return api.get(`/groups/${groupId}/tickets/${ticketId}/links`);
 }
 
 // relationType: 'blocks' | 'relates_to' | 'duplicates'. `ticketId` is always
@@ -15,12 +15,10 @@ export function createLink(groupId, ticketId, { targetTicketId, relationType }) 
     .post(`/groups/${groupId}/tickets/${ticketId}/links`, {
       target_ticket_id: targetTicketId,
       relation_type: relationType,
-    })
-    .then((res) => res.data);
+    });
 }
 
 export function deleteLink(groupId, ticketId, linkId) {
   return api
-    .delete(`/groups/${groupId}/tickets/${ticketId}/links/${linkId}`)
-    .then((res) => res.data);
+    .delete(`/groups/${groupId}/tickets/${ticketId}/links/${linkId}`);
 }

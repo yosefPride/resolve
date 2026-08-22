@@ -2,7 +2,10 @@ import { Link } from 'react-router-dom';
 import Badge from '../../components/ui/Badge';
 import { PRIORITY_VARIANT, STATUS_VARIANT, capitalize } from './badgeVariants';
 
-export default function TicketCard({ ticket, groupId }) {
+// One issue as a linkable row. `meta` is the small text before the badges —
+// the reporter by default (issues list); the dashboard's recent list passes
+// the team name instead.
+export default function TicketCard({ ticket, groupId, meta }) {
   return (
     <Link
       to={`/tickets/${ticket.id}?group=${groupId}`}
@@ -14,7 +17,7 @@ export default function TicketCard({ ticket, groupId }) {
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <span className="hidden w-28 truncate text-xs text-slate-400 sm:inline">
-          {ticket.created_by_name}
+          {meta ?? ticket.created_by_name}
         </span>
         <div className="flex w-20 justify-start">
           <Badge variant={STATUS_VARIANT[ticket.status]}>{capitalize(ticket.status)}</Badge>

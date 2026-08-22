@@ -4,12 +4,12 @@ import api from '../lib/axios';
 // insight (cached: true) without calling Gemini again, a miss generates
 // and stores one. No separate GET endpoint exists.
 export function summarizeTicket(groupId, ticketId) {
-  return api.post(`/ai/groups/${groupId}/tickets/${ticketId}/summarize`).then((res) => res.data);
+  return api.post(`/ai/groups/${groupId}/tickets/${ticketId}/summarize`);
 }
 
 // Cached independently from summarize — calling one does not affect the other.
 export function analyzeTicket(groupId, ticketId) {
-  return api.post(`/ai/groups/${groupId}/tickets/${ticketId}/analyze`).then((res) => res.data);
+  return api.post(`/ai/groups/${groupId}/tickets/${ticketId}/analyze`);
 }
 
 // AI chat is now private, per-user conversations (a ticket can have many),
@@ -18,20 +18,18 @@ export function analyzeTicket(groupId, ticketId) {
 
 export function createConversation(groupId, ticketId) {
   return api
-    .post(`/ai/groups/${groupId}/tickets/${ticketId}/conversations`)
-    .then((res) => res.data);
+    .post(`/ai/groups/${groupId}/tickets/${ticketId}/conversations`);
 }
 
 // Most-recently-active first — the backend already sorts by updated_at desc.
 export function listConversations(groupId, ticketId) {
-  return api.get(`/ai/groups/${groupId}/tickets/${ticketId}/conversations`).then((res) => res.data);
+  return api.get(`/ai/groups/${groupId}/tickets/${ticketId}/conversations`);
 }
 
 // Oldest-first, full conversation — like listComments, no pagination.
 export function listConversationMessages(groupId, ticketId, conversationId) {
   return api
-    .get(`/ai/groups/${groupId}/tickets/${ticketId}/conversations/${conversationId}/messages`)
-    .then((res) => res.data);
+    .get(`/ai/groups/${groupId}/tickets/${ticketId}/conversations/${conversationId}/messages`);
 }
 
 // Returns { user_message, assistant_message } (both persisted, with real ids
@@ -41,12 +39,10 @@ export function sendConversationMessage(groupId, ticketId, conversationId, messa
   return api
     .post(`/ai/groups/${groupId}/tickets/${ticketId}/conversations/${conversationId}/messages`, {
       message,
-    })
-    .then((res) => res.data);
+    });
 }
 
 export function deleteConversation(groupId, ticketId, conversationId) {
   return api
-    .delete(`/ai/groups/${groupId}/tickets/${ticketId}/conversations/${conversationId}`)
-    .then((res) => res.data);
+    .delete(`/ai/groups/${groupId}/tickets/${ticketId}/conversations/${conversationId}`);
 }

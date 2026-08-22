@@ -3,6 +3,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { updateProfile } from '../../services/auth.service';
 import { errorMessage } from '../../utils/errors';
 import Button from '../../components/ui/Button';
+import Field from '../../components/ui/Field';
 import Input from '../../components/ui/Input';
 
 export default function ProfileForm() {
@@ -61,32 +62,16 @@ export default function ProfileForm() {
       <p className="mt-1 text-sm text-slate-400">Update your name and email address.</p>
 
       <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-4">
-        <label className="flex flex-col gap-1 text-sm text-slate-300">
-          Name
-          <Input
-            type="text"
-            name="name"
-            value={form.name}
-            onChange={handleChange}
-            required
-          />
-        </label>
+        <Field label="Name">
+          <Input type="text" name="name" value={form.name} onChange={handleChange} required />
+        </Field>
 
-        <label className="flex flex-col gap-1 text-sm text-slate-300">
-          Email
-          <Input
-            type="email"
-            name="email"
-            value={form.email}
-            onChange={handleChange}
-            required
-          />
-          {emailError && <span className="text-sm text-red-500">{emailError}</span>}
-        </label>
+        <Field label="Email" error={emailError}>
+          <Input type="email" name="email" value={form.email} onChange={handleChange} required />
+        </Field>
 
         {emailChanged && (
-          <label className="flex flex-col gap-1 text-sm text-slate-300">
-            Current password
+          <Field label="Current password">
             <Input
               type="password"
               name="currentPassword"
@@ -96,7 +81,7 @@ export default function ProfileForm() {
               autoComplete="current-password"
             />
             <span className="text-xs text-slate-400">Required to change your email.</span>
-          </label>
+          </Field>
         )}
 
         {error && <p className="text-sm text-red-500">{error}</p>}

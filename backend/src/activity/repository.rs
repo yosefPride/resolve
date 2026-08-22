@@ -1,5 +1,3 @@
-use std::fmt;
-
 use futures::TryStreamExt;
 use mongodb::{
     Collection, Database,
@@ -7,28 +5,11 @@ use mongodb::{
 };
 
 use crate::activity::models::{CreateActivityInput, TicketActivity};
+use crate::utils::{RepoResult, insert_id};
 
-#[derive(Debug)]
-pub enum ActivityRepoError {
-    Database(mongodb::error::Error),
-}
-
-impl fmt::Display for ActivityRepoError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ActivityRepoError::Database(e) => write!(f, "database error: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for ActivityRepoError {}
-
-impl From<mongodb::error::Error> for ActivityRepoError {
-    fn from(err: mongodb::error::Error) -> Self {
-        ActivityRepoError::Database(err)
-    }
-}
-
+// Shared infrastructure, not just ActivityService's backend: most writes come
+// from *other* services (ticket/comment/link/reference record events;
+// group/admin cascade deletes) — the service in this module only ever reads.
 pub struct ActivityRepository {
     activity: Collection<TicketActivity>,
 }
@@ -40,10 +21,7 @@ impl ActivityRepository {
         }
     }
 
-    pub async fn insert(
-        &self,
-        input: CreateActivityInput,
-    ) -> Result<TicketActivity, ActivityRepoError> {
+    pub async fn insert(&self, input: CreateActivityInput) -> RepoResult<TicketActivity> {
         let entry = TicketActivity {
             id: None,
             group_id: input.group_id,
@@ -56,11 +34,7 @@ impl ActivityRepository {
             link_kind: input.link_kind,
             occurred_at: BsonDateTime::now(),
         };
-        let result = self.activity.insert_one(&entry).await?;
-        let id = result
-            .inserted_id
-            .as_object_id()
-            .expect("insert_one always returns an ObjectId");
+        let id = insert_id(&self.activity, &entry).await?;
         Ok(TicketActivity {
             id: Some(id),
             ..entry
@@ -73,13 +47,13 @@ impl ActivityRepository {
         &self,
         group_id: ObjectId,
         ticket_id: ObjectId,
-    ) -> Result<Vec<TicketActivity>, ActivityRepoError> {
-        let cursor = self
-            .activity
+    ) -> RepoResult<Vec<TicketActivity>> {
+        self.activity
             .find(doc! { "group_id": group_id, "ticket_id": ticket_id })
             .sort(doc! { "occurred_at": -1 })
-            .await?;
-        cursor.try_collect().await.map_err(Into::into)
+            .await?
+            .try_collect()
+            .await
     }
 
     // The single most recent entry across every ticket in the group — backs
@@ -91,12 +65,11 @@ impl ActivityRepository {
     pub async fn find_latest_for_group(
         &self,
         group_id: ObjectId,
-    ) -> Result<Option<TicketActivity>, ActivityRepoError> {
-        Ok(self
-            .activity
+    ) -> RepoResult<Option<TicketActivity>> {
+        self.activity
             .find_one(doc! { "group_id": group_id })
             .sort(doc! { "occurred_at": -1 })
-            .await?)
+            .await
     }
 
     // Cascade target for a single ticket's deletion (TicketService::
@@ -105,18 +78,21 @@ impl ActivityRepository {
         &self,
         group_id: ObjectId,
         ticket_id: ObjectId,
-    ) -> Result<u64, ActivityRepoError> {
-        let result = self
+    ) -> RepoResult<u64> {
+        Ok(self
             .activity
             .delete_many(doc! { "group_id": group_id, "ticket_id": ticket_id })
-            .await?;
-        Ok(result.deleted_count)
+            .await?
+            .deleted_count)
     }
 
     // Cascade target for a whole group's deletion (purge_group_data) — same
     // pattern as CommentRepository::delete_by_group.
-    pub async fn delete_by_group(&self, group_id: ObjectId) -> Result<u64, ActivityRepoError> {
-        let result = self.activity.delete_many(doc! { "group_id": group_id }).await?;
-        Ok(result.deleted_count)
+    pub async fn delete_by_group(&self, group_id: ObjectId) -> RepoResult<u64> {
+        Ok(self
+            .activity
+            .delete_many(doc! { "group_id": group_id })
+            .await?
+            .deleted_count)
     }
 }

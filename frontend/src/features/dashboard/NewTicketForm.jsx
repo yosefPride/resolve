@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import CreateTicketForm from '../tickets/CreateTicketForm';
+import Field from '../../components/ui/Field';
 import Select from '../../components/ui/Select';
 
 // A dashboard-level "new issue" has no active group to default to
@@ -11,8 +12,7 @@ export default function NewTicketForm({ groups, onCreated }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <label className="flex flex-col gap-1 text-sm text-slate-300">
-        Team
+      <Field label="Team">
         <Select value={groupId} onChange={(event) => setGroupId(event.target.value)}>
           <option value="" disabled>
             Select a team
@@ -23,7 +23,7 @@ export default function NewTicketForm({ groups, onCreated }) {
             </option>
           ))}
         </Select>
-      </label>
+      </Field>
 
       {groupId && <CreateTicketForm groupId={groupId} onCreated={onCreated} />}
     </div>

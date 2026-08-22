@@ -9,7 +9,6 @@ import {
   SPOTLIGHT_ANALYSIS,
   SPOTLIGHT_CHAT_MESSAGES,
   SPOTLIGHT_SUMMARY,
-  SPOTLIGHT_TICKET,
 } from '../demo/spotlightSeed';
 
 const PILL =
@@ -106,10 +105,6 @@ export default function AiSpotlight() {
               Analyze issue
             </button>
           </div>
-        </div>
-
-        <div className="border-t border-white/10 bg-black px-4 py-2">
-          <p className="truncate text-xs text-slate-400">{SPOTLIGHT_TICKET.title}</p>
         </div>
 
         <div className="border-t border-white/10 p-4">

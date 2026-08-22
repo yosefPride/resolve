@@ -1,6 +1,7 @@
 import { formatDate } from '../../utils/format';
 import { isSystemAdmin } from '../../utils/roles';
 import Button from '../../components/ui/Button';
+import Table, { Td, Tr } from '../../components/ui/Table';
 
 // Presentational: renders the system-wide user list (GET /admin/users →
 // UserResponse[]). Loading/error live in the parent panel. The caller's own
@@ -13,51 +14,36 @@ export default function UserTable({ users, currentUserId, onDelete, onPromote, o
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-white/10">
-      <table className="w-full text-left text-sm">
-        <thead>
-          <tr className="border-b border-white/10 text-xs font-medium tracking-wide text-slate-400 uppercase">
-            <th className="px-4 py-3">Name</th>
-            <th className="px-4 py-3">Email</th>
-            <th className="px-4 py-3">Global Role</th>
-            <th className="px-4 py-3">Created</th>
-            <th className="px-4 py-3 text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map((user) => (
-            <tr key={user.id} className="border-b border-white/5 last:border-0 hover:bg-white/5">
-              <td className="px-4 py-3 font-medium text-white">{user.name}</td>
-              <td className="px-4 py-3 text-slate-300">{user.email}</td>
-              <td className="px-4 py-3 text-slate-300">
-                {isSystemAdmin(user) ? 'System Admin' : 'User'}
-              </td>
-              <td className="px-4 py-3 text-slate-400">{formatDate(user.created_at)}</td>
-              <td className="px-4 py-3 text-right">
-                <div className="flex items-center justify-end gap-2">
-                  {user.id === currentUserId && (
-                    <span className="text-xs text-slate-500">You</span>
-                  )}
-                  {isSystemAdmin(user) ? (
-                    <Button variant="ghost" size="sm" onClick={() => onDemote(user)}>
-                      Demote
-                    </Button>
-                  ) : (
-                    <Button variant="ghost" size="sm" onClick={() => onPromote(user)}>
-                      Promote
-                    </Button>
-                  )}
-                  {user.id !== currentUserId && (
-                    <Button variant="dangerOutline" size="sm" onClick={() => onDelete(user)}>
-                      Delete
-                    </Button>
-                  )}
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Table
+      columns={['Name', 'Email', 'Global Role', 'Created', { label: 'Actions', right: true }]}
+    >
+      {users.map((user) => (
+        <Tr key={user.id}>
+          <Td className="font-medium text-white">{user.name}</Td>
+          <Td className="text-slate-300">{user.email}</Td>
+          <Td className="text-slate-300">{isSystemAdmin(user) ? 'System Admin' : 'User'}</Td>
+          <Td className="text-slate-400">{formatDate(user.created_at)}</Td>
+          <Td className="text-right">
+            <div className="flex items-center justify-end gap-2">
+              {user.id === currentUserId && <span className="text-xs text-slate-500">You</span>}
+              {isSystemAdmin(user) ? (
+                <Button variant="ghost" size="sm" onClick={() => onDemote(user)}>
+                  Demote
+                </Button>
+              ) : (
+                <Button variant="ghost" size="sm" onClick={() => onPromote(user)}>
+                  Promote
+                </Button>
+              )}
+              {user.id !== currentUserId && (
+                <Button variant="dangerOutline" size="sm" onClick={() => onDelete(user)}>
+                  Delete
+                </Button>
+              )}
+            </div>
+          </Td>
+        </Tr>
+      ))}
+    </Table>
   );
 }

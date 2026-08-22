@@ -1,51 +1,32 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { errorMessage } from '../../utils/errors';
+import { useSubmit } from '../../hooks/useSubmit';
 import Button from '../../components/ui/Button';
+import Field from '../../components/ui/Field';
 import Input from '../../components/ui/Input';
 
 export default function LoginForm() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const [form, setForm] = useState({ email: '', password: '' });
-  const [error, setError] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { error, isPending, submit } = useSubmit(async () => {
+    await login(form);
+    navigate('/dashboard');
+  }, 'Invalid email or password.');
 
   function handleChange(event) {
     const { name, value } = event.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   }
 
-  async function handleSubmit(event) {
-    event.preventDefault();
-    setError('');
-    setIsSubmitting(true);
-    try {
-      await login(form);
-      navigate('/dashboard');
-    } catch (err) {
-      setError(errorMessage(err, 'Invalid email or password.'));
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <label className="flex flex-col gap-1 text-sm text-slate-300">
-        Email
-        <Input
-          type="email"
-          name="email"
-          value={form.email}
-          onChange={handleChange}
-          required
-        />
-      </label>
+    <form onSubmit={submit} className="flex flex-col gap-4">
+      <Field label="Email">
+        <Input type="email" name="email" value={form.email} onChange={handleChange} required />
+      </Field>
 
-      <label className="flex flex-col gap-1 text-sm text-slate-300">
-        Password
+      <Field label="Password">
         <Input
           type="password"
           name="password"
@@ -53,12 +34,12 @@ export default function LoginForm() {
           onChange={handleChange}
           required
         />
-      </label>
+      </Field>
 
       {error && <p className="text-sm text-red-500">{error}</p>}
 
-      <Button type="submit" disabled={isSubmitting} className="mt-2">
-        {isSubmitting ? 'Logging in…' : 'Log in'}
+      <Button type="submit" disabled={isPending} className="mt-2">
+        {isPending ? 'Logging in…' : 'Log in'}
       </Button>
     </form>
   );

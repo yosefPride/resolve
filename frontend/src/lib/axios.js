@@ -41,9 +41,9 @@ function refreshAccessToken() {
   if (!refreshPromise) {
     refreshPromise = api
       .post('/auth/refresh')
-      .then((res) => {
-        setAccessToken(res.data.jwt);
-        return res.data.jwt;
+      .then((data) => {
+        setAccessToken(data.jwt);
+        return data.jwt;
       })
       .finally(() => {
         refreshPromise = null;
@@ -54,8 +54,13 @@ function refreshAccessToken() {
 
 const NO_RETRY_PATHS = ['/auth/login', '/auth/register', '/auth/refresh'];
 
+// Successful responses resolve to the parsed body directly — every caller
+// wants `res.data` and nothing else, so it's unwrapped once here instead of
+// in a `.then((res) => res.data)` on all ~50 service calls. Errors are not
+// unwrapped: they reject with the full axios error, whose `err.response` is
+// what utils/errors.js and the field-error call sites read.
 api.interceptors.response.use(
-  (response) => response,
+  (response) => response.data,
   async (error) => {
     const originalRequest = error.config;
     const shouldAttemptRefresh =

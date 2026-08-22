@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useUpdateTicket } from '../../hooks/useTickets';
-import { errorMessage } from '../../utils/errors';
+import { useSubmit } from '../../hooks/useSubmit';
 import Button from '../../components/ui/Button';
+import Field from '../../components/ui/Field';
 import Input from '../../components/ui/Input';
 import Select from '../../components/ui/Select';
 import Textarea from '../../components/ui/Textarea';
@@ -13,24 +14,15 @@ export default function EditTicketForm({ groupId, ticket, onSaved, onCancel }) {
   const [description, setDescription] = useState(ticket.description);
   const [priority, setPriority] = useState(ticket.priority);
   const [status, setStatus] = useState(ticket.status);
-  const [error, setError] = useState('');
   const updateTicket = useUpdateTicket(groupId, ticket.id);
-
-  async function handleSubmit(event) {
-    event.preventDefault();
-    setError('');
-    try {
-      await updateTicket.mutateAsync({ title, description, priority, status });
-      onSaved();
-    } catch (err) {
-      setError(errorMessage(err, 'Failed to save issue.'));
-    }
-  }
+  const { error, submit } = useSubmit(async () => {
+    await updateTicket.mutateAsync({ title, description, priority, status });
+    onSaved();
+  }, 'Failed to save issue.');
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <label className="flex flex-col gap-1 text-sm text-slate-300">
-        Title
+    <form onSubmit={submit} className="flex flex-col gap-4">
+      <Field label="Title">
         <Input
           type="text"
           value={title}
@@ -38,34 +30,31 @@ export default function EditTicketForm({ groupId, ticket, onSaved, onCancel }) {
           required
           maxLength={200}
         />
-      </label>
+      </Field>
 
-      <label className="flex flex-col gap-1 text-sm text-slate-300">
-        Description
+      <Field label="Description">
         <Textarea
           value={description}
           onChange={(event) => setDescription(event.target.value)}
           required
           rows={4}
         />
-      </label>
+      </Field>
 
-      <label className="flex flex-col gap-1 text-sm text-slate-300">
-        Priority
+      <Field label="Priority">
         <Select value={priority} onChange={(event) => setPriority(event.target.value)}>
           <option value="low">Low</option>
           <option value="high">High</option>
           <option value="critical">Critical</option>
         </Select>
-      </label>
+      </Field>
 
-      <label className="flex flex-col gap-1 text-sm text-slate-300">
-        Status
+      <Field label="Status">
         <Select value={status} onChange={(event) => setStatus(event.target.value)}>
           <option value="open">Open</option>
           <option value="closed">Closed</option>
         </Select>
-      </label>
+      </Field>
 
       {error && <p className="text-sm text-red-500">{error}</p>}
 

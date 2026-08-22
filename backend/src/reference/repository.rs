@@ -1,5 +1,3 @@
-use std::fmt;
-
 use futures::TryStreamExt;
 use mongodb::{
     Collection, Database,
@@ -7,27 +5,7 @@ use mongodb::{
 };
 
 use crate::reference::models::{CreateReferenceInput, TicketReference};
-
-#[derive(Debug)]
-pub enum ReferenceRepoError {
-    Database(mongodb::error::Error),
-}
-
-impl fmt::Display for ReferenceRepoError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ReferenceRepoError::Database(e) => write!(f, "database error: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for ReferenceRepoError {}
-
-impl From<mongodb::error::Error> for ReferenceRepoError {
-    fn from(err: mongodb::error::Error) -> Self {
-        ReferenceRepoError::Database(err)
-    }
-}
+use crate::utils::{RepoResult, insert_id};
 
 pub struct ReferenceRepository {
     references: Collection<TicketReference>,
@@ -40,10 +18,7 @@ impl ReferenceRepository {
         }
     }
 
-    pub async fn insert(
-        &self,
-        input: CreateReferenceInput,
-    ) -> Result<TicketReference, ReferenceRepoError> {
+    pub async fn insert(&self, input: CreateReferenceInput) -> RepoResult<TicketReference> {
         let reference = TicketReference {
             id: None,
             group_id: input.group_id,
@@ -53,11 +28,7 @@ impl ReferenceRepository {
             created_by: input.created_by,
             created_at: BsonDateTime::now(),
         };
-        let result = self.references.insert_one(&reference).await?;
-        let id = result
-            .inserted_id
-            .as_object_id()
-            .expect("insert_one always returns an ObjectId");
+        let id = insert_id(&self.references, &reference).await?;
         Ok(TicketReference {
             id: Some(id),
             ..reference
@@ -69,11 +40,10 @@ impl ReferenceRepository {
         group_id: ObjectId,
         ticket_id: ObjectId,
         reference_id: ObjectId,
-    ) -> Result<Option<TicketReference>, ReferenceRepoError> {
-        Ok(self
-            .references
+    ) -> RepoResult<Option<TicketReference>> {
+        self.references
             .find_one(doc! { "_id": reference_id, "group_id": group_id, "ticket_id": ticket_id })
-            .await?)
+            .await
     }
 
     // Oldest first, same convention as CommentRepository::list_by_ticket.
@@ -81,13 +51,13 @@ impl ReferenceRepository {
         &self,
         group_id: ObjectId,
         ticket_id: ObjectId,
-    ) -> Result<Vec<TicketReference>, ReferenceRepoError> {
-        let cursor = self
-            .references
+    ) -> RepoResult<Vec<TicketReference>> {
+        self.references
             .find(doc! { "group_id": group_id, "ticket_id": ticket_id })
             .sort(doc! { "created_at": 1 })
-            .await?;
-        cursor.try_collect().await.map_err(Into::into)
+            .await?
+            .try_collect()
+            .await
     }
 
     pub async fn delete(
@@ -95,14 +65,13 @@ impl ReferenceRepository {
         group_id: ObjectId,
         ticket_id: ObjectId,
         reference_id: ObjectId,
-    ) -> Result<bool, ReferenceRepoError> {
-        let result = self
+    ) -> RepoResult<bool> {
+        Ok(self
             .references
-            .delete_one(
-                doc! { "_id": reference_id, "group_id": group_id, "ticket_id": ticket_id },
-            )
-            .await?;
-        Ok(result.deleted_count > 0)
+            .delete_one(doc! { "_id": reference_id, "group_id": group_id, "ticket_id": ticket_id })
+            .await?
+            .deleted_count
+            > 0)
     }
 
     // Cascade target for a single ticket's deletion (TicketService::
@@ -111,20 +80,20 @@ impl ReferenceRepository {
         &self,
         group_id: ObjectId,
         ticket_id: ObjectId,
-    ) -> Result<u64, ReferenceRepoError> {
-        let result = self
+    ) -> RepoResult<u64> {
+        Ok(self
             .references
             .delete_many(doc! { "group_id": group_id, "ticket_id": ticket_id })
-            .await?;
-        Ok(result.deleted_count)
+            .await?
+            .deleted_count)
     }
 
     // Cascade target for a whole group's deletion (purge_group_data).
-    pub async fn delete_by_group(&self, group_id: ObjectId) -> Result<u64, ReferenceRepoError> {
-        let result = self
+    pub async fn delete_by_group(&self, group_id: ObjectId) -> RepoResult<u64> {
+        Ok(self
             .references
             .delete_many(doc! { "group_id": group_id })
-            .await?;
-        Ok(result.deleted_count)
+            .await?
+            .deleted_count)
     }
 }

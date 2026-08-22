@@ -1,9 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
 import { listGroups } from '../../services/groups.service';
 import { useDashboardOverview } from '../../hooks/useDashboardOverview';
-import Badge from '../../components/ui/Badge';
-import { PRIORITY_VARIANT, STATUS_VARIANT, capitalize } from '../tickets/badgeVariants';
+import TicketCard from '../tickets/TicketCard';
 
 const RECENT_LIMIT = 6;
 
@@ -36,23 +34,12 @@ export default function RecentTickets() {
       <h2 className="text-sm font-semibold text-white">Recent activity</h2>
       <div className="flex flex-col gap-2">
         {recent.map((ticket) => (
-          <Link
+          <TicketCard
             key={ticket.id}
-            to={`/tickets/${ticket.id}?group=${ticket.group_id}`}
-            className="flex items-center justify-between gap-4 rounded-lg border border-white/10 bg-white/5 px-4 py-3 transition-colors hover:bg-white/10"
-          >
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="shrink-0 text-xs font-medium text-slate-500">
-                #{ticket.ticket_number}
-              </span>
-              <span className="truncate text-sm font-medium text-white">{ticket.title}</span>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <span className="hidden text-xs text-slate-400 md:inline">{ticket.group_name}</span>
-              <Badge variant={STATUS_VARIANT[ticket.status]}>{capitalize(ticket.status)}</Badge>
-              <Badge variant={PRIORITY_VARIANT[ticket.priority]}>{capitalize(ticket.priority)}</Badge>
-            </div>
-          </Link>
+            ticket={ticket}
+            groupId={ticket.group_id}
+            meta={ticket.group_name}
+          />
         ))}
       </div>
     </div>

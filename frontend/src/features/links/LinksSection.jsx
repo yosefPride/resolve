@@ -1,18 +1,19 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Link2, Plus, X } from 'lucide-react';
+import { Link2, X } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useCreateLink, useDeleteLink, useLinks } from '../../hooks/useLinks';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { useSubmit } from '../../hooks/useSubmit';
 import { listTickets } from '../../services/tickets.service';
-import { errorMessage } from '../../utils/errors';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
+import Field from '../../components/ui/Field';
 import Input from '../../components/ui/Input';
-import Modal from '../../components/ui/Modal';
 import Select from '../../components/ui/Select';
 import { PRIORITY_VARIANT, STATUS_VARIANT, capitalize } from '../tickets/badgeVariants';
+import CollectionSection from './CollectionSection';
 
 // blocks/is_blocked_by draw the eye (red) since blocked work is the case that
 // most needs attention; duplicates/is_duplicated_by are muted (informational,
@@ -33,41 +34,28 @@ const LINK_LABEL_TEXT = {
   is_duplicated_by: 'Is duplicated by',
 };
 
-function LinkRow({ link, groupId, canDelete, isDeleting, onDelete }) {
+function LinkRow({ link, groupId }) {
   return (
-    <li className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-3">
-      <div className="flex min-w-0 items-center gap-3">
-        <Badge size="sm" variant={LINK_LABEL_VARIANT[link.label]}>
-          {LINK_LABEL_TEXT[link.label]}
-        </Badge>
-        <Link
-          to={`/tickets/${link.other_ticket_id}?group=${groupId}`}
-          className="flex min-w-0 items-center gap-2 hover:underline"
-        >
-          <span className="shrink-0 text-xs font-medium text-slate-500">
-            #{link.other_ticket_number}
-          </span>
-          <span className="truncate text-sm text-white">{link.other_ticket_title}</span>
-        </Link>
-        <Badge size="sm" variant={STATUS_VARIANT[link.other_ticket_status]}>
-          {capitalize(link.other_ticket_status)}
-        </Badge>
-        <Badge size="sm" variant={PRIORITY_VARIANT[link.other_ticket_priority]}>
-          {capitalize(link.other_ticket_priority)}
-        </Badge>
-      </div>
-      {canDelete && (
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={isDeleting}
-          onClick={onDelete}
-          className="shrink-0 text-red-400 hover:text-red-300"
-        >
-          Remove
-        </Button>
-      )}
-    </li>
+    <div className="flex min-w-0 items-center gap-3">
+      <Badge size="sm" variant={LINK_LABEL_VARIANT[link.label]}>
+        {LINK_LABEL_TEXT[link.label]}
+      </Badge>
+      <Link
+        to={`/tickets/${link.other_ticket_id}?group=${groupId}`}
+        className="flex min-w-0 items-center gap-2 hover:underline"
+      >
+        <span className="shrink-0 text-xs font-medium text-slate-500">
+          #{link.other_ticket_number}
+        </span>
+        <span className="truncate text-sm text-white">{link.other_ticket_title}</span>
+      </Link>
+      <Badge size="sm" variant={STATUS_VARIANT[link.other_ticket_status]}>
+        {capitalize(link.other_ticket_status)}
+      </Badge>
+      <Badge size="sm" variant={PRIORITY_VARIANT[link.other_ticket_priority]}>
+        {capitalize(link.other_ticket_priority)}
+      </Badge>
+    </div>
   );
 }
 
@@ -123,27 +111,19 @@ function TicketPicker({ groupId, currentTicketId, onSelect }) {
   );
 }
 
-// Rendered inside a Modal (see LinksSection) — that caps the width, so
+// Rendered inside a Modal (see CollectionSection) — that caps the width, so
 // neither this form nor TicketPicker need their own width constraints.
 function AddLinkForm({ groupId, ticketId, onDone, onCancel }) {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [relationType, setRelationType] = useState('relates_to');
-  const [error, setError] = useState('');
   const createLink = useCreateLink(groupId, ticketId);
-
-  async function handleSubmit(event) {
-    event.preventDefault();
-    setError('');
-    try {
-      await createLink.mutateAsync({ targetTicketId: selectedTicket.id, relationType });
-      onDone();
-    } catch (err) {
-      setError(errorMessage(err, 'Failed to add link.'));
-    }
-  }
+  const { error, submit } = useSubmit(async () => {
+    await createLink.mutateAsync({ targetTicketId: selectedTicket.id, relationType });
+    onDone();
+  }, 'Failed to add link.');
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+    <form onSubmit={submit} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
         <span className="text-sm text-slate-300">Issue</span>
         {selectedTicket ? (
@@ -165,14 +145,13 @@ function AddLinkForm({ groupId, ticketId, onDone, onCancel }) {
         )}
       </div>
 
-      <label className="flex flex-col gap-1 text-sm text-slate-300">
-        Relation
+      <Field label="Relation">
         <Select value={relationType} onChange={(event) => setRelationType(event.target.value)}>
           <option value="blocks">Blocks</option>
           <option value="relates_to">Relates to</option>
           <option value="duplicates">Duplicates</option>
         </Select>
-      </label>
+      </Field>
 
       {error && <p className="text-sm text-red-500">{error}</p>}
 
@@ -190,71 +169,26 @@ function AddLinkForm({ groupId, ticketId, onDone, onCancel }) {
 
 export default function LinksSection({ groupId, ticketId, isAdmin }) {
   const { user } = useAuth();
-  const { data: links, status, error } = useLinks(groupId, ticketId);
-  const [pendingDelete, setPendingDelete] = useState(null);
-  const [deleteError, setDeleteError] = useState('');
-  const [isAdding, setIsAdding] = useState(false);
+  const query = useLinks(groupId, ticketId);
   const deleteLink = useDeleteLink(groupId, ticketId);
 
-  async function handleDelete(link) {
-    setDeleteError('');
-    setPendingDelete(link.id);
-    try {
-      await deleteLink.mutateAsync(link.id);
-    } catch (err) {
-      setDeleteError(errorMessage(err, 'Failed to remove link.'));
-    } finally {
-      setPendingDelete(null);
-    }
-  }
-
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-4">
-        <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
-          <Link2 className="h-4 w-4" /> Linked issues
-        </h3>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="shrink-0 gap-1.5 border border-white/10"
-          onClick={() => setIsAdding(true)}
-        >
-          <Plus className="h-3.5 w-3.5" /> Add link
-        </Button>
-      </div>
-
-      {status === 'pending' && <p className="text-sm text-slate-400">Loading links…</p>}
-      {status === 'error' && (
-        <p className="text-sm text-red-500">{errorMessage(error, "Couldn't load links.")}</p>
+    <CollectionSection
+      icon={Link2}
+      title="Linked issues"
+      addLabel="Add link"
+      addTitle="Add link"
+      loadingText="Loading links…"
+      emptyText="No linked issues yet."
+      loadErrorFallback="Couldn't load links."
+      deleteErrorFallback="Failed to remove link."
+      query={query}
+      deleteMutation={deleteLink}
+      canDelete={(link) => link.created_by === user.id || isAdmin}
+      renderRow={(link) => <LinkRow link={link} groupId={groupId} />}
+      renderAddForm={(close) => (
+        <AddLinkForm groupId={groupId} ticketId={ticketId} onDone={close} onCancel={close} />
       )}
-      {status === 'success' &&
-        (links.length === 0 ? (
-          <p className="text-sm text-slate-500">No linked issues yet.</p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {links.map((link) => (
-              <LinkRow
-                key={link.id}
-                link={link}
-                groupId={groupId}
-                canDelete={link.created_by === user.id || isAdmin}
-                isDeleting={pendingDelete === link.id}
-                onDelete={() => handleDelete(link)}
-              />
-            ))}
-          </ul>
-        ))}
-      {deleteError && <p className="text-sm text-red-500">{deleteError}</p>}
-
-      <Modal isOpen={isAdding} onClose={() => setIsAdding(false)} title="Add link">
-        <AddLinkForm
-          groupId={groupId}
-          ticketId={ticketId}
-          onDone={() => setIsAdding(false)}
-          onCancel={() => setIsAdding(false)}
-        />
-      </Modal>
-    </div>
+    />
   );
 }

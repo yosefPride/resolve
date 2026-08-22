@@ -7,7 +7,7 @@ use mongodb::{
 };
 
 use crate::group::models::{CreateGroupInput, Group, GroupMember, Role};
-use crate::utils::substring_regex;
+use crate::utils::{insert_id, is_duplicate_key, substring_regex};
 
 #[derive(Debug)]
 pub enum GroupRepoError {
@@ -38,14 +38,6 @@ impl From<mongodb::error::Error> for GroupRepoError {
     }
 }
 
-fn is_duplicate_key(err: &mongodb::error::Error) -> bool {
-    use mongodb::error::{ErrorKind, WriteFailure};
-    matches!(
-        err.kind.as_ref(),
-        ErrorKind::Write(WriteFailure::WriteError(e)) if e.code == 11000
-    )
-}
-
 pub struct GroupRepository {
     groups: Collection<Group>,
     members: Collection<GroupMember>,
@@ -66,11 +58,7 @@ impl GroupRepository {
             owner_id: input.owner_id,
             created_at: BsonDateTime::now(),
         };
-        let result = self.groups.insert_one(&group).await?;
-        let id = result
-            .inserted_id
-            .as_object_id()
-            .expect("insert_one always returns an ObjectId");
+        let id = insert_id(&self.groups, &group).await?;
         Ok(Group {
             id: Some(id),
             ..group
@@ -118,11 +106,7 @@ impl GroupRepository {
             role,
             joined_at: BsonDateTime::now(),
         };
-        let result = self.members.insert_one(&member).await?;
-        let id = result
-            .inserted_id
-            .as_object_id()
-            .expect("insert_one always returns an ObjectId");
+        let id = insert_id(&self.members, &member).await?;
         Ok(GroupMember {
             id: Some(id),
             ..member

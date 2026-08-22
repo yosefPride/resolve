@@ -10,7 +10,7 @@ use crate::config::Config;
 pub async fn connect(config: &Config) -> Result<Client, Error> {
     let client = Client::with_uri_str(&config.mongo_uri).await?;
     // with_uri_str doesn't open a connection (the driver connects lazily on
-    // first operation) â ping so "connected" below is actually proven.
+    // first operation) — ping so "connected" below is actually proven.
     client
         .database("resolve")
         .run_command(doc! { "ping": 1 })
@@ -23,277 +23,105 @@ pub fn database(client: &Client, _config: &Config) -> Database {
     client.database("resolve")
 }
 
-// Enforces uniqueness at the database level so duplicate registrations are
-// rejected regardless of any race between the app-level email check and insert.
+enum IndexKind {
+    Plain,
+    // Unique indexes double as race guards: the app-level pre-checks
+    // (duplicate email/member/link) just avoid hitting them in the common
+    // case; the index is what actually rejects a concurrent duplicate.
+    Unique,
+    // TTL: MongoDB's background reaper drops a document once the indexed
+    // field's time is in the past — no application-level cron job.
+    Ttl,
+}
+
+// One row per index: (collection, keys, kind). The comments say what query
+// each index serves; the loop in ensure_indexes builds them all uniformly.
+fn index_table() -> Vec<(&'static str, Document, IndexKind)> {
+    use IndexKind::*;
+    vec![
+        // Duplicate registrations rejected regardless of any race between the
+        // app-level email check and the insert.
+        ("users", doc! { "email": 1 }, Unique),
+        ("refresh_tokens", doc! { "token_hash": 1 }, Unique),
+        // Spent/expired refresh tokens clean themselves up.
+        ("refresh_tokens", doc! { "expires_at": 1 }, Ttl),
+        // At most one group_members row per (group, user) — add_member's
+        // DuplicateMember rejection, without a check-then-insert race.
+        ("group_members", doc! { "group_id": 1, "user_id": 1 }, Unique),
+        // "List my groups" lookups filter on user_id alone — the compound
+        // index above can't serve them, user_id isn't its prefix.
+        ("group_members", doc! { "user_id": 1 }, Plain),
+        // The audit-log viewer's two independent filters (?group_id / ?user_id).
+        ("admin_audit_log", doc! { "group_id": 1 }, Plain),
+        ("admin_audit_log", doc! { "deleted_user_id": 1 }, Plain),
+        // Every group-scoped ticket query filters on group_id
+        // (docs/database.md, "Multi-Tenancy Rule"), plus the list filters.
+        ("tickets", doc! { "group_id": 1 }, Plain),
+        ("tickets", doc! { "group_id": 1, "status": 1 }, Plain),
+        ("tickets", doc! { "group_id": 1, "created_by": 1 }, Plain),
+        // The per-group ticket_number sequence stays unique, in addition to
+        // the atomic counter that allocates it (TicketRepository::next_ticket_number).
+        ("tickets", doc! { "group_id": 1, "ticket_number": 1 }, Unique),
+        // list_by_ticket, plus both cascade deletes (each filter is a prefix).
+        ("comments", doc! { "group_id": 1, "ticket_id": 1 }, Plain),
+        // has_replies (CommentService::delete_comment's hard-vs-soft check).
+        ("comments", doc! { "parent_comment_id": 1 }, Plain),
+        // ActivityRepository::list_by_ticket (newest-first) + cascade deletes.
+        ("ticket_activity", doc! { "group_id": 1, "ticket_id": 1, "occurred_at": -1 }, Plain),
+        // find_latest_for_group — the compound index above can't serve a sort
+        // on occurred_at without constraining ticket_id, which sits between.
+        ("ticket_activity", doc! { "group_id": 1, "occurred_at": -1 }, Plain),
+        // At most one link per (group, source, target, relation); its
+        // (group_id, source_ticket_id) prefix also serves list/delete.
+        (
+            "ticket_links",
+            doc! { "group_id": 1, "source_ticket_id": 1, "target_ticket_id": 1, "relation_type": 1 },
+            Unique,
+        ),
+        // The target-side branch of list_by_ticket/delete_by_ticket (a ticket
+        // can appear on either side of a link).
+        ("ticket_links", doc! { "group_id": 1, "target_ticket_id": 1 }, Plain),
+        // At most one reaction per (comment, user) — the guard behind
+        // set_reaction's upsert; its prefix serves list/delete_by_comment.
+        ("comment_reactions", doc! { "comment_id": 1, "user_id": 1 }, Unique),
+        // Cascade deletes (group_id alone is a valid prefix).
+        ("comment_reactions", doc! { "group_id": 1, "ticket_id": 1 }, Plain),
+        // ReferenceRepository::list_by_ticket + cascade deletes.
+        ("ticket_references", doc! { "group_id": 1, "ticket_id": 1 }, Plain),
+        // One insight document per ticket (upsert_summary/upsert_analysis key
+        // on this pair); also find_insight's lookup path.
+        ("ai_ticket_insights", doc! { "group_id": 1, "ticket_id": 1 }, Unique),
+        // list_conversation_messages (single conversation, oldest-first).
+        ("ai_chat_messages", doc! { "conversation_id": 1, "created_at": 1 }, Plain),
+        // Cascade deletes filter by group_id(+ticket_id) directly, not via
+        // conversation ids, so a deleted user's conversations still clean up.
+        ("ai_chat_messages", doc! { "group_id": 1, "ticket_id": 1 }, Plain),
+        // count_recent_user_messages, the chat rate-limit check — covers the
+        // equality-on-role/user_id + range-on-created_at query directly.
+        ("ai_chat_messages", doc! { "role": 1, "user_id": 1, "created_at": 1 }, Plain),
+        // list_conversations (equality prefix, sort field last); also covers
+        // the cascade deletes since group_id(+ticket_id) is a prefix.
+        (
+            "ai_conversations",
+            doc! { "group_id": 1, "ticket_id": 1, "user_id": 1, "updated_at": -1 },
+            Plain,
+        ),
+    ]
+}
+
 pub async fn ensure_indexes(db: &Database) -> Result<(), Error> {
-    db.collection::<Document>("users")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "email": 1 })
-                .options(IndexOptions::builder().unique(true).build())
+    for (collection, keys, kind) in index_table() {
+        let options = match kind {
+            IndexKind::Plain => IndexOptions::builder().build(),
+            IndexKind::Unique => IndexOptions::builder().unique(true).build(),
+            IndexKind::Ttl => IndexOptions::builder()
+                .expire_after(std::time::Duration::from_secs(0))
                 .build(),
-        )
-        .await?;
-
-    db.collection::<Document>("refresh_tokens")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "token_hash": 1 })
-                .options(IndexOptions::builder().unique(true).build())
-                .build(),
-        )
-        .await?;
-
-    // Enforces at most one group_members row per (group, user) so add_member's
-    // duplicate-membership rejection (GroupRepoError::DuplicateMember) is
-    // atomic, without a separate check-then-insert race.
-    db.collection::<Document>("group_members")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "group_id": 1, "user_id": 1 })
-                .options(IndexOptions::builder().unique(true).build())
-                .build(),
-        )
-        .await?;
-
-    // Serves the "list my groups" lookups (list_memberships_for_user /
-    // list_groups_for_user), which filter on user_id alone — the compound
-    // (group_id, user_id) index above can't, since user_id isn't its prefix.
-    db.collection::<Document>("group_members")
-        .create_index(IndexModel::builder().keys(doc! { "user_id": 1 }).build())
-        .await?;
-
-    // Serve the audit-log viewer's two filters (GET /admin/audit-log?group_id
-    // / ?user_id) — each query hits admin_audit_log on one of these fields.
-    // Separate single-field indexes, since the two filters are independent and
-    // either may be used alone.
-    db.collection::<Document>("admin_audit_log")
-        .create_index(IndexModel::builder().keys(doc! { "group_id": 1 }).build())
-        .await?;
-
-    db.collection::<Document>("admin_audit_log")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "deleted_user_id": 1 })
-                .build(),
-        )
-        .await?;
-
-    // TTL index: MongoDB's background reaper drops a document once its
-    // `expires_at` is in the past, so spent/expired refresh tokens are
-    // cleaned up automatically without any application-level cron job.
-    db.collection::<Document>("refresh_tokens")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "expires_at": 1 })
-                .options(
-                    IndexOptions::builder()
-                        .expire_after(std::time::Duration::from_secs(0))
-                        .build(),
-                )
-                .build(),
-        )
-        .await?;
-
-    // Serves every group-scoped ticket query (docs/database.md, "Multi-Tenancy
-    // Rule") — every ticket read/write filters on group_id.
-    db.collection::<Document>("tickets")
-        .create_index(IndexModel::builder().keys(doc! { "group_id": 1 }).build())
-        .await?;
-
-    db.collection::<Document>("tickets")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "group_id": 1, "status": 1 })
-                .build(),
-        )
-        .await?;
-
-    db.collection::<Document>("tickets")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "group_id": 1, "created_by": 1 })
-                .build(),
-        )
-        .await?;
-
-    // Enforces the per-group ticket_number sequence stays unique, in addition
-    // to the atomic counter that allocates it (TicketRepository::next_ticket_number).
-    db.collection::<Document>("tickets")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "group_id": 1, "ticket_number": 1 })
-                .options(IndexOptions::builder().unique(true).build())
-                .build(),
-        )
-        .await?;
-
-    // Serves list_by_ticket (every comment fetch is scoped to group_id +
-    // ticket_id) and both bulk cascade deletes (delete_by_ticket on ticket_id
-    // alone, delete_by_group on group_id alone — both are index prefixes here).
-    db.collection::<Document>("comments")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "group_id": 1, "ticket_id": 1 })
-                .build(),
-        )
-        .await?;
-
-    // Serves has_replies (CommentService::delete_comment's hard-vs-soft-delete
-    // check).
-    db.collection::<Document>("comments")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "parent_comment_id": 1 })
-                .build(),
-        )
-        .await?;
-
-    // Serves ActivityRepository::list_by_ticket (equality on group_id +
-    // ticket_id, sorted descending on occurred_at) and both cascade deletes
-    // (delete_by_ticket on the (group_id, ticket_id) prefix, delete_by_group
-    // on group_id alone).
-    db.collection::<Document>("ticket_activity")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "group_id": 1, "ticket_id": 1, "occurred_at": -1 })
-                .build(),
-        )
-        .await?;
-
-    // Serves ActivityRepository::find_latest_for_group (equality on group_id
-    // alone, sorted descending on occurred_at) — the compound index above
-    // can't satisfy that sort since ticket_id sits between group_id and
-    // occurred_at in it.
-    db.collection::<Document>("ticket_activity")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "group_id": 1, "occurred_at": -1 })
-                .build(),
-        )
-        .await?;
-
-    // Enforces at most one link per (group, source, target, relation_type) —
-    // duplicate protection at the DB level, same belt-and-braces pattern as
-    // group_members' compound unique index (LinkRepository::exists is the
-    // app-level pre-check). Its (group_id, source_ticket_id) prefix also
-    // serves list_by_ticket's source-side branch and delete_by_ticket.
-    db.collection::<Document>("ticket_links")
-        .create_index(
-            IndexModel::builder()
-                .keys(
-                    doc! { "group_id": 1, "source_ticket_id": 1, "target_ticket_id": 1, "relation_type": 1 },
-                )
-                .options(IndexOptions::builder().unique(true).build())
-                .build(),
-        )
-        .await?;
-
-    // Serves list_by_ticket's target-side branch (a ticket_id can appear on
-    // either side of a link) and delete_by_ticket/delete_by_group's cascade
-    // deletes.
-    db.collection::<Document>("ticket_links")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "group_id": 1, "target_ticket_id": 1 })
-                .build(),
-        )
-        .await?;
-
-    // Enforces at most one reaction per (comment, user) — the actual
-    // one-reaction-per-user guard behind ReactionRepository::set_reaction's
-    // upsert (its filter on this same pair is what makes the write an
-    // update-in-place instead of racing this index). Its comment_id prefix
-    // also serves list_by_comment and delete_by_comment.
-    db.collection::<Document>("comment_reactions")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "comment_id": 1, "user_id": 1 })
-                .options(IndexOptions::builder().unique(true).build())
-                .build(),
-        )
-        .await?;
-
-    // Serves ReactionRepository::delete_by_ticket/delete_by_group's cascade
-    // deletes — group_id alone is a valid prefix match for the group-only case.
-    db.collection::<Document>("comment_reactions")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "group_id": 1, "ticket_id": 1 })
-                .build(),
-        )
-        .await?;
-
-    // Serves ReferenceRepository::list_by_ticket and both cascade deletes
-    // (delete_by_ticket on the (group_id, ticket_id) prefix, delete_by_group
-    // on group_id alone).
-    db.collection::<Document>("ticket_references")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "group_id": 1, "ticket_id": 1 })
-                .build(),
-        )
-        .await?;
-
-    // One insight document per ticket (AiRepository::upsert_summary /
-    // upsert_analysis upsert against this pair), so it's unique as well as
-    // the lookup path for find_insight.
-    db.collection::<Document>("ai_ticket_insights")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "group_id": 1, "ticket_id": 1 })
-                .options(IndexOptions::builder().unique(true).build())
-                .build(),
-        )
-        .await?;
-
-    // Serves list_conversation_messages (every read is scoped to a single
-    // conversation, oldest-first).
-    db.collection::<Document>("ai_chat_messages")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "conversation_id": 1, "created_at": 1 })
-                .build(),
-        )
-        .await?;
-
-    // Serves AiRepository::delete_by_ticket/delete_by_group's cascade deletes
-    // on this collection, which filter by group_id(+ticket_id) directly
-    // rather than going through conversation_id — group_id alone is a valid
-    // prefix match for the group-only case.
-    db.collection::<Document>("ai_chat_messages")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "group_id": 1, "ticket_id": 1 })
-                .build(),
-        )
-        .await?;
-
-    // Serves count_recent_user_messages, the chat rate-limit check: equality
-    // on role + user_id, range on created_at — this compound index covers
-    // that query directly instead of scanning every message ever sent. Global
-    // per user (not scoped to conversation_id) — see the CHAT_RATE_LIMIT
-    // comment in ai::service.
-    db.collection::<Document>("ai_chat_messages")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "role": 1, "user_id": 1, "created_at": 1 })
-                .build(),
-        )
-        .await?;
-
-    // Serves list_conversations directly (equality prefix group_id/ticket_id/
-    // user_id, sort field last) — also covers delete_by_ticket/delete_by_group's
-    // cascade deletes on this collection, since group_id(+ticket_id) is a
-    // prefix of this index.
-    db.collection::<Document>("ai_conversations")
-        .create_index(
-            IndexModel::builder()
-                .keys(doc! { "group_id": 1, "ticket_id": 1, "user_id": 1, "updated_at": -1 })
-                .build(),
-        )
-        .await?;
-
+        };
+        db.collection::<Document>(collection)
+            .create_index(IndexModel::builder().keys(keys).options(options).build())
+            .await?;
+    }
     Ok(())
 }
 

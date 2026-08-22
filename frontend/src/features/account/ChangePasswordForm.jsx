@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { changePassword } from '../../services/auth.service';
 import { errorMessage } from '../../utils/errors';
 import Button from '../../components/ui/Button';
+import Field from '../../components/ui/Field';
 import Input from '../../components/ui/Input';
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -72,8 +73,7 @@ export default function ChangePasswordForm() {
       </p>
 
       <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-4">
-        <label className="flex flex-col gap-1 text-sm text-slate-300">
-          Current password
+        <Field label="Current password" error={fieldErrors.currentPassword}>
           <Input
             type="password"
             name="currentPassword"
@@ -82,13 +82,9 @@ export default function ChangePasswordForm() {
             required
             autoComplete="current-password"
           />
-          {fieldErrors.currentPassword && (
-            <span className="text-sm text-red-500">{fieldErrors.currentPassword}</span>
-          )}
-        </label>
+        </Field>
 
-        <label className="flex flex-col gap-1 text-sm text-slate-300">
-          New password
+        <Field label="New password" error={fieldErrors.newPassword}>
           <Input
             type="password"
             name="newPassword"
@@ -97,13 +93,9 @@ export default function ChangePasswordForm() {
             required
             autoComplete="new-password"
           />
-          {fieldErrors.newPassword && (
-            <span className="text-sm text-red-500">{fieldErrors.newPassword}</span>
-          )}
-        </label>
+        </Field>
 
-        <label className="flex flex-col gap-1 text-sm text-slate-300">
-          Confirm new password
+        <Field label="Confirm new password" error={fieldErrors.confirmPassword}>
           <Input
             type="password"
             name="confirmPassword"
@@ -112,10 +104,7 @@ export default function ChangePasswordForm() {
             required
             autoComplete="new-password"
           />
-          {fieldErrors.confirmPassword && (
-            <span className="text-sm text-red-500">{fieldErrors.confirmPassword}</span>
-          )}
-        </label>
+        </Field>
 
         {error && <p className="text-sm text-red-500">{error}</p>}
         {success && <p className="text-sm text-green-400">{success}</p>}

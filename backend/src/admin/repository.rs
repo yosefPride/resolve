@@ -1,5 +1,3 @@
-use std::fmt;
-
 use futures::TryStreamExt;
 use mongodb::{
     Collection, Database,
@@ -7,27 +5,7 @@ use mongodb::{
 };
 
 use crate::admin::models::AuditLogEntry;
-
-#[derive(Debug)]
-pub enum AdminRepoError {
-    Database(mongodb::error::Error),
-}
-
-impl fmt::Display for AdminRepoError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            AdminRepoError::Database(e) => write!(f, "database error: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for AdminRepoError {}
-
-impl From<mongodb::error::Error> for AdminRepoError {
-    fn from(err: mongodb::error::Error) -> Self {
-        AdminRepoError::Database(err)
-    }
-}
+use crate::utils::{RepoResult, insert_id};
 
 pub struct AdminRepository {
     audit_log: Collection<AuditLogEntry>,
@@ -40,15 +18,8 @@ impl AdminRepository {
         }
     }
 
-    pub async fn insert_audit_entry(
-        &self,
-        entry: AuditLogEntry,
-    ) -> Result<AuditLogEntry, AdminRepoError> {
-        let result = self.audit_log.insert_one(&entry).await?;
-        let id = result
-            .inserted_id
-            .as_object_id()
-            .expect("insert_one always returns an ObjectId");
+    pub async fn insert_audit_entry(&self, entry: AuditLogEntry) -> RepoResult<AuditLogEntry> {
+        let id = insert_id(&self.audit_log, &entry).await?;
         Ok(AuditLogEntry {
             id: Some(id),
             ..entry
@@ -62,7 +33,7 @@ impl AdminRepository {
         &self,
         group_id: Option<ObjectId>,
         deleted_user_id: Option<ObjectId>,
-    ) -> Result<Vec<AuditLogEntry>, AdminRepoError> {
+    ) -> RepoResult<Vec<AuditLogEntry>> {
         let mut filter = Document::new();
         if let Some(group_id) = group_id {
             filter.insert("group_id", group_id);
@@ -70,11 +41,11 @@ impl AdminRepository {
         if let Some(deleted_user_id) = deleted_user_id {
             filter.insert("deleted_user_id", deleted_user_id);
         }
-        let cursor = self
-            .audit_log
+        self.audit_log
             .find(filter)
             .sort(doc! { "created_at": -1 })
-            .await?;
-        cursor.try_collect().await.map_err(Into::into)
+            .await?
+            .try_collect()
+            .await
     }
 }

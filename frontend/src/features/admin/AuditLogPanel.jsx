@@ -4,6 +4,7 @@ import { formatDateTime } from '../../utils/format';
 import { listAuditLog } from '../../services/admin.service';
 import Badge from '../../components/ui/Badge';
 import Select from '../../components/ui/Select';
+import Table, { Td, Tr } from '../../components/ui/Table';
 
 const ACTION_LABELS = {
   succession: 'Succession',
@@ -93,34 +94,20 @@ export default function AuditLogPanel() {
       {visible.length === 0 ? (
         <p className="text-sm text-slate-400">No audit entries.</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-white/10">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-white/10 text-xs font-medium tracking-wide text-slate-400 uppercase">
-                <th className="px-4 py-3">Action</th>
-                <th className="px-4 py-3">Team</th>
-                <th className="px-4 py-3">User</th>
-                <th className="px-4 py-3">Successor</th>
-                <th className="px-4 py-3">Performed by</th>
-                <th className="px-4 py-3">When</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((entry) => (
-                <tr key={entry.id} className="border-b border-white/5 last:border-0 hover:bg-white/5">
-                  <td className="px-4 py-3">
-                    <Badge>{ACTION_LABELS[entry.action] || entry.action}</Badge>
-                  </td>
-                  <td className="px-4 py-3 text-slate-300">{entry.group_name || '—'}</td>
-                  <td className="px-4 py-3 text-slate-300">{entryUserName(entry)}</td>
-                  <td className="px-4 py-3 text-slate-300">{entry.successor_user_name || '—'}</td>
-                  <td className="px-4 py-3 text-slate-300">{entry.performed_by_name}</td>
-                  <td className="px-4 py-3 text-slate-400">{formatDateTime(entry.created_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table columns={['Action', 'Team', 'User', 'Successor', 'Performed by', 'When']}>
+          {visible.map((entry) => (
+            <Tr key={entry.id}>
+              <Td>
+                <Badge>{ACTION_LABELS[entry.action] || entry.action}</Badge>
+              </Td>
+              <Td className="text-slate-300">{entry.group_name || '—'}</Td>
+              <Td className="text-slate-300">{entryUserName(entry)}</Td>
+              <Td className="text-slate-300">{entry.successor_user_name || '—'}</Td>
+              <Td className="text-slate-300">{entry.performed_by_name}</Td>
+              <Td className="text-slate-400">{formatDateTime(entry.created_at)}</Td>
+            </Tr>
+          ))}
+        </Table>
       )}
     </div>
   );

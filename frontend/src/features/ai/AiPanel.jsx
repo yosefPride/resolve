@@ -405,10 +405,6 @@ function ChatPanel({
         </div>
       </div>
 
-      <div className="border-t border-white/10 bg-black px-4 py-2">
-        <p className="truncate text-xs text-slate-400">{ticket.title}</p>
-      </div>
-
       <form onSubmit={handleSend} className="border-t border-white/10 p-4">
         {sendError && <p className="mb-2 text-xs text-red-400">{sendError}</p>}
         <div className="flex items-center gap-2">

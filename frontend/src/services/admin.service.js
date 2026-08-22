@@ -9,7 +9,7 @@ export function listUsers(search) {
   const params = {};
   const term = search?.trim();
   if (term) params.search = term;
-  return api.get('/admin/users', { params }).then((res) => res.data);
+  return api.get('/admin/users', { params });
 }
 
 // search: optional case-insensitive substring, matched on the group name. Sent
@@ -18,33 +18,32 @@ export function listGroups(search) {
   const params = {};
   const term = search?.trim();
   if (term) params.search = term;
-  return api.get('/admin/groups', { params }).then((res) => res.data);
+  return api.get('/admin/groups', { params });
 }
 
 export function deleteGroup(groupId) {
-  return api.delete(`/admin/groups/${groupId}`).then((res) => res.data);
+  return api.delete(`/admin/groups/${groupId}`);
 }
 
 export function deletionCheck(userId) {
-  return api.get(`/admin/users/${userId}/deletion-check`).then((res) => res.data);
+  return api.get(`/admin/users/${userId}/deletion-check`);
 }
 
 // successors: { [group_id]: successor_user_id } — required for every group in
 // the deletion-check's blocked_groups. See docs/api.md POST /admin/users/:id/delete.
 export function deleteUser(userId, successors) {
   return api
-    .post(`/admin/users/${userId}/delete`, { successors })
-    .then((res) => res.data);
+    .post(`/admin/users/${userId}/delete`, { successors });
 }
 
 export function promoteUser(userId) {
-  return api.post(`/admin/users/${userId}/promote`).then((res) => res.data);
+  return api.post(`/admin/users/${userId}/promote`);
 }
 
 // Rejected (409) if the target isn't currently a System Admin, or if they're
 // the last remaining one.
 export function demoteUser(userId) {
-  return api.post(`/admin/users/${userId}/demote`).then((res) => res.data);
+  return api.post(`/admin/users/${userId}/demote`);
 }
 
 // filters: { groupId?, userId? } — independent, either/both/neither. userId
@@ -53,5 +52,5 @@ export function listAuditLog(filters = {}) {
   const params = {};
   if (filters.groupId) params.group_id = filters.groupId;
   if (filters.userId) params.user_id = filters.userId;
-  return api.get('/admin/audit-log', { params }).then((res) => res.data);
+  return api.get('/admin/audit-log', { params });
 }

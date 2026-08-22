@@ -7,6 +7,7 @@ use mongodb::{
 };
 
 use crate::link::models::{CreateLinkInput, RelationType, TicketLink};
+use crate::utils::{insert_id, is_duplicate_key};
 
 #[derive(Debug)]
 pub enum LinkRepoError {
@@ -35,18 +36,6 @@ impl From<mongodb::error::Error> for LinkRepoError {
     }
 }
 
-// Same pattern as GroupRepository's DuplicateMember mapping — the unique
-// index on (group_id, source_ticket_id, target_ticket_id, relation_type)
-// (db.rs) is the actual race guard; LinkService::create_link's pre-insert
-// `exists` check just avoids hitting it in the common case.
-fn is_duplicate_key(err: &mongodb::error::Error) -> bool {
-    use mongodb::error::{ErrorKind, WriteFailure};
-    matches!(
-        err.kind.as_ref(),
-        ErrorKind::Write(WriteFailure::WriteError(e)) if e.code == 11000
-    )
-}
-
 pub struct LinkRepository {
     links: Collection<TicketLink>,
 }
@@ -68,11 +57,7 @@ impl LinkRepository {
             created_by: input.created_by,
             created_at: BsonDateTime::now(),
         };
-        let result = self.links.insert_one(&link).await?;
-        let id = result
-            .inserted_id
-            .as_object_id()
-            .expect("insert_one always returns an ObjectId");
+        let id = insert_id(&self.links, &link).await?;
         Ok(TicketLink {
             id: Some(id),
             ..link

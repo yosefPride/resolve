@@ -1,5 +1,3 @@
-use std::fmt;
-
 use futures::TryStreamExt;
 use mongodb::{
     Collection, Database,
@@ -7,27 +5,7 @@ use mongodb::{
 };
 
 use crate::comment::models::{Comment, CreateCommentInput, DELETED_CONTENT_PLACEHOLDER};
-
-#[derive(Debug)]
-pub enum CommentRepoError {
-    Database(mongodb::error::Error),
-}
-
-impl fmt::Display for CommentRepoError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CommentRepoError::Database(e) => write!(f, "database error: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for CommentRepoError {}
-
-impl From<mongodb::error::Error> for CommentRepoError {
-    fn from(err: mongodb::error::Error) -> Self {
-        CommentRepoError::Database(err)
-    }
-}
+use crate::utils::{RepoResult, insert_id};
 
 pub struct CommentRepository {
     comments: Collection<Comment>,
@@ -40,10 +18,7 @@ impl CommentRepository {
         }
     }
 
-    pub async fn insert_comment(
-        &self,
-        input: CreateCommentInput,
-    ) -> Result<Comment, CommentRepoError> {
+    pub async fn insert_comment(&self, input: CreateCommentInput) -> RepoResult<Comment> {
         let comment = Comment {
             id: None,
             group_id: input.group_id,
@@ -54,11 +29,7 @@ impl CommentRepository {
             is_deleted: false,
             created_at: BsonDateTime::now(),
         };
-        let result = self.comments.insert_one(&comment).await?;
-        let id = result
-            .inserted_id
-            .as_object_id()
-            .expect("insert_one always returns an ObjectId");
+        let id = insert_id(&self.comments, &comment).await?;
         Ok(Comment {
             id: Some(id),
             ..comment
@@ -73,11 +44,10 @@ impl CommentRepository {
         group_id: ObjectId,
         ticket_id: ObjectId,
         comment_id: ObjectId,
-    ) -> Result<Option<Comment>, CommentRepoError> {
-        Ok(self
-            .comments
+    ) -> RepoResult<Option<Comment>> {
+        self.comments
             .find_one(doc! { "_id": comment_id, "group_id": group_id, "ticket_id": ticket_id })
-            .await?)
+            .await
     }
 
     // Every comment for a ticket, oldest first — no pagination, a discussion
@@ -88,23 +58,23 @@ impl CommentRepository {
         &self,
         group_id: ObjectId,
         ticket_id: ObjectId,
-    ) -> Result<Vec<Comment>, CommentRepoError> {
-        let cursor = self
-            .comments
+    ) -> RepoResult<Vec<Comment>> {
+        self.comments
             .find(doc! { "group_id": group_id, "ticket_id": ticket_id })
             .sort(doc! { "created_at": 1 })
-            .await?;
-        cursor.try_collect().await.map_err(Into::into)
+            .await?
+            .try_collect()
+            .await
     }
 
     // Whether any other comment replies to this one — decides hard vs. soft
     // delete in CommentService::delete_comment.
-    pub async fn has_replies(&self, comment_id: ObjectId) -> Result<bool, CommentRepoError> {
-        let count = self
+    pub async fn has_replies(&self, comment_id: ObjectId) -> RepoResult<bool> {
+        Ok(self
             .comments
             .count_documents(doc! { "parent_comment_id": comment_id })
-            .await?;
-        Ok(count > 0)
+            .await?
+            > 0)
     }
 
     pub async fn hard_delete(
@@ -112,12 +82,13 @@ impl CommentRepository {
         group_id: ObjectId,
         ticket_id: ObjectId,
         comment_id: ObjectId,
-    ) -> Result<bool, CommentRepoError> {
-        let result = self
+    ) -> RepoResult<bool> {
+        Ok(self
             .comments
             .delete_one(doc! { "_id": comment_id, "group_id": group_id, "ticket_id": ticket_id })
-            .await?;
-        Ok(result.deleted_count > 0)
+            .await?
+            .deleted_count
+            > 0)
     }
 
     // Tombstone: keeps the document (so replies' parent_comment_id stays
@@ -127,15 +98,16 @@ impl CommentRepository {
         group_id: ObjectId,
         ticket_id: ObjectId,
         comment_id: ObjectId,
-    ) -> Result<bool, CommentRepoError> {
-        let result = self
+    ) -> RepoResult<bool> {
+        Ok(self
             .comments
             .update_one(
                 doc! { "_id": comment_id, "group_id": group_id, "ticket_id": ticket_id },
                 doc! { "$set": { "is_deleted": true, "content": DELETED_CONTENT_PLACEHOLDER } },
             )
-            .await?;
-        Ok(result.modified_count > 0)
+            .await?
+            .modified_count
+            > 0)
     }
 
     // Cascade target for a single ticket's deletion (TicketService::
@@ -148,23 +120,23 @@ impl CommentRepository {
         &self,
         group_id: ObjectId,
         ticket_id: ObjectId,
-    ) -> Result<u64, CommentRepoError> {
-        let result = self
+    ) -> RepoResult<u64> {
+        Ok(self
             .comments
             .delete_many(doc! { "group_id": group_id, "ticket_id": ticket_id })
-            .await?;
-        Ok(result.deleted_count)
+            .await?
+            .deleted_count)
     }
 
     // Cascade target for a whole group's deletion (purge_group_data). Same
     // unconditional hard delete as delete_by_ticket, scoped to group_id
     // instead — comments carry their own group_id, so no per-ticket fan-out
     // is needed.
-    pub async fn delete_by_group(&self, group_id: ObjectId) -> Result<u64, CommentRepoError> {
-        let result = self
+    pub async fn delete_by_group(&self, group_id: ObjectId) -> RepoResult<u64> {
+        Ok(self
             .comments
             .delete_many(doc! { "group_id": group_id })
-            .await?;
-        Ok(result.deleted_count)
+            .await?
+            .deleted_count)
     }
 }
