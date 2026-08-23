@@ -120,13 +120,19 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
           min-content (CSS Grid's automatic minimum size), which is what was
           pushing content past the frame on mobile. flex-col doesn't have
           that problem: it stretches children down to its own width instead
-          of letting one grow the container. items-stretch (the grid
-          default) at lg+ so the rail's cards align with the main column;
-          AiPanel has its own fixed height now (see AiPanel.jsx) rather than
-          stretching to match it. */}
-      <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-stretch">
-        <div className="flex flex-col gap-6">
-          <div className="break-words rounded-xl border border-white/10 bg-white/5 p-6">
+          of letting one grow the container. At lg+ the whole area is pinned
+          to 80vh and items-stretch hands that height to both columns, so the
+          page frame stays put and long content scrolls inside a card rather
+          than below the fold. Each column has exactly one child that absorbs
+          the height — the active tab panel here, AiPanel in the rail (both
+          lg:flex-1) — and everything else is shrink-0 so a short viewport
+          eats into the scrollable panel instead of clipping the title card,
+          the tab strip, or the stats card. Below lg there is no second
+          column and no fixed frame: the panels fall back to h-128 and the
+          area grows with the page. */}
+      <div className="flex flex-col gap-6 lg:grid lg:h-[80vh] lg:grid-cols-[minmax(0,1fr)_320px] lg:items-stretch">
+        <div className="flex flex-col gap-6 lg:min-h-0">
+          <div className="break-words rounded-xl border border-white/10 bg-white/5 p-6 lg:shrink-0">
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-sm text-slate-500">
               <p>
                 <span className="font-medium">#{ticket.ticket_number}</span>
@@ -140,12 +146,10 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
               </p>
             </div>
             <h1 className="mt-2 text-2xl font-bold text-white">{ticket.title}</h1>
-            {/* Preview only — the full description lives in the Details tab. */}
-            <p className="mt-2 line-clamp-2 text-sm text-slate-400">{ticket.description}</p>
           </div>
 
-          <div className="flex flex-col gap-4">
-            <div role="tablist" className="flex gap-6 overflow-x-auto border-b border-white/10">
+          <div className="flex flex-col gap-4 lg:min-h-0 lg:flex-1">
+            <div role="tablist" className="flex shrink-0 gap-6 overflow-x-auto border-b border-white/10">
               <TabButton
                 icon={FileText}
                 isActive={activeTab === 'details'}
@@ -188,7 +192,7 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
             <div
               className={
                 activeTab === 'details'
-                  ? 'h-128 overflow-y-auto break-words rounded-xl border border-white/10 bg-white/5 p-6'
+                  ? 'h-128 overflow-y-auto break-words rounded-xl border border-white/10 bg-white/5 p-6 lg:h-auto lg:min-h-0 lg:flex-1'
                   : 'hidden'
               }
             >
@@ -197,7 +201,7 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
             <div
               className={
                 activeTab === 'comments'
-                  ? 'flex h-128 flex-col rounded-xl border border-white/10 bg-white/5 p-6'
+                  ? 'flex h-128 flex-col rounded-xl border border-white/10 bg-white/5 p-6 lg:h-auto lg:min-h-0 lg:flex-1'
                   : 'hidden'
               }
             >
@@ -212,7 +216,7 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
             <div
               className={
                 activeTab === 'activity'
-                  ? 'h-128 overflow-y-auto rounded-xl border border-white/10 bg-white/5 p-6'
+                  ? 'h-128 overflow-y-auto rounded-xl border border-white/10 bg-white/5 p-6 lg:h-auto lg:min-h-0 lg:flex-1'
                   : 'hidden'
               }
             >
@@ -221,7 +225,7 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
             <div
               className={
                 activeTab === 'links'
-                  ? 'h-128 overflow-y-auto rounded-xl border border-white/10 bg-white/5 p-6'
+                  ? 'h-128 overflow-y-auto rounded-xl border border-white/10 bg-white/5 p-6 lg:h-auto lg:min-h-0 lg:flex-1'
                   : 'hidden'
               }
             >
