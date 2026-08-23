@@ -140,8 +140,6 @@ export default function TicketDetail({ ticket, teamName, groupId, isAdmin }) {
               </p>
             </div>
             <h1 className="mt-2 text-2xl font-bold text-white">{ticket.title}</h1>
-            {/* Preview only — the full description lives in the Details tab. */}
-            <p className="mt-2 line-clamp-2 text-sm text-slate-400">{ticket.description}</p>
           </div>
 
           <div className="flex flex-col gap-4">
