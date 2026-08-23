@@ -52,7 +52,7 @@ export default function TicketMeta({ ticket, teamName, groupId, isAdmin }) {
   const updateMutation = useUpdateTicket(groupId, ticket.id);
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/5 p-6">
+    <div className="rounded-xl border border-white/10 bg-white/5 p-6 lg:shrink-0">
       <dl className="flex flex-col gap-4">
         <div className="flex items-center justify-between gap-4">
           <dt className="text-sm text-slate-500">Priority</dt>

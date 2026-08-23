@@ -445,13 +445,13 @@ function ChatPanel({
   );
 }
 
-// Fixed rail height (h-132 = 33rem: the gap-4 plus the h-128 Details/Comments
-// panel in TicketDetail, so the rail bottom lines up with that panel's
-// bottom) rather than flex-1 stretch-to-sibling: a long summary or analysis
-// result scrolls inside the panel instead of growing it, and the height
-// stays constant instead of depending on TicketMeta's height (which only
-// exists as a stretch target at lg+ anyway — there's no sibling to stretch
-// against once the layout stacks on mobile).
+// Two heights, one per layout. At lg+ this fills whatever the rail has left
+// under TicketMeta (lg:flex-1) — TicketDetail pins that column to 80vh, so
+// the panel's height follows the viewport and a long summary or analysis
+// result scrolls inside it. Once the layout stacks on mobile there is no
+// column to fill and no fixed frame, so h-132 (33rem) applies instead: a
+// constant, self-contained height rather than flex-1 stretch-to-sibling,
+// which would have nothing to stretch against there.
 //
 // The expanded view is a plain Dialog (not the shared Modal component) since
 // Modal is built for a centered, text-only confirmation (fixed max-w-md, p-6
@@ -487,7 +487,7 @@ export default function AiPanel({ ticket, groupId }) {
       <ChatPanel
         ticket={ticket}
         groupId={groupId}
-        containerClassName="flex h-132 flex-col rounded-xl border border-white/10 bg-white/5"
+        containerClassName="flex h-132 flex-col rounded-xl border border-white/10 bg-white/5 lg:h-auto lg:min-h-0 lg:flex-1"
         onToggleExpand={() => setIsExpanded(true)}
         activeConversationId={activeConversationId}
         onSelectConversation={setSelection}
