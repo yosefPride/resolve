@@ -26,6 +26,13 @@ use crate::state::AppState;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    // Nothing initialized a `log` backend before this, so actix's
+    // Logger::default() access logs below — and every log::error! in the
+    // codebase — were being written nowhere. With RUST_LOG unset the default
+    // filter is error-only, so this stays quiet until something actually
+    // fails; set RUST_LOG=info to also get the access log.
+    env_logger::init();
+
     let config = Config::from_env().map_err(|error| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,

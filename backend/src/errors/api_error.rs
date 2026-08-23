@@ -15,6 +15,12 @@ pub enum ApiError {
     Conflict(String),
     Validation(String),
     RateLimited(String),
+    // The upstream AI provider was reached but could not serve the request —
+    // its free-tier quota is exhausted, or the model is overloaded. Transient
+    // and worth retrying, unlike Internal. Kept distinct from RateLimited,
+    // which means the caller hit *our* per-user chat quota rather than
+    // Google's (see ai/client.rs's generate() for the full reasoning).
+    AiUnavailable,
     Internal,
 }
 
@@ -40,6 +46,7 @@ impl ApiError {
             ApiError::Conflict(_) => "conflict",
             ApiError::Validation(_) => "validation_error",
             ApiError::RateLimited(_) => "rate_limited",
+            ApiError::AiUnavailable => "ai_unavailable",
             ApiError::Internal => "internal_error",
         }
     }
@@ -56,6 +63,14 @@ impl ApiError {
             ApiError::Conflict(message) => message.clone(),
             ApiError::Validation(message) => message.clone(),
             ApiError::RateLimited(message) => message.clone(),
+            // Deliberately doesn't name Gemini or quotas: which provider backs
+            // the AI features, and why it declined, is an internal detail
+            // (docs/api.md). The real status and body are logged server-side
+            // in ai/client.rs instead.
+            ApiError::AiUnavailable => {
+                "the AI service is temporarily unavailable — please try again in a moment"
+                    .to_string()
+            }
             ApiError::Internal => "internal server error".to_string(),
         }
     }
@@ -80,6 +95,7 @@ impl ResponseError for ApiError {
             ApiError::Conflict(_) => StatusCode::CONFLICT,
             ApiError::Validation(_) => StatusCode::BAD_REQUEST,
             ApiError::RateLimited(_) => StatusCode::TOO_MANY_REQUESTS,
+            ApiError::AiUnavailable => StatusCode::SERVICE_UNAVAILABLE,
             ApiError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

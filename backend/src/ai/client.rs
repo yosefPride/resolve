@@ -5,12 +5,16 @@ use serde_json::{Value, json};
 
 use crate::errors::ApiError;
 
-// "-latest" alias rather than a pinned version: gemini-2.0-flash returned 429
-// RESOURCE_EXHAUSTED with quota limit 0 on this project (superseded, no free-
-// tier quota), while gemini-flash-latest resolves to Google's current flash
-// model and works. Using the alias also avoids re-pinning every time Google
-// retires a dated model name.
-const GEMINI_MODEL: &str = "gemini-flash-latest";
+// Pinned, NOT a "-latest" alias. This used to be gemini-flash-latest, chosen
+// because the then-current gemini-2.0-flash had a free-tier quota of 0. That
+// alias has since drifted onto gemini-3.7-flash, whose free tier allows only
+// 5 requests/minute and which frequently returns 503 UNAVAILABLE under load —
+// measured at roughly a 75% failure rate, every one of which surfaced as a
+// 500 here. An alias silently changing the quota and latency profile out from
+// under us is exactly the failure this pin prevents; gemini-3.5-flash is a
+// full (non-lite) flash model with ~10 RPM on the free tier. Re-pin
+// deliberately when upgrading, and re-check the quota when you do.
+const GEMINI_MODEL: &str = "gemini-3.5-flash";
 const GEMINI_API_BASE: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,17 +99,39 @@ impl GeminiClient {
             .json(&request_body)
             .send()
             .await
-            .map_err(|_| ApiError::Internal)?;
+            .map_err(|error| {
+                log::error!("Gemini request failed to send: {error}");
+                ApiError::Internal
+            })?;
 
-        // Gemini error responses (bad key, quota, invalid request) are never
-        // surfaced to the client raw (docs/api.md forbids leaking internal
-        // errors) — they all collapse to Internal, same as every other
-        // external-boundary failure in this codebase (see ApiError's From
-        // impls for repo errors).
-        if !response.status().is_success() {
-            return Err(ApiError::Internal);
+        // Gemini's error body is still never surfaced to the client raw
+        // (docs/api.md forbids leaking internal errors), but it is logged
+        // before being discarded. Previously every failure here collapsed to
+        // a bare Internal with nothing written anywhere, which made a 500
+        // impossible to tell apart from a missing API key (AiService::new) or
+        // a malformed-response parse failure further down.
+        //
+        // 429 (free-tier quota exhausted) and 5xx (model overloaded) are both
+        // transient and worth retrying, so they map to AiUnavailable rather
+        // than Internal. Deliberately not ApiError::RateLimited: that means
+        // the caller hit *our* per-user chat quota (AiService::CHAT_RATE_LIMIT),
+        // and the frontend renders the message verbatim
+        // (frontend/src/utils/errors.js), so reusing it would make "you have
+        // sent too many messages" and "Google is throttling us" read as the
+        // same thing to the user.
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            log::error!("Gemini returned {status} for {GEMINI_MODEL}: {body}");
+            return Err(match status.as_u16() {
+                429 | 500 | 502 | 503 | 504 => ApiError::AiUnavailable,
+                _ => ApiError::Internal,
+            });
         }
-        response.text().await.map_err(|_| ApiError::Internal)
+        response.text().await.map_err(|error| {
+            log::error!("Gemini response body could not be read: {error}");
+            ApiError::Internal
+        })
     }
 }
 
@@ -203,11 +229,19 @@ fn analysis_response_schema() -> Value {
 // responses share this same outer shape (candidates[0].content.parts[0].text)
 // — only what's inside that text differs (plain prose vs. a JSON string).
 fn extract_text(body: &str) -> Result<String, ApiError> {
-    let value: Value = serde_json::from_str(body).map_err(|_| ApiError::Internal)?;
+    let value: Value = serde_json::from_str(body).map_err(|error| {
+        log::error!("Gemini response was not valid JSON: {error}");
+        ApiError::Internal
+    })?;
     value["candidates"][0]["content"]["parts"][0]["text"]
         .as_str()
         .map(str::to_string)
-        .ok_or(ApiError::Internal)
+        .ok_or_else(|| {
+            // Reached when the envelope parses but holds no text part — e.g. a
+            // response blocked by a safety filter, or truncated by MAX_TOKENS.
+            log::error!("Gemini response had no text part: {body}");
+            ApiError::Internal
+        })
 }
 
 fn parse_summary_response(body: &str) -> Result<String, ApiError> {
@@ -228,7 +262,10 @@ struct RawAnalysis {
 
 fn parse_analysis_response(body: &str) -> Result<AnalysisResult, ApiError> {
     let text = extract_text(body)?;
-    let raw: RawAnalysis = serde_json::from_str(&text).map_err(|_| ApiError::Internal)?;
+    let raw: RawAnalysis = serde_json::from_str(&text).map_err(|error| {
+        log::error!("Gemini analysis JSON did not match the schema: {error}; text was {text}");
+        ApiError::Internal
+    })?;
     if raw.severity.trim().is_empty()
         || raw.suggested_fix.trim().is_empty()
         || raw.classification.trim().is_empty()

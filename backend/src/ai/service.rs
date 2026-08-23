@@ -51,7 +51,13 @@ impl AiService<GeminiClient> {
     // doc comment on why a missing key doesn't block the whole backend from
     // booting.
     pub fn new(db: &Database, config: &Config) -> Result<Self, ApiError> {
-        let api_key = config.gemini_api_key.clone().ok_or(ApiError::Internal)?;
+        let api_key = config.gemini_api_key.clone().ok_or_else(|| {
+            // Without this line an unset GEMINI_API_KEY is indistinguishable
+            // from an upstream provider failure: both are a bare 500 with an
+            // "internal_error" body.
+            log::error!("GEMINI_API_KEY is not set — AI endpoints will fail");
+            ApiError::Internal
+        })?;
         Ok(Self::with_provider(db, GeminiClient::new(api_key)))
     }
 }

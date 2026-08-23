@@ -16,12 +16,20 @@ directly.
 
 `main.rs` runs a fixed sequence before the server binds:
 
+0. **`env_logger::init`** — installs a backend for the `log` facade. Until this
+   was added, `Logger::default()`'s access logs and every `log::error!` in the
+   codebase were emitted into the void, which is why AI 500s left no server-side
+   trace. With `RUST_LOG` unset the filter is error-only, so failures show and
+   routine traffic stays quiet; set `RUST_LOG=info` for the access log.
 1. **`Config::from_env`** — loads `.env` via `dotenvy`. `MONGO_URI` and
    `JWT_SECRET` are required and a missing one aborts startup;
    `COOKIE_SECURE` (default `true`), `FRONTEND_ORIGIN` (default
    `http://localhost:5173`) and `GEMINI_API_KEY` are optional. The Gemini key
    is deliberately optional: AI is advisory, so a missing key takes down only
-   the AI endpoints (per-request `Internal`), not the whole process.
+   the AI endpoints (per-request `Internal`), not the whole process. That
+   `Internal` is byte-identical to the one an upstream provider failure
+   produces, so `AiService::new` logs an explicit "GEMINI_API_KEY is not set"
+   to tell the two apart.
 2. **`db::connect`** — opens the client and issues a `ping`, because the driver
    connects lazily and would otherwise report success against an unreachable
    server. The database is always named `resolve`.
@@ -153,7 +161,8 @@ of every handler and service. Every error serializes to the same body:
 | `DuplicateEmail` | 409 | |
 | `Conflict(String)` | 409 | Caller-supplied message. |
 | `Validation(String)` | 400 | Caller-supplied message. |
-| `RateLimited(String)` | 429 | Currently only AI chat. |
+| `RateLimited(String)` | 429 | The caller hit *our* per-user AI chat quota. |
+| `AiUnavailable` | 503 | Upstream AI provider returned 429 or 5xx. Transient. |
 | `Internal` | 500 | |
 
 Repository and driver errors never reach the client directly: `From` impls
@@ -235,10 +244,20 @@ error code 11000 in both the write-error and command-error shapes.
 
 `AiProvider` is a trait, with `GeminiClient` as the production implementation, so
 the service can be exercised against a fake without network access. Model is
-`gemini-flash-latest` (an alias, not a pinned version — pinned `gemini-2.0-flash`
-returned quota-exhausted on this project, and the alias avoids re-pinning when
-Google retires dated names). `analyze` requests a JSON response schema so the
-output is parsed rather than scraped from prose.
+`gemini-3.5-flash`, **pinned**. It was previously the alias `gemini-flash-latest`,
+which drifted onto `gemini-3.7-flash` — free tier 5 requests/minute, plus frequent
+`503 UNAVAILABLE` under load. Measured ~75% of calls failing, and every one
+surfaced to the client as an opaque 500. Pinning is what stops an alias changing
+the quota profile without a code change; re-pin deliberately and re-check the
+model's rate limit when upgrading. `analyze` requests a JSON response schema so
+the output is parsed rather than scraped from prose.
+
+Provider failures are mapped rather than collapsed: upstream `429`/`5xx` become
+`AiUnavailable` (503, "temporarily unavailable — please try again in a moment"),
+anything else stays `Internal`. The upstream status and body are written to the
+log before being discarded, since they are never safe to return to the client.
+Note this is a genuinely transient class of failure with **no retry** in the
+client yet — a single 429 still fails the request.
 
 Rules the module holds to:
 
