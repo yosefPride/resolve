@@ -13,4 +13,85 @@
      Fonts in index.html; the fallbacks keep the layout sane if that request
      fails, which is why the stack ends in the same system sans as body copy. */
   --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+
+  /* Feature-showcase tile animations. Every one runs on the same 4s loop so the
+     three cards stay in step; individual elements are offset with inline
+     animation-delay rather than separate durations. */
+  --animate-link-draw: link-draw 4s ease-in-out infinite;
+  --animate-node-in: node-in 4s ease-in-out infinite;
+  --animate-trail-in: trail-in 4s ease-in-out infinite;
+  --animate-bar-rise: bar-rise 4s ease-in-out infinite;
+}
+
+/* Each keyframe set holds its finished state for most of the cycle and only
+   resets at the very end — the tiles should read as "built, then rebuilt",
+   not as something in constant motion. */
+
+/* Links drawing between issue cards. pathLength="1" on the <path> normalises
+   the dash maths, so this works whatever the actual path length is. */
+@keyframes link-draw {
+  0%,
+  10% {
+    stroke-dashoffset: 1;
+  }
+  40%,
+  92% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: 1;
+  }
+}
+
+@keyframes node-in {
+  0%,
+  30% {
+    opacity: 0;
+  }
+  48%,
+  92% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes trail-in {
+  0%,
+  8% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  28%,
+  92% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes bar-rise {
+  0%,
+  8% {
+    transform: scaleY(0);
+  }
+  42%,
+  92% {
+    transform: scaleY(1);
+  }
+  100% {
+    transform: scaleY(0);
+  }
+}
+
+/* One escape hatch for all four: the tiles render their finished state and
+   simply never animate. */
+@media (prefers-reduced-motion: reduce) {
+  [data-showcase-art] * {
+    animation: none !important;
+  }
 }
