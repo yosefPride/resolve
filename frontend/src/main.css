@@ -8,4 +8,9 @@
    not the raw hex. */
 @theme {
   --color-surface: #141414;
+
+  /* Display face for marketing headlines — `font-display`. Loaded from Google
+     Fonts in index.html; the fallbacks keep the layout sane if that request
+     fails, which is why the stack ends in the same system sans as body copy. */
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
 }
