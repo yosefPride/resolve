@@ -28,9 +28,12 @@ export default function App() {
     <Routes>
       <Route element={<MarketingLayout />}>
         <Route path='/' element={<LandingPage />} />
-        <Route path='/register' element={<RegisterPage />} />
-        <Route path='/login' element={<LoginPage />} />
       </Route>
+
+      {/* Bare, no header/footer — a focused auth screen rather than a
+          marketing page. */}
+      <Route path='/register' element={<RegisterPage />} />
+      <Route path='/login' element={<LoginPage />} />
 
       <Route
         element={
