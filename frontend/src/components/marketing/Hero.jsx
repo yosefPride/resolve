@@ -50,11 +50,6 @@ export default function Hero() {
           </div>
         </div>
 
-        {/* Product demo temporarily swapped out for the beams background.
-            Restoring it means putting the two-column grid back — the demo needs
-            the full width of its column.
-        <ProductDemo />
-        */}
       </div>
     </section>
   );
