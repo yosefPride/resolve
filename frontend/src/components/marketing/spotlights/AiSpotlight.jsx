@@ -5,11 +5,40 @@ import Avatar from '../../ui/Avatar';
 import Input from '../../ui/Input';
 import AiInsightCard from '../../../features/ai/AiInsightCard';
 import FeatureSpotlight from './FeatureSpotlight';
-import {
-  SPOTLIGHT_ANALYSIS,
-  SPOTLIGHT_CHAT_MESSAGES,
-  SPOTLIGHT_SUMMARY,
-} from '../demo/spotlightSeed';
+
+// Canned content for the preview. It used to live in demo/spotlightSeed.js,
+// shared with the landing page demo; that demo is gone and this is the only
+// consumer left, so it lives here now. The times are fixed strings, not Dates
+// computed at load — set dressing shouldn't look like it's ticking.
+const DEMO_USER_NAME = 'Dana Levi';
+
+const CHAT_MESSAGES = [
+  {
+    id: 'm1',
+    role: 'user',
+    user_name: DEMO_USER_NAME,
+    user_id: 'demo-dana',
+    content: 'What could cause this?',
+    relative: '21 minutes ago',
+  },
+  {
+    id: 'm2',
+    role: 'assistant',
+    content:
+      'Most likely the logout handler clears the access-token cookie but not the refresh-token cookie, so the next request silently mints a new session from it. Check that both cookies share the same clear-cookie call.',
+    relative: '20 minutes ago',
+  },
+];
+
+const SUMMARY =
+  'Logging out clears the access token but leaves the refresh cookie in place, letting the next visit silently restore the session.';
+
+const ANALYSIS = {
+  severity_prediction: 'Critical',
+  classification: 'Security / Auth',
+  suggested_fix:
+    'Clear the refresh-token cookie in the same logout handler that clears the access token.',
+};
 
 const PILL =
   'rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60';
@@ -67,13 +96,13 @@ export default function AiSpotlight() {
 
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-6">
           <div className="flex w-full flex-col gap-3 text-left">
-            {SPOTLIGHT_CHAT_MESSAGES.map((message) => (
+            {CHAT_MESSAGES.map((message) => (
               <DemoChatBubble key={message.id} message={message} />
             ))}
 
             {showSummary && (
               <AiInsightCard title="Summary" cached={false}>
-                {SPOTLIGHT_SUMMARY}
+                {SUMMARY}
               </AiInsightCard>
             )}
 
@@ -82,15 +111,15 @@ export default function AiSpotlight() {
                 <dl className="flex flex-col gap-1.5">
                   <div>
                     <dt className="inline font-medium text-slate-400">Severity: </dt>
-                    <dd className="inline">{SPOTLIGHT_ANALYSIS.severity_prediction}</dd>
+                    <dd className="inline">{ANALYSIS.severity_prediction}</dd>
                   </div>
                   <div>
                     <dt className="inline font-medium text-slate-400">Classification: </dt>
-                    <dd className="inline">{SPOTLIGHT_ANALYSIS.classification}</dd>
+                    <dd className="inline">{ANALYSIS.classification}</dd>
                   </div>
                   <div>
                     <dt className="inline font-medium text-slate-400">Suggested fix: </dt>
-                    <dd className="inline">{SPOTLIGHT_ANALYSIS.suggested_fix}</dd>
+                    <dd className="inline">{ANALYSIS.suggested_fix}</dd>
                   </div>
                 </dl>
               </AiInsightCard>
