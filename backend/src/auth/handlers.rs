@@ -16,19 +16,29 @@ use crate::user::service::UserService;
 // Config::cookie_secure) since a real browser refuses to store a Secure
 // cookie at all over plain HTTP, which local dev runs over.
 //
-// SameSite=Strict is intentionally left fixed rather than made configurable:
-// "site" for SameSite purposes ignores port (and, for same-registrable-domain
-// hosts, ignores subdomain), so this already works for the intended
-// topologies — a local dev frontend on a different port, or a production
-// frontend/API split across subdomains of the same domain. It would only
-// need to relax to None (+ Secure) if frontend and API ever ended up on
-// genuinely unrelated domains.
+// SameSite tracks `secure` rather than being fixed: production (secure=true)
+// deploys frontend and API on genuinely unrelated sites (e.g. separate
+// *.onrender.com hosts, which sit on the Public Suffix List as distinct
+// registrable domains even though they look like subdomains of one), so the
+// cookie needs SameSite=None — which browsers only honor alongside Secure,
+// hence tying the two together. Local dev (secure=false, plain HTTP) can't
+// use None at all (Secure-less None cookies are rejected outright), but
+// doesn't need it either — a different port on localhost is still same-site
+// — so it stays on Strict.
+fn same_site(secure: bool) -> SameSite {
+    if secure {
+        SameSite::None
+    } else {
+        SameSite::Strict
+    }
+}
+
 fn refresh_cookie(raw_token: String, secure: bool) -> Cookie<'static> {
     Cookie::build(REFRESH_TOKEN_COOKIE, raw_token)
         .path("/api/v1/auth")
         .http_only(true)
         .secure(secure)
-        .same_site(SameSite::Strict)
+        .same_site(same_site(secure))
         .max_age(CookieDuration::days(REFRESH_TOKEN_TTL_DAYS))
         .finish()
 }
@@ -38,7 +48,7 @@ fn expired_refresh_cookie(secure: bool) -> Cookie<'static> {
         .path("/api/v1/auth")
         .http_only(true)
         .secure(secure)
-        .same_site(SameSite::Strict)
+        .same_site(same_site(secure))
         .max_age(CookieDuration::ZERO)
         .finish()
 }
