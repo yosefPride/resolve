@@ -24,7 +24,7 @@ export default function DashboardHeader() {
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-4">
-      <h1 className="text-2xl font-bold text-white">Welcome, {user?.name}</h1>
+      <h1 className="text-2xl font-bold text-white">Welcome, {user?.name} 👋</h1>
 
       <div className="flex shrink-0 items-center gap-2">
         <Button variant="ghost" onClick={() => setIsCreatingTeam(true)}>

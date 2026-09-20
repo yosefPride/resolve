@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { listGroups } from '../../services/groups.service';
 import { useDashboardOverview } from '../../hooks/useDashboardOverview';
 import TicketCard from '../tickets/TicketCard';
@@ -30,17 +31,24 @@ export default function RecentTickets() {
     .slice(0, RECENT_LIMIT);
 
   return (
-    <div className="flex flex-col gap-3 border-t border-white/10 pt-6">
+    <div className="flex flex-col gap-3">
       <h2 className="text-sm font-semibold text-white">Recent activity</h2>
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col divide-y divide-white/10 overflow-hidden rounded-xl border border-white/10 bg-white/5">
         {recent.map((ticket) => (
           <TicketCard
             key={ticket.id}
             ticket={ticket}
             groupId={ticket.group_id}
             meta={ticket.group_name}
+            variant="row"
           />
         ))}
+        <Link
+          to="/tickets"
+          className="px-4 py-3 text-center text-sm font-medium text-sky-300 transition-colors hover:bg-white/5 hover:text-sky-200"
+        >
+          View all issues
+        </Link>
       </div>
     </div>
   );

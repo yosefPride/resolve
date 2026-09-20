@@ -1,16 +1,21 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
 import { AlertTriangle, Ticket, User as UserIcon, Users } from 'lucide-react';
 import { listGroups } from '../../services/groups.service';
 import { useDashboardOverview } from '../../hooks/useDashboardOverview';
 import { useAuth } from '../../hooks/useAuth';
-import { isGroupAdmin } from '../../utils/roles';
-import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
-import StatTile from '../../components/ui/StatTile';
 import CreateGroupForm from '../groups/CreateGroupForm';
+
+// Tailwind's class scanner needs full literal class names, so these can't be
+// built with a template string off the `color` key below.
+const STAT_COLORS = {
+  sky: { value: 'text-sky-300', chip: 'bg-sky-500/15 text-sky-300' },
+  amber: { value: 'text-amber-300', chip: 'bg-amber-500/15 text-amber-300' },
+  rose: { value: 'text-rose-300', chip: 'bg-rose-500/15 text-rose-300' },
+  violet: { value: 'text-violet-300', chip: 'bg-violet-500/15 text-violet-300' },
+};
 
 // Shares the ['groups'] query key with Sidebar and GroupStats, so this page
 // is usually a cache hit rather than a fresh request, and stays in sync with
@@ -60,32 +65,28 @@ export default function DashboardStats() {
   ).length;
 
   return (
-    <div className="flex flex-col gap-6 border-t border-white/10 pt-6">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatTile icon={Users} label="Teams" value={groups.length} />
-        <StatTile icon={Ticket} label="Open Issues" value={totalOpenIssues} />
-        <StatTile icon={AlertTriangle} label="Critical/High Open" value={criticalOrHighOpen} />
-        <StatTile icon={UserIcon} label="My Open Issues" value={myOpenTickets} />
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {groups.map((group) => (
-          <Link
-            key={group.id}
-            to={`/tickets?group=${group.id}`}
-            className="flex flex-col gap-2 rounded-lg border border-white/10 bg-white/5 p-4 text-left transition-colors hover:border-white/20 hover:bg-white/10"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="truncate font-semibold text-white">{group.name}</span>
-              <Badge size="sm">{isGroupAdmin(group.role) ? 'Team Admin' : 'Contributor'}</Badge>
-            </div>
-            <p className="text-sm text-slate-400">
-              {group.member_count} member{group.member_count === 1 ? '' : 's'} ·{' '}
-              {group.open_ticket_count} open issue{group.open_ticket_count === 1 ? '' : 's'}
-            </p>
-          </Link>
-        ))}
-      </div>
+    <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      {[
+        { icon: Users, label: 'Teams', value: groups.length, color: 'sky' },
+        { icon: Ticket, label: 'Open Issues', value: totalOpenIssues, color: 'amber' },
+        { icon: AlertTriangle, label: 'Critical/High Open', value: criticalOrHighOpen, color: 'rose' },
+        { icon: UserIcon, label: 'My Open Issues', value: myOpenTickets, color: 'violet' },
+      ].map(({ icon: Icon, label, value, color }) => (
+        <div
+          key={label}
+          className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/5 p-3 sm:gap-4 sm:p-5"
+        >
+          <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-200 sm:gap-2 sm:text-base">
+            <span
+              className={`flex h-7 w-7 items-center justify-center rounded-full sm:h-10 sm:w-10 ${STAT_COLORS[color].chip}`}
+            >
+              <Icon className="h-3.5 w-3.5 sm:h-5 sm:w-5" />
+            </span>
+            {label}
+          </span>
+          <span className={`text-2xl font-bold sm:text-4xl ${STAT_COLORS[color].value}`}>{value}</span>
+        </div>
+      ))}
     </div>
   );
 }
