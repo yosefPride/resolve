@@ -96,11 +96,14 @@ group-scoped call names its group in the path. Instead:
   defaults to the user's first team when the param is absent and rewrites the URL
   (`replace: true`); switching teams sets the param, and `TicketList` is keyed on
   the group id so a switch remounts rather than showing stale rows.
-- The dashboard spans teams by fetching each group's tickets in parallel
-  (`useDashboardOverview` over `useQueries`) and merging client-side. Each
-  request is still an ordinary RBAC-scoped `/groups/{id}/tickets` call — never a
-  cross-group query. It caps at 100 tickets per group, so very large groups
-  undercount in that widget.
+- The dashboard spans teams with per-group requests in parallel via
+  `useQueries`, never a cross-group query. `RecentTickets`
+  (`useDashboardOverview`) fetches up to 100 ticket rows per group to sort by
+  `updated_at`; very large groups undercount in that widget. The Critical/High
+  Open and My Open Issues tiles (`useDashboardTicketCounts`) instead read
+  `total` from small filtered requests (`per_page=1`) — `TicketService::
+  list_tickets` computes `total` over the full filtered set before paginating,
+  so these two counts are exact regardless of group size.
 
 ## Directory layout
 
