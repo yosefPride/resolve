@@ -3,11 +3,12 @@ import { listTickets } from '../services/tickets.service';
 
 // One ticket page (up to the API's per-group max) per team, fetched in
 // parallel — each request is a normal RBAC-scoped /groups/{id}/tickets call,
-// merged client-side, never a cross-group query. From this single response
-// per group the dashboard derives everything it needs (priority breakdown,
-// "created by me" count, cross-team recent list) without a request per
-// widget. Groups with more than 100 tickets undercount past the cap;
-// acceptable for an overview widget, not a source of truth.
+// merged client-side, never a cross-group query. Backs RecentTickets' cross-
+// team recency list, which needs real ticket rows (title, updated_at,
+// priority) to sort and display — not just a count, so it can't use
+// useDashboardTicketCounts' exact `total` approach. Groups with more than
+// 100 tickets undercount past the cap; acceptable for a "recent activity"
+// widget, not a source of truth.
 const OVERVIEW_FILTERS = { perPage: 100 };
 
 export function useDashboardOverview(groups) {

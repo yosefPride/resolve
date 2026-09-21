@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Ticket, User as UserIcon, Users } from 'lucide-react';
 import { listGroups } from '../../services/groups.service';
-import { useDashboardOverview } from '../../hooks/useDashboardOverview';
+import { useDashboardTicketCounts } from '../../hooks/useDashboardTicketCounts';
 import { useAuth } from '../../hooks/useAuth';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
@@ -23,13 +23,14 @@ const STAT_COLORS = {
 // endpoint exists or is needed: GET /groups already carries every field used
 // for the Teams/Open Issues tiles and the team cards (member_count,
 // open_ticket_count, role) per team; the priority/mine tiles come from
-// useDashboardOverview instead (see that hook for why).
+// useDashboardTicketCounts instead — exact `total` counts from filtered
+// requests, not a capped/client-filtered ticket fetch (see that hook for why).
 export default function DashboardStats() {
   const [isCreating, setIsCreating] = useState(false);
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { data: groups = [], status } = useQuery({ queryKey: ['groups'], queryFn: listGroups });
-  const { tickets } = useDashboardOverview(groups);
+  const { criticalOrHighOpen, myOpenTickets } = useDashboardTicketCounts(groups, user?.id);
 
   function handleCreated() {
     queryClient.invalidateQueries({ queryKey: ['groups'] });
@@ -57,12 +58,6 @@ export default function DashboardStats() {
   }
 
   const totalOpenIssues = groups.reduce((sum, group) => sum + group.open_ticket_count, 0);
-  const criticalOrHighOpen = tickets.filter(
-    (ticket) => ticket.status === 'open' && (ticket.priority === 'critical' || ticket.priority === 'high'),
-  ).length;
-  const myOpenTickets = tickets.filter(
-    (ticket) => ticket.status === 'open' && ticket.created_by === user?.id,
-  ).length;
 
   return (
     <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
