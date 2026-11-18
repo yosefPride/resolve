@@ -1,73 +1,80 @@
 # Backend — as built
 
-How the Actix-web backend is actually organized, and what happens to a request
+How the Node.js backend is actually organized, and what happens to a request
 from the socket to the database and back. For the *intended* design, see
 [`docs/specification/backend.md`](../specification/backend.md) and
 [`rbac.md`](../specification/rbac.md); where the two disagree, the deviations are
 listed in [`deviations.md`](deviations.md).
 
-Stack: Rust (edition 2024), actix-web 4, MongoDB driver 3, `jsonwebtoken`,
-`bcrypt`, `reqwest` (for Gemini). No ORM — repositories talk to the driver
+Stack: Node.js 22+ (plain JavaScript, ES modules), the built-in `node:http`
+server — no web framework — the official MongoDB driver, `bcryptjs`, and the
+built-in `fetch` (for Gemini). No ORM — repositories talk to the driver
 directly.
+
+The backend was translated from an earlier Rust/actix-web implementation, and
+keeps that server's HTTP behavior exactly — same routes, status codes, JSON
+bodies, cookies, CORS headers, and error texts — and the same stored document
+shapes, so it runs against an existing database unchanged. The few modules that
+exist only to preserve that behavior are described under
+[*Compatibility layer*](#compatibility-layer).
 
 ---
 
 ## Startup
 
-`main.rs` runs a fixed sequence before the server binds:
+`main.js` runs a fixed sequence before the server binds:
 
-0. **`env_logger::init`** — installs a backend for the `log` facade. Until this
-   was added, `Logger::default()`'s access logs and every `log::error!` in the
-   codebase were emitted into the void, which is why AI 500s left no server-side
-   trace. With `RUST_LOG` unset the filter is error-only, so failures show and
-   routine traffic stays quiet; set `RUST_LOG=info` for the access log.
-1. **`Config::from_env`** — loads `.env` via `dotenvy`. `MONGO_URI` and
-   `JWT_SECRET` are required and a missing one aborts startup;
-   `COOKIE_SECURE` (default `true`), `FRONTEND_ORIGIN` (default
-   `http://localhost:5173`) and `GEMINI_API_KEY` are optional. The Gemini key
-   is deliberately optional: AI is advisory, so a missing key takes down only
-   the AI endpoints (per-request `Internal`), not the whole process. That
-   `Internal` is byte-identical to the one an upstream provider failure
-   produces, so `AiService::new` logs an explicit "GEMINI_API_KEY is not set"
-   to tell the two apart.
-2. **`db::connect`** — opens the client and issues a `ping`, because the driver
-   connects lazily and would otherwise report success against an unreachable
-   server. The database is always named `resolve`.
-3. **`db::ensure_indexes`** — creates every index in `db.rs`'s `index_table`
-   (see [`data-model.md`](data-model.md)). Idempotent, runs on every boot.
-4. **One-time migrations** — `backfill_ticket_content_updated_at` and
-   `wipe_legacy_chat_messages`. Both are filtered so they are no-ops after the
+0. **`initLogger`** (`logging.js`) — with `LOG_LEVEL` unset the threshold is
+   error-only, so failures show and routine traffic stays quiet; set
+   `LOG_LEVEL=info` for the per-request access log. A failed log write (say,
+   the reader of a piped stderr went away) is dropped rather than crashing the
+   process.
+1. **`Config.fromEnv`** — loads the first `.env` found in the working directory
+   or a parent. `MONGO_URI` and `JWT_SECRET` are required and a missing one
+   aborts startup; `COOKIE_SECURE` (default `true`), `FRONTEND_ORIGIN` (default
+   `http://localhost:5173`), `GEMINI_API_KEY`, `MONGO_DB` (default `resolve`)
+   and `PORT` (default `8080`) are optional. The Gemini key is deliberately
+   optional: AI is advisory, so a missing key takes down only the AI endpoints
+   (per-request `Internal`), not the whole process. That `Internal` is
+   byte-identical to the one an upstream provider failure produces, so
+   `AiService.create` logs an explicit "GEMINI_API_KEY is not set" to tell the
+   two apart.
+2. **`db.connect`** (`db/index.js`) — opens the client and issues a `ping`,
+   because the driver connects lazily and would otherwise report success against
+   an unreachable server.
+3. **`db.ensureIndexes`** — creates every index in the `INDEXES` table (see
+   [`data-model.md`](data-model.md)). Idempotent, runs on every boot.
+4. **One-time migrations** — `backfillTicketContentUpdatedAt` and
+   `wipeLegacyChatMessages`. Both are filtered so they are no-ops after the
    first run.
-5. **Server** — `AppState { db, config }` is shared as `web::Data`, wrapped in
-   `Logger` and a CORS layer. CORS names `frontend_origin` explicitly rather
-   than using a wildcard, because the refresh cookie requires credentialed
-   requests and the CORS spec forbids combining those with `*`.
+5. **Server** — `createServer({ db, config })` (`server/app.js`) handles CORS,
+   routing, extractors, and response writing. CORS names `FRONTEND_ORIGIN`
+   explicitly rather than using a wildcard, because the refresh cookie requires
+   credentialed requests and the CORS spec forbids combining those with `*`.
 
-Everything is mounted under a single `/api/v1` scope. The bind address is fixed
-at `127.0.0.1:8080`.
+Everything is mounted under `/api/v1`. The server binds to `0.0.0.0:$PORT`.
 
 ## Module layout
 
-`lib.rs` / `main.rs` declare one module per feature. Almost every feature module
-has the same five files:
+`src/` has one folder per feature. Almost every feature folder has the same four
+files:
 
 | File | Responsibility |
 | --- | --- |
-| `models.rs` | Documents and request/response DTOs. No behavior. |
-| `repository.rs` | MongoDB access only. No authorization, no business rules. |
-| `service.rs` | Business logic and every authorization check. |
-| `handlers.rs` | Thin Actix handlers: parse input, call the service, map to `HttpResponse`. Format validation (lengths, empty strings) lives here. |
-| `mod.rs` | Re-exports. |
+| `models.js` | Stored-document decoders, response shapes, and request-body types. No behavior. |
+| `repository.js` | MongoDB access only. No authorization, no business rules. |
+| `service.js` | Business logic and every authorization check. |
+| `handlers.js` | Thin handlers: declare extractors, parse ids, call the service, build the `HttpResponse`. Format validation (lengths, empty strings) lives here. |
 
 The feature modules:
 
 - **`auth`** — registration, login, `/me`, password change, refresh, logout.
-  Extra files: `jwt.rs`, `refresh_token.rs`, `password.rs`, `claims.rs`.
+  Extra files: `jwt.js`, `refreshToken.js`, `password.js`.
 - **`user`** — user documents and lookups. No handlers of its own; it exists so
   other modules (auth, rbac, admin, and every service that resolves a display
   name) share one user access path.
 - **`group`** — groups and membership: create, rename, delete, list, member
-  add/remove/role-change, leave. Also owns `purge_group_data`, the cascade used
+  add/remove/role-change, leave. Also owns `purgeGroupData`, the cascade used
   when a group is deleted.
 - **`rbac`** — no handlers, no models: just `RbacService`, the shared
   authorization primitives (below).
@@ -82,57 +89,66 @@ The feature modules:
 - **`admin`** — System Admin surface: user list, group list, promote/demote,
   user deletion with succession, audit log.
 - **`ai`** — Gemini-backed summarize/analyze plus per-user chat conversations.
-  Extra file: `client.rs`.
+  Extra file: `client.js`.
 
-Supporting modules: `config.rs`, `db.rs`, `state.rs`, `errors/`, `server/`
-(routes + extractors), and `utils/` (shared `RepoResult`, `insert_id`,
-`is_duplicate_key`, regex escaping for user-supplied search terms, and a
-Levenshtein distance used for typo-tolerant title search).
+Supporting modules: `config.js`, `logging.js`, `errors.js`, `db/` (`index.js`
+— connection, indexes, migrations; `model.js` — typed decoding of stored
+documents), `server/` (HTTP server, router, route table, extractors), `serde/`
+(request-body and query-string parsing), `rust.js` (string and date semantics
+carried over from the Rust implementation), and `utils.js` (`insertWithId`,
+`isDuplicateKey`, `parseObjectId`, regex escaping for user-supplied search
+terms, and a Levenshtein distance used for typo-tolerant title search).
 
 ## Request lifecycle
 
 ```
 HTTP request
-  → CORS + Logger
-  → route match (server/routes.rs)
-  → extractor: AuthenticatedUser | GroupScoped | SystemAdminUser
+  → CORS (preflights are answered here)
+  → route match (server/routes.js; path matched after percent-decoding)
+  → extractors: authenticatedUser | groupScoped | systemAdminUser,
+                path, query, json body
   → handler        (parse + format validation)
   → service        (business rules + RBAC)
   → repository     (Mongo query, always group-scoped)
   → response, or ApiError → JSON error body
 ```
 
-### Extractors (`server/middleware.rs`)
+### Extractors (`server/middleware.js`, `server/extract.js`)
 
-Authentication is not a middleware wrapper but three `FromRequest` extractors, so
-each route declares its own requirement in its handler signature:
+Authentication is not a global middleware but per-handler extractors, so each
+route declares its own requirement: `handler([groupScoped, path, json(T)], fn)`.
 
-- **`AuthenticatedUser`** — decodes the bearer token and yields `user_id`.
+- **`authenticatedUser`** — decodes the bearer token and yields `userId`.
   Entirely stateless: signature and `exp` only, no database lookup. That is safe
   because access tokens live 15 minutes; revocation is the refresh token's job.
   Used where authentication alone is the requirement.
-- **`GroupScoped`** — the tenant-scoped context. Decodes the token, parses the
-  `{id}` path segment as the group id, and calls `RbacService::require_member`.
+- **`groupScoped`** — the tenant-scoped context. Decodes the token, parses the
+  `{id}` path segment as the group id, and calls `RbacService.requireMember`.
   Membership is therefore re-checked on every request, so a user removed from a
   group is rejected on their next call rather than at token expiry. Handlers
   scoped to a group take this and never parse a group id themselves.
-- **`SystemAdminUser`** — decodes the token and requires the global System Admin
+- **`systemAdminUser`** — decodes the token and requires the global System Admin
   role. Used by every `/admin` route.
+
+The dispatcher runs a handler's extractors in three passes — synchronous checks
+(token, ids, content type, query string) in argument order, then the JSON body,
+then the database-backed checks (membership, admin role) — which decides which
+error a request with several problems gets.
 
 The extractor is the request-level half of RBAC only. Service-layer checks still
 run underneath it — both layers are required.
 
-### RBAC (`rbac/service.rs`)
+### RBAC (`rbac/service.js`)
 
 `RbacService` answers one question: what is this user's relationship to this
 group, or to the system?
 
 | Method | Rule |
 | --- | --- |
-| `require_member` | Returns the `GroupMember` (with role) or `Forbidden`. |
-| `require_group_admin` | Member *and* role is Group Admin. |
-| `require_system_admin` | Global role is System Admin. |
-| `require_owner_or_group_admin` | Pure function: Group Admin, or the resource's creator. |
+| `requireMember` | Returns the membership (with role) or `Forbidden`. |
+| `requireGroupAdmin` | Member *and* role is Group Admin. |
+| `requireSystemAdmin` | Global role is System Admin. |
+| `requireOwnerOrGroupAdmin` | Pure function: Group Admin, or the resource's creator. |
 
 Two deliberate absences: **group isolation** is not enforced here — it is
 enforced by every repository query filtering on `group_id` — and the
@@ -141,41 +157,47 @@ membership business logic rather than a reusable primitive.
 
 Non-membership returns `Forbidden`, never `NotFound`, so a non-member cannot
 probe whether a group id exists. The same reasoning applies to a missing user in
-`require_system_admin`.
+`requireSystemAdmin`.
 
-### Errors (`errors/api_error.rs`)
+### Errors (`errors.js`)
 
-One enum, `ApiError`, implements Actix's `ResponseError` and is the return type
-of every handler and service. Every error serializes to the same body:
+One class, `ApiError`, is what every handler and service throws. Every error
+serializes to the same body:
 
 ```json
 { "error": { "code": "forbidden", "message": "..." } }
 ```
 
-| Variant | Status | Notes |
+| Kind | Status | Notes |
 | --- | --- | --- |
 | `InvalidCredentials` | 401 | |
 | `Unauthenticated` | 401 | Missing/invalid/expired token. |
 | `Forbidden` | 403 | Message is deliberately generic. |
 | `NotFound` | 404 | |
 | `DuplicateEmail` | 409 | |
-| `Conflict(String)` | 409 | Caller-supplied message. |
-| `Validation(String)` | 400 | Caller-supplied message. |
-| `RateLimited(String)` | 429 | The caller hit *our* per-user AI chat quota. |
+| `Conflict` | 409 | Caller-supplied message. |
+| `Validation` | 400 | Caller-supplied message. |
+| `RateLimited` | 429 | The caller hit *our* per-user AI chat quota. |
 | `AiUnavailable` | 503 | Upstream AI provider returned 429 or 5xx. Transient. |
 | `Internal` | 500 | |
 
-Repository and driver errors never reach the client directly: `From` impls
-collapse `mongodb::error::Error`, bcrypt, and JWT failures into `Internal`, while
-domain-specific repo enums (`UserRepoError`, `GroupRepoError`, `LinkRepoError`)
+Repository and driver errors never reach the client directly: anything thrown
+that isn't an `ApiError` (a MongoDB failure, a malformed stored document, a
+bcrypt failure) becomes `Internal`, while the user, group and link repositories
 map their duplicate-key cases to `DuplicateEmail` / `Conflict`.
+
+Malformed requests that never reach a handler are answered as plain text, not
+JSON: an unparsable or mistyped JSON body (`Json deserialize error: …`), a wrong
+`Content-Type` (`Content type error`), a body over 2 MiB (413), or a bad query
+string (`Query deserialize error: …`).
 
 ## Authentication
 
 Two tokens, with different jobs.
 
-**Access token** — a JWT (`sub` = user id, `exp`), 15-minute TTL, sent by the
-client as `Authorization: Bearer`. Verified statelessly.
+**Access token** — a JWT (HS256; `sub` = user id, `exp`), 15-minute TTL, sent by
+the client as `Authorization: Bearer`. Verified statelessly, with 60 seconds of
+leeway on `exp`.
 
 **Refresh token** — 32 bytes of CSPRNG output, hex-encoded. Only its SHA-256
 hash is stored, so a leaked database cannot be used to mint sessions; SHA-256 is
@@ -184,11 +206,14 @@ high-entropy. TTL is 30 days, enforced both by the stored `expires_at` and by a
 MongoDB TTL index that reaps spent tokens without a cron job.
 
 It travels in a cookie scoped to `path=/api/v1/auth`, so it is never sent on
-unrelated API calls. `httpOnly` keeps it away from JS; `SameSite=Strict` is
-fixed (SameSite ignores port and, for same-domain hosts, subdomain — so it
-already covers both the local dev split and a production frontend/API subdomain
-split); `Secure` is config-driven because browsers refuse Secure cookies over
-plain HTTP.
+unrelated API calls. `httpOnly` keeps it away from JS. `Secure` is
+config-driven because browsers refuse Secure cookies over plain HTTP, and
+`SameSite` follows it: `None` when secure (production deploys frontend and API
+on unrelated sites, and browsers honor `None` only alongside `Secure`), `Strict`
+for local HTTP development, where a different port on localhost is still
+same-site.
+
+Passwords are bcrypt (cost 12, `$2b$` hashes).
 
 Notable route behaviors:
 
@@ -205,13 +230,14 @@ Notable route behaviors:
 
 | Scope | Guard | Contents |
 | --- | --- | --- |
-| `/auth` | mixed | `register`, `login` (none); `me`, `me` PATCH, `me/password` (`AuthenticatedUser`); `refresh`, `logout` (cookie only). |
-| `/groups` | `AuthenticatedUser` for create/list; `GroupScoped` for everything under `/{id}` | Group CRUD, membership, and all nested resources: `tickets`, `comments`, `reactions`, `activity`, `links`, `references`. |
-| `/ai` | `GroupScoped` (`/ai/groups/{id}/tickets/{ticket_id}/…`) | `summarize`, `analyze`, and conversation create/list/delete plus message send/list. |
-| `/admin` | `SystemAdminUser` | `users`, `groups`, `groups/{id}` DELETE, `audit-log`, and `users/{id}/{deletion-check,delete,promote,demote}`. |
+| `/auth` | mixed | `register`, `login` (none); `me`, `me` PATCH, `me/password` (`authenticatedUser`); `refresh`, `logout` (cookie only). |
+| `/groups` | `authenticatedUser` for create/list; `groupScoped` for everything under `/{id}` | Group CRUD, membership, and all nested resources: `tickets`, `comments`, `reactions`, `activity`, `links`, `references`. |
+| `/ai` | `groupScoped` (`/ai/groups/{id}/tickets/{ticket_id}/…`) | `summarize`, `analyze`, and conversation create/list/delete plus message send/list. |
+| `/admin` | `systemAdminUser` | `users`, `groups`, `groups/{id}` DELETE, `audit-log`, and `users/{id}/{deletion-check,delete,promote,demote}`. |
 
 Every group-scoped path is `/groups/{id}/...`. There is no "active group" on the
-server: the group is always named explicitly in the path.
+server: the group is always named explicitly in the path. Unmatched paths and
+methods (including `HEAD`) get an empty 404.
 
 ## Cross-cutting behaviors
 
@@ -219,11 +245,11 @@ server: the group is always named explicitly in the path.
 query filter. A ticket id from another group therefore reads as `NotFound`
 rather than leaking that it exists elsewhere. Services that receive both a group
 and a nested resource id (comments, activity, links, AI) re-verify that the
-ticket belongs to the group, because `GroupScoped` only proves membership in the
+ticket belongs to the group, because `groupScoped` only proves membership in the
 group — not that the ticket is in it.
 
 **Ticket numbering.** Each group has its own `ticket_number` sequence, allocated
-by an atomic counter (`TicketRepository::next_ticket_number`) and backed by a
+by an atomic counter (`TicketRepository.nextTicketNumber`) and backed by a
 unique index on `(group_id, ticket_number)`.
 
 **Activity logging.** Ticket updates diff before/after values and record an event
@@ -233,19 +259,21 @@ name is resolved at read time so later renames are reflected.
 **Cascade deletes.** Deleting a ticket clears its comments, reactions, activity,
 links (both directions, so no dangling relation is left on the other end),
 references, and AI insights/conversations. Deleting a group runs
-`group::purge_group_data` over the same surface for every ticket in it.
+`purgeGroupData` (`group/service.js`) over the same surface for every ticket in
+it.
 
 **Uniqueness.** Application-level pre-checks (duplicate email, duplicate member,
 duplicate link) exist to produce good error messages; the unique index is what
-actually rejects a concurrent duplicate. `utils::is_duplicate_key` recognizes
-error code 11000 in both the write-error and command-error shapes.
+actually rejects a concurrent duplicate. `utils.isDuplicateKey` recognizes error
+code 11000.
 
 ## AI module
 
-`AiProvider` is a trait, with `GeminiClient` as the production implementation, so
-the service can be exercised against a fake without network access. Model is
-`gemini-3.5-flash`, **pinned**. It was previously the alias `gemini-flash-latest`,
-which drifted onto `gemini-3.7-flash` — free tier 5 requests/minute, plus frequent
+`AiService` takes its provider as a constructor argument, with `GeminiClient` as
+the production one (`AiService.create`), so the service can be exercised against
+a fake without network access. Model is `gemini-3.5-flash`, **pinned**. It was
+previously the alias `gemini-flash-latest`, which drifted onto
+`gemini-3.7-flash` — free tier 5 requests/minute, plus frequent
 `503 UNAVAILABLE` under load. Measured ~75% of calls failing, and every one
 surfaced to the client as an opaque 500. Pinning is what stops an alias changing
 the quota profile without a code change; re-pin deliberately and re-check the
@@ -279,10 +307,30 @@ Rules the module holds to:
 - Conversation titles are derived from the first message (truncated on a char
   boundary), not generated by a model call.
 
+## Compatibility layer
+
+These modules exist so the server answers exactly as the Rust implementation
+did, including for malformed input, rather than with a framework's defaults:
+
+- **`serde/`** — parses JSON bodies and query strings into the request types in
+  each `models.js`, with the original parser's rules and error texts (e.g.
+  ``missing field `email` at line 1 column 2``), so clients that display server
+  messages see the same thing.
+- **`server/router.js`** — route matching on the percent-decoded path, exact and
+  case-sensitive, one method per route, tried in table order.
+- **`server/mime.js`, `server/cookies.js`** — which `Content-Type` values count
+  as JSON, and how the `Cookie` header is split and decoded.
+- **`rust.js`** — validation semantics that differ between the languages:
+  whitespace for `trim` (U+0085 yes, U+FEFF no), UTF-8 byte length for the
+  password and ticket-title limits, code-point ordering for reactions, and the
+  RFC 3339 timestamp format (fractional seconds only when non-zero).
+- **`db/model.js`** — stored documents are decoded strictly, so a document with
+  a missing or wrongly typed field fails the request with 500 rather than
+  leaking a partial shape. This is why new non-optional fields need a backfill.
+
 ## Tests
 
-There are currently **no automated tests in the repository** — no `tests/`
-directory and no `#[cfg(test)]` modules. Several code comments still refer to
-test-only affordances that outlived their tests (`jwt::issue_token_with_exp`,
-`AiService::with_provider`, the free functions in `ai/service.rs` kept
-unit-testable). Verification today is manual, against a running backend.
+There are currently **no automated tests in the repository**. The translation
+was verified by running both implementations side by side against identical
+requests and comparing responses, outgoing Gemini requests, and the resulting
+database contents; that harness was not committed.

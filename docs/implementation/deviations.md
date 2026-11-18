@@ -49,7 +49,7 @@ ownership rule.
 ### 1.3 Rate limiting exists but no spec mentions it
 
 AI chat is capped at 10 user messages per hour per user, returning `429` with
-`ApiError::RateLimited`. `api.md`'s Status Codes list does not include `429` at
+`ApiError` `RateLimited`. `api.md`'s Status Codes list does not include `429` at
 all, and no spec file mentions rate limiting.
 
 **Resolution:** spec. Add `429` to the status code list and the limit to the AI
@@ -65,7 +65,7 @@ lists create, list, get, delete, and the member operations — but no rename.
 ### 1.5 Four backend modules and two frontend feature folders are missing from the structure lists
 
 `backend.md`'s module tree omits `activity/`, `link/`, `reaction/`,
-`reference/`, and `db.rs`. `frontend.md`'s `features/` tree omits `activity/`
+`reference/`, and `db/`. `frontend.md`'s `features/` tree omits `activity/`
 and `links/`.
 
 **Resolution:** spec. Purely a stale listing — the modules follow the documented
@@ -130,12 +130,12 @@ elsewhere; the page itself was dropped.
 
 ## 3. Built differently than described
 
-### 3.1 `GroupScoped` does not carry the caller's role
+### 3.1 `groupScoped` does not carry the caller's role
 
 Both `backend.md` ("Handlers receive the resolved `{ user_id, group_id, role }`")
 and `rbac.md` ("resolves the caller's current role in one lookup") describe the
-extractor as resolving and handing over the role. It does not: `GroupScoped` is
-`{ user_id, group_id }` only. It calls `require_member` to verify membership and
+extractor as resolving and handing over the role. It does not: `groupScoped` is
+`{ userId, groupId }` only. It calls `requireMember` to verify membership and
 discards the returned role; services re-derive it where a role check is needed.
 
 The security posture is unchanged — membership is still checked per request, and
@@ -183,6 +183,18 @@ separate `ticket_id` and `group_id` indexes on both `comments` and
 as-built shape.
 
 ---
+
+### 3.4 The backend is Node.js, not Rust/Actix-web
+
+`architecture.md` ("Actix-web REST API") and `backend.md` (stack: Rust,
+Actix-web) name the original implementation. The backend has since been
+translated to Node.js — plain JavaScript on the built-in `node:http` server, no
+framework — keeping the same routes, request/response shapes, error texts,
+cookies, stored documents, and the Handler → Service → Repository layering. See
+[`backend-flow.md`](backend-flow.md).
+
+**Resolution:** spec. Only the stack lines change; everything the spec says
+about behavior still holds.
 
 ## 4. Absolute rules that are narrower than stated
 
@@ -243,11 +255,10 @@ for the layers it describes.
 
 ### 5.2 There are no automated tests
 
-No `tests/` directory, no `#[cfg(test)]` modules; frontend testing is manual by
-decision. Several backend comments still describe test-only affordances
-(`jwt::issue_token_with_exp`, `AiService::with_provider`, free functions in
-`ai/service.rs` kept unit-testable) whose tests no longer exist. No spec file
-claims tests exist, so this is not strictly a deviation — but anyone reading
-those comments will go looking for a suite that is not there.
+No test suite in the repository; frontend testing is manual by decision. The
+backend's Node.js translation was verified once, by running it side by side with
+the previous Rust implementation and comparing every response, but that harness
+is not part of the repo. No spec file claims tests exist, so this is not
+strictly a deviation.
 
 **Resolution:** undecided.

@@ -1,0 +1,17 @@
+{
+  "name": "resolve-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/main.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/main.js"
+  },
+  "dependencies": {
+    "bcryptjs": "3.0.3",
+    "mongodb": "7.8.0"
+  }
+}

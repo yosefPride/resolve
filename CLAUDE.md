@@ -60,7 +60,7 @@ As built — what the code actually does, and where it diverges from the above:
 - Always enforce group isolation
 - Always validate RBAC before executing actions
 - Never allow cross-group queries
-- Follow Actix patterns (NOT Axum)
+- Backend is plain JavaScript on Node's built-in `node:http` server (no Express): follow the existing handlers → service → repository layering and the `handler([extractors], fn)` pattern
 - Do not assume TypeScript anywhere
 - Prefer incremental changes
 - Ask before large refactors

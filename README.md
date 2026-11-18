@@ -3,8 +3,8 @@
 # RESOLVE
 
 A multi-tenant bug tracker built around strict group isolation and two independent
-RBAC layers, with AI-assisted ticket workflows. Rust + Actix-web + MongoDB on the
-backend, React 19 + Vite + Tailwind on the frontend.
+RBAC layers, with AI-assisted ticket workflows. Node.js + MongoDB on the backend,
+React 19 + Vite + Tailwind on the frontend.
 
 ## What it does
 
@@ -27,25 +27,25 @@ backend, React 19 + Vite + Tailwind on the frontend.
 
 | Path | Contents |
 | --- | --- |
-| `backend/` | Actix-web API. One module per feature (`auth`, `group`, `rbac`, `ticket`, `comment`, `activity`, `link`, `reaction`, `admin`, `ai`, ...), each following the same Handler → Service → Repository layering. |
+| `backend/` | Node.js API (plain JavaScript on the built-in `node:http` server). One module per feature (`auth`, `group`, `rbac`, `ticket`, `comment`, `activity`, `link`, `reaction`, `admin`, `ai`, ...), each following the same Handler → Service → Repository layering. |
 | `frontend/` | React SPA. Feature folders under `src/features/`, routed pages under `src/pages/`, shared UI in `src/components/`. |
 | `docs/specification/` | Design source of truth: architecture, API, database, RBAC, AI integration. |
 | `docs/implementation/` | How the system is actually built: backend flow, frontend flow, data model, deviations from spec. |
 
 ## Getting started
 
-Prerequisites: Rust (edition 2024 toolchain), Node.js, and a MongoDB instance
-(local or Atlas).
+Prerequisites: Node.js 22 or newer and a MongoDB instance (local or Atlas).
 
 ### Backend
 
 ```bash
 cd backend
 cp .env.example .env   # then fill in real values
-cargo run
+npm install
+npm start
 ```
 
-The server binds to `127.0.0.1:8080` and serves the API under `/api/v1`.
+The server binds to `0.0.0.0:8080` (or `$PORT`) and serves the API under `/api/v1`.
 
 Environment variables (loaded from `backend/.env`):
 
@@ -56,6 +56,9 @@ Environment variables (loaded from `backend/.env`):
 | `COOKIE_SECURE` | no | Set to `false` for local HTTP development so the browser will store the refresh-token cookie. Defaults to `true` (required in production). |
 | `FRONTEND_ORIGIN` | no | Origin allowed by CORS for credentialed requests. Defaults to `http://localhost:5173`. |
 | `GEMINI_API_KEY` | no | Enables the AI endpoints. Everything else works without it. |
+| `PORT` | no | Port to listen on. Defaults to `8080`. |
+| `MONGO_DB` | no | Database name. Defaults to `resolve`. |
+| `LOG_LEVEL` | no | `error` (default) or `info` for a per-request access log. |
 
 ### Frontend
 

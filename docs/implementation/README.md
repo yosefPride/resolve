@@ -42,8 +42,8 @@ rules:
 - Change how auth, RBAC, module layout, or error handling works → update
   `backend-flow.md` in the same change.
 - Add or reshape a collection, index, or cascade → update `data-model.md`.
-  It is written to be checkable against `backend/src/*/models.rs` and
-  `backend/src/db.rs`.
+  It is written to be checkable against `backend/src/*/models.js` and
+  `backend/src/db/index.js`.
 - Add a route, layout, or data-layer convention → update `frontend-flow.md`.
 - Knowingly diverge from `docs/specification/` → add an entry to
   [`deviations.md`](deviations.md) rather than quietly editing the spec to match.
